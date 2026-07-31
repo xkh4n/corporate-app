@@ -1,0 +1,486 @@
+name: ${PROJECT_NAME}${SUFFIX}
+
+secrets:
+    pg_replication_password:
+        file: ../corporate-secrets/Development/pg_replication_password.txt
+    pg_admin_password:
+        file: ../corporate-secrets/Development/pg_admin_password.txt
+    pg_user_password:
+        file: ../corporate-secrets/Development/pg_user_password.txt
+    pg_logger_password:
+        file: ../corporate-secrets/Development/pg_logger_password.txt
+    pg_exporter_password:
+        file: ../corporate-secrets/Development/pg_exporter_password.txt
+    pg_password:
+        file: ../corporate-secrets/Development/pg_password.txt
+    db_mongo_password:
+        file: ../corporate-secrets/Development/db_mongo_password.txt
+    db_mongo_user_password:
+        file: ../corporate-secrets/Development/db_mongo_user_password.txt
+    db_gui_password:
+        file: ../corporate-secrets/Development/db_gui_password.txt
+    db_mongo_logs:
+        file: ../corporate-secrets/Development/db_mongo_logs.txt
+    mongodb_keyfile:
+        file: ../corporate-secrets/Development/MongoKeyfile/mongodb_keyfile.txt
+    db_mongo_exporter:
+        file: ../corporate-secrets/Development/db_mongo_exporter.txt
+    mssql_password:
+        file: ../corporate-secrets/Development/mssql_password.txt
+    redis_password:
+        file: ../corporate-secrets/Development/redis_password.txt
+
+networks:
+    backend:
+        name: ${PROJECT_NAME}_backend${SUFFIX}
+
+volumes:
+    pg_primary_data:
+    pg_replica_data:
+    mongo_primary_data:
+    mongo_secondary_data:
+    mongo_arbiter_data:
+    mssql_primary_data:
+    mssql_secondary_data:
+    redis_primary_data:
+    redis_replica_data:
+
+services:
+    # *********************        Inicio Servicios de base de datos para PostgreSQL *********************
+    # Primario
+    postgres01dev:
+        build:
+            context: ./PostgreSQL
+        container_name: ${POSTGRES_HOST}01${SUFFIX}
+        hostname: ${POSTGRES_HOST}01${SUFFIX}
+        restart: ${RESTART_POLICY}
+        # Límite de recursos: contrapresión ante un contenedor en crash-loop
+        # (restart: always) para que no compita sin límite por RAM/CPU del
+        # host. Dev con datos de prueba: 768M es holgado para Postgres.
+        deploy:
+            resources:
+                limits:
+                    memory: 768M
+                    cpus: "1.0"
+        environment:
+            PG_ROLE: primary
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+            POSTGRES_DB: ${POSTGRES_DATABASE}
+            PG_ADMIN: ${PG_ADMIN}${SUFFIX}
+            PG_ADMIN_PASSWORD_FILE: /run/secrets/pg_admin_password
+            PG_APP_USER: ${PG_APP_USER}${SUFFIX}
+            PG_APP_USER_PASSWORD_FILE: /run/secrets/pg_user_password
+            PG_LOGGER_USER: ${PG_LOGGER_USER}${SUFFIX}
+            PG_LOGGER_USER_PASSWORD_FILE: /run/secrets/pg_logger_password
+            PG_EXPORTER_USER: ${PG_EXPORTER_USER}${SUFFIX}
+            PG_EXPORTER_USER_PASSWORD_FILE: /run/secrets/pg_exporter_password
+            PG_REPLICATOR: ${PG_REPLICATOR}${SUFFIX}
+            PG_REPLICATOR_PASSWORD_FILE: /run/secrets/pg_replication_password
+        command: ["postgres", "-c", "wal_level=replica", "-c", "max_wal_senders=10", "-c", "max_replication_slots=10", "-c", "hot_standby=on"]
+        secrets:
+            - pg_password
+            - pg_admin_password
+            - pg_user_password
+            - pg_logger_password
+            - pg_exporter_password
+            - pg_replication_password
+        volumes:
+            - pg_primary_data:/var/lib/postgresql/data
+        networks:
+            - backend
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U postgres"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 20s
+
+    # Replica
+    postgres02dev:
+        build:
+            context: ./PostgreSQL
+        container_name: ${POSTGRES_HOST}02${SUFFIX}
+        hostname: ${POSTGRES_HOST}02${SUFFIX}
+        restart: ${RESTART_POLICY}
+        deploy:
+            resources:
+                limits:
+                    memory: 768M
+                    cpus: "1.0"
+        environment:
+            PG_ROLE: replica
+            PG_PRIMARY_HOST: ${POSTGRES_HOST}01${SUFFIX}
+            PG_REPLICATOR: ${PG_REPLICATOR}${SUFFIX}
+            PG_REPLICATOR_PASSWORD_FILE: /run/secrets/pg_replication_password
+        command: ["postgres", "-c", "hot_standby=on"]
+        secrets:
+            - pg_replication_password
+        volumes:
+            - pg_replica_data:/var/lib/postgresql/data
+        networks:
+            - backend
+        depends_on:
+            postgres01dev:
+                condition: service_healthy
+        healthcheck:
+            # Además de aceptar conexiones (pg_isready), confirma que el
+            # streaming de replicación esté activo (pg_stat_wal_receiver.status
+            # = 'streaming'). Conecta por el socket unix local como "postgres":
+            # la imagen oficial deja "local all all trust" en pg_hba.conf por
+            # defecto, así que no hace falta manejar contraseña acá.
+            test: ["CMD-SHELL", "pg_isready -U postgres -h /var/run/postgresql && psql -U postgres -h /var/run/postgresql -tAc \"SELECT status FROM pg_stat_wal_receiver;\" 2>/dev/null | grep -q streaming"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 30s
+
+    # **************************    FIN Servicios de base de datos para PostgreSQL **************************
+
+    # *********************        Inicio Servicios de base de datos para MongoDB *********************
+    # Primario
+    mongo01dev:
+        build:
+            context: ./MongoDB
+        container_name: ${MONGO_HOST}01${SUFFIX}
+        hostname: ${MONGO_HOST}01${SUFFIX}
+        restart: ${RESTART_POLICY}
+        deploy:
+            resources:
+                limits:
+                    memory: 768M
+                    cpus: "1.0"
+        environment:
+            MONGO_ROLE: primary
+            MONGO_REPLICA_SET: ${MONGO_REPLICA_SET}
+            MONGO_PRIMARY_HOST: ${MONGO_HOST}01${SUFFIX}
+            MONGO_SECONDARY_HOST: ${MONGO_HOST}02${SUFFIX}
+            MONGO_ARBITER_HOST: ${MONGO_HOST}-arbiter${SUFFIX}
+            MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}${SUFFIX}
+            MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/db_mongo_password
+            MONGO_USER: ${MONGO_USER}${SUFFIX}
+            MONGO_USER_PASSWORD_FILE: /run/secrets/db_mongo_user_password
+            MONGO_USER_LOGS: ${MONGO_USER_LOGS}${SUFFIX}
+            MONGO_USER_LOGS_PASSWORD_FILE: /run/secrets/db_mongo_logs
+            MONGO_EXPORTER_USER: ${MONGO_EXPORTER_USER}${SUFFIX}
+            MONGO_EXPORTER_PASSWORD_FILE: /run/secrets/db_mongo_exporter
+            MPONGO_DB_NAME: ${MPONGO_DB_NAME}
+            MONGO_DB_LOGS: ${MONGO_DB_LOGS}
+        secrets:
+            - mongodb_keyfile
+            - db_mongo_password
+            - db_mongo_user_password
+            - db_mongo_logs
+            - db_mongo_exporter
+        volumes:
+            - mongo_primary_data:/data/db
+        networks:
+            - backend
+        healthcheck:
+            # No solo ping: confirma vía rs.status().myState que el nodo esté
+            # realmente en rol PRIMARY (1), no solo que el proceso responda.
+            # Requiere auth porque para este punto ya existen usuarios (Fix 2).
+            test: ["CMD-SHELL", "mongosh --quiet --host localhost -u \"$$MONGO_INITDB_ROOT_USERNAME\" -p \"$$(cat /run/secrets/db_mongo_password)\" --authenticationDatabase admin --eval \"quit(rs.status().myState === 1 ? 0 : 1)\" || exit 1"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 30s
+
+    # Replica
+    mongo02dev:
+        build:
+            context: ./MongoDB
+        container_name: ${MONGO_HOST}02${SUFFIX}
+        hostname: ${MONGO_HOST}02${SUFFIX}
+        restart: ${RESTART_POLICY}
+        deploy:
+            resources:
+                limits:
+                    memory: 768M
+                    cpus: "1.0"
+        environment:
+            MONGO_ROLE: secondary
+            MONGO_REPLICA_SET: ${MONGO_REPLICA_SET}
+            # Solo lo necesario para que el healthcheck pueda autenticar y
+            # consultar rs.status(); este nodo no ejecuta init.sh (eso corre
+            # únicamente en el primario), así que no necesita el resto de
+            # credenciales de usuarios funcionales.
+            MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}${SUFFIX}
+        secrets:
+            - mongodb_keyfile
+            - db_mongo_password
+        volumes:
+            - mongo_secondary_data:/data/db
+        networks:
+            - backend
+        depends_on:
+            - mongo01dev
+        healthcheck:
+            # No solo ping: confirma vía rs.status().myState que el nodo esté
+            # realmente en rol SECONDARY (2), no solo que el proceso responda.
+            test: ["CMD-SHELL", "mongosh --quiet --host localhost -u \"$$MONGO_INITDB_ROOT_USERNAME\" -p \"$$(cat /run/secrets/db_mongo_password)\" --authenticationDatabase admin --eval \"quit(rs.status().myState === 2 ? 0 : 1)\" || exit 1"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 30s
+
+    # Arbiter: con solo 2 miembros votantes (primario + secundario), si el
+    # primario cae, el secundario queda con 1 de 2 votos -sin mayoría- y NO
+    # puede auto-promoverse: el replica set entero queda de solo lectura
+    # hasta una intervención manual (rs.reconfig con force). El arbiter suma
+    # un tercer voto (sin datos) para que sí exista mayoría automática.
+    #
+    # Trade-off aceptado conscientemente: en topología PSA (Primary-Secondary-
+    # Arbiter), si en cambio es el SECUNDARIO de datos el que cae (no el
+    # primario), las escrituras con writeConcern "majority" se bloquean,
+    # porque el arbiter no tiene datos y no puede acknowledgearlas -son 3
+    # miembros, se necesitan 2 acks con datos reales, y solo queda el
+    # primario-. El arbiter compra failover automático a costa de introducir
+    # ESE modo de degradación nuevo (antes inexistente con 2 miembros).
+    mongo-arbiterdev:
+        build:
+            context: ./MongoDB
+        container_name: ${MONGO_HOST}-arbiter${SUFFIX}
+        hostname: ${MONGO_HOST}-arbiter${SUFFIX}
+        restart: ${RESTART_POLICY}
+        # Un arbiter no guarda datos de usuario: footprint mínimo.
+        deploy:
+            resources:
+                limits:
+                    memory: 256M
+                    cpus: "0.5"
+        environment:
+            MONGO_ROLE: arbiter
+            MONGO_REPLICA_SET: ${MONGO_REPLICA_SET}
+        secrets:
+            - mongodb_keyfile
+        volumes:
+            - mongo_arbiter_data:/data/db
+        networks:
+            - backend
+        depends_on:
+            - mongo01dev
+        healthcheck:
+            # Liveness simple: un arbiter no tiene rol PRIMARY/SECONDARY con
+            # datos que verificar, solo debe estar vivo para poder votar.
+            test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping')\" || exit 1"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 30s
+
+    # **************************    FIN Servicios de base de datos para MongoDB **************************
+
+    # *********************        Inicio Servicios de base de datos para MSSQL *********************
+    # Primario
+    mssql01dev:
+        build:
+            context: ./MsSQL
+        container_name: ${MSSQL_HOST}01${SUFFIX}
+        hostname: ${MSSQL_HOST}01${SUFFIX}
+        restart: ${RESTART_POLICY}
+        # SQL Server exige ~2GB de RAM como mínimo para arrancar (requisito
+        # conocido del motor); no bajar este límite o el contenedor no levanta.
+        deploy:
+            resources:
+                limits:
+                    memory: 2g
+                    cpus: "2.0"
+        environment:
+            MSSQL_SA_PASSWORD_FILE: /run/secrets/mssql_password
+        secrets:
+            - mssql_password
+        volumes:
+            - mssql_primary_data:/var/opt/mssql
+            - ../corporate-secrets/Development/certs:/var/opt/mssql/certs
+        networks:
+            - backend
+        healthcheck:
+            test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$(cat /run/secrets/mssql_password)\" -Q 'SELECT 1' || exit 1"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 40s
+
+    # Replica
+    mssql02dev:
+        build:
+            context: ./MsSQL
+        container_name: ${MSSQL_HOST}02${SUFFIX}
+        hostname: ${MSSQL_HOST}02${SUFFIX}
+        restart: ${RESTART_POLICY}
+        # Ver nota de mssql01dev: SQL Server exige ~2GB de RAM para arrancar.
+        deploy:
+            resources:
+                limits:
+                    memory: 2g
+                    cpus: "2.0"
+        environment:
+            MSSQL_SA_PASSWORD_FILE: /run/secrets/mssql_password
+        secrets:
+            - mssql_password
+        volumes:
+            - mssql_secondary_data:/var/opt/mssql
+            - ../corporate-secrets/Development/certs:/var/opt/mssql/certs
+        networks:
+            - backend
+        depends_on:
+            mssql01dev:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$(cat /run/secrets/mssql_password)\" -Q 'SELECT 1' || exit 1"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 40s
+
+    # Job de un solo uso: arma el Availability Group (certificado, endpoint, AG, base y auto-seeding)
+    mssql-initdev:
+        profiles: ["init"]
+        build:
+            context: ./MsSQL
+        container_name: ${MSSQL_HOST}-init${SUFFIX}
+        hostname: ${MSSQL_HOST}-init${SUFFIX}
+        restart: "no"
+        # Job de un solo uso, liviano (solo corre sqlcmd contra las otras
+        # instancias): no necesita nada cercano a los 2GB de un motor MSSQL.
+        deploy:
+            resources:
+                limits:
+                    memory: 512M
+                    cpus: "0.5"
+        entrypoint: ["/bin/bash", "/scripts/setup-ag.sh"]
+        environment:
+            MSSQL_PRIMARY_HOST: ${MSSQL_HOST}01${SUFFIX}
+            MSSQL_SECONDARY_HOST: ${MSSQL_HOST}02${SUFFIX}
+            MSSQL_AG_NAME: ${MSSQL_AG}
+            MSSQL_DATABASE: ${MSSQL_DBNAME}
+            MSSQL_SA_PASSWORD_FILE: /run/secrets/mssql_password
+        secrets:
+            - mssql_password
+        volumes:
+            - ./MsSQL/scripts:/scripts:ro
+            - ../corporate-secrets/Development/certs:/certs
+        networks:
+            - backend
+        depends_on:
+            mssql01dev:
+                condition: service_healthy
+            mssql02dev:
+                condition: service_healthy
+
+    # **************************    FIN Servicios de base de datos para MSSQL **************************
+
+    # *********************        Inicio Servicios de base de datos para Redis *********************
+    # Primario
+    redis01dev:
+        build:
+            context: ./Redis
+        container_name: ${REDIS_HOST}01${SUFFIX}
+        hostname: ${REDIS_HOST}01${SUFFIX}
+        restart: ${RESTART_POLICY}
+        deploy:
+            resources:
+                limits:
+                    memory: 512M
+                    cpus: "0.5"
+        environment:
+            REDIS_ROLE: primary
+            REDIS_PASSWORD_FILE: /run/secrets/redis_password
+        secrets:
+            - redis_password
+        volumes:
+            - redis_primary_data:/data
+        networks:
+            - backend
+        healthcheck:
+            # Además del ping, confirma que el nodo se vea a sí mismo como
+            # master (role:master en INFO replication) y no, por ejemplo,
+            # como replica huérfana tras una reconfiguración manual.
+            test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/redis_password)\" --no-auth-warning ping | grep -q PONG && redis-cli -a \"$$(cat /run/secrets/redis_password)\" --no-auth-warning info replication | grep -q '^role:master'"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 15s
+
+    # Replica
+    redis02dev:
+        build:
+            context: ./Redis
+        container_name: ${REDIS_HOST}02${SUFFIX}
+        hostname: ${REDIS_HOST}02${SUFFIX}
+        restart: ${RESTART_POLICY}
+        deploy:
+            resources:
+                limits:
+                    memory: 512M
+                    cpus: "0.5"
+        environment:
+            REDIS_ROLE: replica
+            REDIS_PRIMARY_HOST: ${REDIS_HOST}01${SUFFIX}
+            REDIS_PASSWORD_FILE: /run/secrets/redis_password
+        secrets:
+            - redis_password
+        volumes:
+            - redis_replica_data:/data
+        networks:
+            - backend
+        depends_on:
+            redis01dev:
+                condition: service_healthy
+        healthcheck:
+            # Además del ping, confirma que el link de replicación hacia el
+            # primario esté realmente arriba (master_link_status:up), no solo
+            # que el proceso redis-server responda.
+            test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/redis_password)\" --no-auth-warning ping | grep -q PONG && redis-cli -a \"$$(cat /run/secrets/redis_password)\" --no-auth-warning info replication | grep -q 'master_link_status:up'"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 15s
+
+    # **************************    FIN Servicios de base de datos para Redis **************************
+
+    # *********************        Proxy único: NGINX (stream/L4) *********************
+    # Único servicio con puertos publicados al host. Ninguna base de datos expone
+    # puertos directamente; todo el tráfico entra por acá y se reenvía al nodo
+    # primario de cada motor (ver corporate-infra/NGINX/config/streams.dev.conf).
+    nginxdev:
+        build:
+            context: ./NGINX
+        container_name: ${NGINX_HOST}${SUFFIX}
+        hostname: ${NGINX_HOST}${SUFFIX}
+        restart: ${RESTART_POLICY}
+        # Proxy L4 puro, sin estado: footprint trivial.
+        deploy:
+            resources:
+                limits:
+                    memory: 256M
+                    cpus: "0.5"
+        environment:
+            DEPLOY_ENV: ${SUFFIX}
+            SUFFIX: ${SUFFIX}
+            POSTGRES_HOST: ${POSTGRES_HOST}
+            POSTGRE_PORT: ${POSTGRE_PORT}
+            MONGO_HOST: ${MONGO_HOST}
+            MONGO_PORT: ${MONGO_PORT}
+            REDIS_HOST: ${REDIS_HOST}
+            REDIS_PORT: ${REDIS_PORT}
+            MSSQL_HOST: ${MSSQL_HOST}
+            MSSQL_PORT: ${MSSQL_PORT}
+        ports:
+            - "${POSTGRE_PORT}:${POSTGRE_PORT}"
+            - "${MONGO_PORT}:${MONGO_PORT}"
+            - "${REDIS_PORT}:${REDIS_PORT}"
+            - "${MSSQL_PORT}:${MSSQL_PORT}"
+        networks:
+            - backend
+        depends_on:
+            postgres01dev:
+                condition: service_healthy
+            mongo01dev:
+                condition: service_healthy
+            redis01dev:
+                condition: service_healthy
+            mssql01dev:
+                condition: service_healthy
+    # **************************    FIN Proxy NGINX **************************

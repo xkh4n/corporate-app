@@ -1,0 +1,22 @@
+user nginx;
+worker_processes auto;
+
+events {
+    worker_connections 1024;
+}
+
+# Proxy TCP puro (capa 4): las bases de datos no exponen puertos al host,
+# todo el tráfico entra por acá y se reenvía al nodo primario de cada motor.
+stream {
+    # 127.0.0.11 es el DNS embebido de Docker (dentro del namespace de este
+    # contenedor). Sin este resolver, nginx resuelve el hostname del upstream
+    # UNA sola vez al arrancar el worker y nunca más: si el contenedor de una
+    # BD se recrea (rebuild, --force-recreate, Docker Desktop reasigna IP)
+    # mientras nginx sigue vivo, el proxy queda apuntando a una IP muerta
+    # -outage silencioso en el único punto de entrada externo-. Con resolver +
+    # proxy_pass a variable (ver streams.dev.conf), la IP se re-resuelve por
+    # conexión, con el TTL acotado acá a 10s.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    include /etc/nginx/streams.conf;
+}
