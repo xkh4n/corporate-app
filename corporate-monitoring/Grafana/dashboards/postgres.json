@@ -1,0 +1,241 @@
+{
+    "uid": "postgres-overview",
+    "title": "PostgreSQL - Overview",
+    "tags": ["corpinfra", "postgres"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "editable": true,
+    "time": { "from": "now-6h", "to": "now" },
+    "refresh": "30s",
+    "panels": [
+        {
+            "id": 1,
+            "type": "stat",
+            "title": "PostgreSQL UP (por instancia)",
+            "description": "1 = instancia responde, 0 = caida. Un valor por instancia (primario/replica), label 'role'.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 0, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": {
+                "defaults": {
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            { "color": "red", "value": null },
+                            { "color": "green", "value": 1 }
+                        ]
+                    },
+                    "mappings": [
+                        { "type": "value", "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } } }
+                    ]
+                },
+                "overrides": []
+            },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value_and_name",
+                "colorMode": "background"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "up{job=\"postgres\"}",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "type": "stat",
+            "title": "Replication lag (segundos)",
+            "description": "pg_replication_lag_seconds: retraso de aplicacion de WAL en la replica respecto al primario.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 6, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "s",
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            { "color": "green", "value": null },
+                            { "color": "yellow", "value": 5 },
+                            { "color": "red", "value": 30 }
+                        ]
+                    }
+                },
+                "overrides": []
+            },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value_and_name",
+                "colorMode": "background"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "pg_replication_lag_seconds",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 3,
+            "type": "stat",
+            "title": "Rol replica (pg_replication_is_replica)",
+            "description": "0 = primario, 1 = replica.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 12, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": {
+                "defaults": {
+                    "mappings": [
+                        { "type": "value", "options": { "0": { "text": "PRIMARIO" }, "1": { "text": "REPLICA" } } }
+                    ],
+                    "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] }
+                },
+                "overrides": []
+            },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value_and_name",
+                "colorMode": "background"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "pg_replication_is_replica",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 4,
+            "type": "stat",
+            "title": "Conexiones activas (total)",
+            "description": "Suma de pg_stat_database_numbackends en todas las bases, ambas instancias.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 18, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": {
+                "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } },
+                "overrides": []
+            },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value",
+                "colorMode": "value"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "sum(pg_stat_database_numbackends)",
+                    "legendFormat": "conexiones",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 5,
+            "type": "timeseries",
+            "title": "Conexiones activas por rol",
+            "description": "pg_stat_database_numbackends sumado por rol (primario/replica).",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "sum by (role) (pg_stat_database_numbackends)",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 6,
+            "type": "timeseries",
+            "title": "Buffer cache hit ratio (%)",
+            "description": "pg_stat_database_blks_hit / (blks_hit + blks_read) acumulado, por rol. Cerca de 100% = la mayoria de las lecturas se resuelven en memoria.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "100 * sum by (role) (pg_stat_database_blks_hit) / (sum by (role) (pg_stat_database_blks_hit) + sum by (role) (pg_stat_database_blks_read))",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 7,
+            "type": "timeseries",
+            "title": "Transacciones commit / rollback por segundo",
+            "description": "rate() de pg_stat_database_xact_commit y pg_stat_database_xact_rollback, por rol.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 0, "y": 14, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "sum by (role) (rate(pg_stat_database_xact_commit[5m]))",
+                    "legendFormat": "{{role}} commit",
+                    "refId": "A"
+                },
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "sum by (role) (rate(pg_stat_database_xact_rollback[5m]))",
+                    "legendFormat": "{{role}} rollback",
+                    "refId": "B"
+                }
+            ]
+        },
+        {
+            "id": 8,
+            "type": "timeseries",
+            "title": "Replication lag en el tiempo",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 12, "y": 14, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "pg_replication_lag_seconds",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 9,
+            "type": "logs",
+            "title": "Logs recientes (Postgres, ambos nodos)",
+            "description": "Loki, contenedores betelgeuse* (primario, replica y sus exporters).",
+            "datasource": { "type": "loki", "uid": "loki" },
+            "gridPos": { "x": 0, "y": 22, "w": 24, "h": 9 },
+            "options": {
+                "showTime": true,
+                "wrapLogMessage": true,
+                "sortOrder": "Descending",
+                "dedupStrategy": "none"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "loki", "uid": "loki" },
+                    "expr": "{service_name=~\"betelgeuse.*\"}",
+                    "refId": "A"
+                }
+            ]
+        }
+    ]
+}

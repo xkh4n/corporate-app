@@ -37,15 +37,25 @@ secrets:
 networks:
     backend:
         name: ${PROJECT_NAME}_backend${SUFFIX}
-        # NOTA para el futuro stack de observabilidad (corporate-monitoring,
-        # proyecto Compose separado, todavía no existe): esta red es privada
-        # por nombre de proyecto -"${PROJECT_NAME}_backend${SUFFIX}"-, así
-        # que Prometheus corriendo en OTRO proyecto Compose no la va a poder
-        # alcanzar por defecto. Cuando se arme ese stack, va a hacer falta
-        # declarar esta red como "external: true" desde el compose de
-        # corporate-monitoring (referenciando este mismo nombre ya resuelto),
-        # o exponer los exporters de abajo en una red adicional compartida.
-        # No se resuelve acá a propósito: queda fuera del alcance de esta tarea.
+        # Motores de BD + sus exporters (los exporters necesitan alcanzar su
+        # motor local para poder scrapearlo). corporate-monitoring (stack de
+        # observabilidad, proyecto Compose separado) NO se conecta acá -ver
+        # la red "exporters" de abajo, que es la que expone hacia afuera-.
+    # Hallazgo de auditoría (MEDIO, defensa en profundidad -la autenticación
+    # de cada motor ya bloquea el acceso real de verdad, confirmado por el
+    # auditor con pruebas en vivo; esto es blindaje adicional barato, no el
+    # cierre de una brecha activa-): Prometheus (corporate-monitoring, otro
+    # proyecto Compose) se conecta acá para poder scrapear los 8 exporters
+    # por nombre, pero esta red NO incluye a los motores de BD -solo a sus
+    # exporters, dual-homed en "backend" (para llegar a su motor local) y acá
+    # (para ser alcanzables desde Prometheus)-. Un Prometheus comprometido ya
+    # ni siquiera tiene RUTA de red hacia postgres01dev:5432, mongo01dev:27017,
+    # redis01dev:6379 o mssql01dev:1433 -antes, al compartir una sola red
+    # "backend" con todo, Prometheus podía intentar conectarse directo a esos
+    # puertos (bloqueado únicamente por la autenticación de cada motor, no por
+    # la red)-.
+    exporters:
+        name: ${PROJECT_NAME}_exporters${SUFFIX}
 
 volumes:
     pg_primary_data:
@@ -67,6 +77,27 @@ services:
         container_name: ${POSTGRES_HOST}01${SUFFIX}
         hostname: ${POSTGRES_HOST}01${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Hallazgo de auditoría (MEDIO): sin cap_drop/no-new-privileges, todo
+        # contenedor corre con el set de capabilities completo de Docker por
+        # defecto. cap_drop:[ALL] + este cap_add mínimo se probó con un
+        # volumen NUEVO (no reutilizando uno ya poblado, que podría esconder
+        # un CHOWN/FOWNER faltante): docker-entrypoint.sh (imagen oficial)
+        # hace chown/chmod del PGDATA vacío como root en el primer arranque y
+        # después baja privilegios con gosu -eso es lo que necesita CHOWN,
+        # FOWNER, DAC_OVERRIDE-; gosu en sí necesita SETUID+SETGID para
+        # cambiar de usuario. Confirmado con un initdb real completo y
+        # "cat /proc/1/status" mostrando CapEff en 0 para el proceso postgres
+        # ya corriendo (uid postgres, no root).
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        cap_add:
+            - CHOWN
+            - FOWNER
+            - SETUID
+            - SETGID
+            - DAC_OVERRIDE
         # Límite de recursos: contrapresión ante un contenedor en crash-loop
         # (restart: always) para que no compita sin límite por RAM/CPU del
         # host. Dev con datos de prueba: 768M es holgado para Postgres.
@@ -116,6 +147,19 @@ services:
         container_name: ${POSTGRES_HOST}02${SUFFIX}
         hostname: ${POSTGRES_HOST}02${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Mismo criterio/cap set que postgres01dev (pg_basebackup en el
+        # arranque en frío de la réplica también necesita chown/gosu como
+        # root antes de arrancar el motor sin privilegios).
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        cap_add:
+            - CHOWN
+            - FOWNER
+            - SETUID
+            - SETGID
+            - DAC_OVERRIDE
         deploy:
             resources:
                 limits:
@@ -167,6 +211,15 @@ services:
         container_name: ${POSTGRES_HOST}-exporter01${SUFFIX}
         hostname: ${POSTGRES_HOST}-exporter01${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Hallazgo de auditoría (MEDIO): sin ninguna operación de arranque
+        # que necesite root (la imagen oficial ya corre como "nobody" de
+        # fábrica, sin wrapper propio que haga chown/gosu), cap_drop:[ALL]
+        # sin ningún cap_add alcanza -confirmado arrancando el contenedor
+        # así y viendo el exporter servir /metrics normalmente-.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
         # Exporter: proceso liviano, solo ejecuta queries de solo lectura
         # contra vistas pg_stat_*/pg_settings y sirve /metrics por HTTP.
         deploy:
@@ -202,8 +255,13 @@ services:
             - --collector.postmaster
         secrets:
             - pg_exporter_password
+        # "exporters" además de "backend": ver hallazgo de auditoría junto a
+        # la definición de esa red más arriba -Prometheus (otro proyecto
+        # Compose) solo alcanza a este exporter, nunca al motor Postgres en
+        # sí, que sigue solo en "backend"-.
         networks:
             - backend
+            - exporters
         depends_on:
             postgres01dev:
                 condition: service_healthy
@@ -219,6 +277,11 @@ services:
         container_name: ${POSTGRES_HOST}-exporter02${SUFFIX}
         hostname: ${POSTGRES_HOST}-exporter02${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Mismo criterio que postgres-exporter01dev.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
         deploy:
             resources:
                 limits:
@@ -236,8 +299,10 @@ services:
             - --collector.postmaster
         secrets:
             - pg_exporter_password
+        # Mismo criterio que postgres-exporter01dev.
         networks:
             - backend
+            - exporters
         depends_on:
             postgres02dev:
                 condition: service_healthy
@@ -257,6 +322,23 @@ services:
         container_name: ${MONGO_HOST}01${SUFFIX}
         hostname: ${MONGO_HOST}01${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Hallazgo de auditoría (MEDIO), mismo criterio/set que Postgres:
+        # entrypoint-wrapper.sh corre como root para el "install -o mongodb
+        # -g mongodb" del keyfile (chown+chmod 400) antes de "exec gosu
+        # mongodb mongod ...". Confirmado con un bootstrap completo del
+        # replica set (rs.initiate + creación de usuarios) sobre un volumen
+        # nuevo y "cat /proc/1/status" con CapEff en 0 para el mongod ya
+        # corriendo.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        cap_add:
+            - CHOWN
+            - FOWNER
+            - SETUID
+            - SETGID
+            - DAC_OVERRIDE
         deploy:
             resources:
                 limits:
@@ -305,6 +387,17 @@ services:
         container_name: ${MONGO_HOST}02${SUFFIX}
         hostname: ${MONGO_HOST}02${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Mismo criterio que mongo01dev.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        cap_add:
+            - CHOWN
+            - FOWNER
+            - SETUID
+            - SETGID
+            - DAC_OVERRIDE
         deploy:
             resources:
                 limits:
@@ -355,6 +448,18 @@ services:
         container_name: ${MONGO_HOST}-arbiter${SUFFIX}
         hostname: ${MONGO_HOST}-arbiter${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Mismo criterio que mongo01dev (mismo entrypoint-wrapper.sh, mismo
+        # paso de keyfile como root antes del gosu).
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        cap_add:
+            - CHOWN
+            - FOWNER
+            - SETUID
+            - SETGID
+            - DAC_OVERRIDE
         # Un arbiter no guarda datos de usuario: footprint mínimo.
         deploy:
             resources:
@@ -403,6 +508,13 @@ services:
         container_name: ${MONGO_HOST}-exporter01${SUFFIX}
         hostname: ${MONGO_HOST}-exporter01${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Hallazgo de auditoría (MEDIO): USER fijo (65535:65535) sin ninguna
+        # operación de root en el wrapper -solo lee el secret y exec-, así
+        # que cap_drop:[ALL] sin cap_add alcanza (confirmado arrancando así).
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
         deploy:
             resources:
                 limits:
@@ -434,8 +546,11 @@ services:
             - --compatible-mode
         secrets:
             - db_mongo_exporter
+        # "exporters" además de "backend": ver hallazgo de auditoría junto a
+        # la definición de esa red más arriba.
         networks:
             - backend
+            - exporters
         depends_on:
             mongo01dev:
                 condition: service_healthy
@@ -452,6 +567,11 @@ services:
         container_name: ${MONGO_HOST}-exporter02${SUFFIX}
         hostname: ${MONGO_HOST}-exporter02${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Mismo criterio que mongo-exporter01dev.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
         deploy:
             resources:
                 limits:
@@ -470,8 +590,10 @@ services:
             - --compatible-mode
         secrets:
             - db_mongo_exporter
+        # Mismo criterio que mongo-exporter01dev.
         networks:
             - backend
+            - exporters
         depends_on:
             mongo02dev:
                 condition: service_healthy
@@ -491,6 +613,23 @@ services:
         container_name: ${MSSQL_HOST}01${SUFFIX}
         hostname: ${MSSQL_HOST}01${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Hallazgo de auditoría (MEDIO): a diferencia de Postgres/Mongo, este
+        # contenedor arranca DIRECTO como "USER mssql" (sin paso de root en
+        # runtime, el chmod ya se hizo en build time -ver MsSQL/Dockerfile-),
+        # así que necesita MUCHO menos. Con cap_drop:[ALL] y CERO cap_add,
+        # sqlservr falla al arrancar con "Operation not permitted" -el
+        # binario trae un file capability propio (cap_net_bind_service=ep,
+        # "getcap /opt/mssql/bin/sqlservr") que no-new-privileges bloquea si
+        # esa capability no está ya en el set permitido del proceso-.
+        # NET_BIND_SERVICE es lo único que hace falta: confirmado con un
+        # arranque completo desde volumen nuevo (upgrade de msdb/tempdb
+        # incluido) y una consulta real por sqlcmd.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        cap_add:
+            - NET_BIND_SERVICE
         # SQL Server exige ~2GB de RAM como mínimo para arrancar (requisito
         # conocido del motor); no bajar este límite o el contenedor no levanta.
         deploy:
@@ -521,6 +660,13 @@ services:
         container_name: ${MSSQL_HOST}02${SUFFIX}
         hostname: ${MSSQL_HOST}02${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Mismo criterio que mssql01dev.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        cap_add:
+            - NET_BIND_SERVICE
         # Ver nota de mssql01dev: SQL Server exige ~2GB de RAM para arrancar.
         deploy:
             resources:
@@ -554,6 +700,15 @@ services:
         container_name: ${MSSQL_HOST}-init${SUFFIX}
         hostname: ${MSSQL_HOST}-init${SUFFIX}
         restart: "no"
+        # A diferencia de mssql01dev/02dev, este job solo corre "sqlcmd"
+        # (cliente puro, "getcap /opt/mssql-tools18/bin/sqlcmd" no devuelve
+        # ningún file capability) contra las otras instancias -no arranca
+        # sqlservr localmente-, así que ni siquiera NET_BIND_SERVICE hace
+        # falta acá.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
         # Job de un solo uso, liviano (solo corre sqlcmd contra las otras
         # instancias): no necesita nada cercano a los 2GB de un motor MSSQL.
         deploy:
@@ -633,6 +788,15 @@ services:
         container_name: ${MSSQL_HOST}-exporter01${SUFFIX}
         hostname: ${MSSQL_HOST}-exporter01${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Hallazgo de auditoría (MEDIO): USER nobody, wrapper solo escribe
+        # /tmp/sql_exporter.yml (world-writable por defecto) y exec's
+        # sql_exporter -sin ninguna operación de root-, así que
+        # cap_drop:[ALL] sin cap_add alcanza (confirmado sirviendo /metrics
+        # normalmente).
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
         deploy:
             resources:
                 limits:
@@ -644,8 +808,11 @@ services:
             MSSQL_TARGET_HOST: ${MSSQL_HOST}01${SUFFIX}
         secrets:
             - mssql_exporter_password
+        # "exporters" además de "backend": ver hallazgo de auditoría junto a
+        # la definición de esa red más arriba.
         networks:
             - backend
+            - exporters
         depends_on:
             mssql01dev:
                 condition: service_healthy
@@ -663,6 +830,11 @@ services:
         container_name: ${MSSQL_HOST}-exporter02${SUFFIX}
         hostname: ${MSSQL_HOST}-exporter02${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Mismo criterio que mssql-exporter01dev.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
         deploy:
             resources:
                 limits:
@@ -674,8 +846,10 @@ services:
             MSSQL_TARGET_HOST: ${MSSQL_HOST}02${SUFFIX}
         secrets:
             - mssql_exporter_password
+        # Mismo criterio que mssql-exporter01dev.
         networks:
             - backend
+            - exporters
         depends_on:
             mssql02dev:
                 condition: service_healthy
@@ -695,6 +869,24 @@ services:
         container_name: ${REDIS_HOST}01${SUFFIX}
         hostname: ${REDIS_HOST}01${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Hallazgo de auditoría (MEDIO): entrypoint-wrapper.sh corre como
+        # root para "chown -R redis:redis /data" (hallazgo ALTO, ver más
+        # arriba) antes de "exec su-exec redis ..." -CHOWN para el chown en
+        # sí, SETUID+SETGID para que su-exec pueda cambiar de usuario-. Sin
+        # FOWNER/DAC_OVERRIDE: el chown syscall en sí solo necesita CHOWN: no
+        # se está tocando ningún archivo que el proceso no pueda ya
+        # modificar por ownership normal una vez con ese capability.
+        # Confirmado con volumen nuevo Y con un volumen clonado del real
+        # (root:root de antes de este hardening) -ambos escenarios, ver
+        # hallazgo Redis root-.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        cap_add:
+            - CHOWN
+            - SETUID
+            - SETGID
         deploy:
             resources:
                 limits:
@@ -729,6 +921,15 @@ services:
         container_name: ${REDIS_HOST}02${SUFFIX}
         hostname: ${REDIS_HOST}02${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Mismo criterio que redis01dev.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        cap_add:
+            - CHOWN
+            - SETUID
+            - SETGID
         deploy:
             resources:
                 limits:
@@ -776,6 +977,13 @@ services:
         container_name: ${REDIS_HOST}-exporter01${SUFFIX}
         hostname: ${REDIS_HOST}-exporter01${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Hallazgo de auditoría (MEDIO): USER fijo (59000:59000), wrapper
+        # solo lee el secret y exec's -sin operaciones de root-, así que
+        # cap_drop:[ALL] sin cap_add alcanza.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
         deploy:
             resources:
                 limits:
@@ -798,8 +1006,11 @@ services:
             - -export-client-list
         secrets:
             - redis_exporter_password
+        # "exporters" además de "backend": ver hallazgo de auditoría junto a
+        # la definición de esa red más arriba.
         networks:
             - backend
+            - exporters
         depends_on:
             redis01dev:
                 condition: service_healthy
@@ -816,6 +1027,11 @@ services:
         container_name: ${REDIS_HOST}-exporter02${SUFFIX}
         hostname: ${REDIS_HOST}-exporter02${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Mismo criterio que redis-exporter01dev.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
         deploy:
             resources:
                 limits:
@@ -831,8 +1047,10 @@ services:
             - -export-client-list
         secrets:
             - redis_exporter_password
+        # Mismo criterio que redis-exporter01dev.
         networks:
             - backend
+            - exporters
         depends_on:
             redis02dev:
                 condition: service_healthy
@@ -854,6 +1072,23 @@ services:
         container_name: ${NGINX_HOST}${SUFFIX}
         hostname: ${NGINX_HOST}${SUFFIX}
         restart: ${RESTART_POLICY}
+        # Hallazgo de auditoría (MEDIO): el master process de nginx necesita
+        # quedarse root (arquitectura propia de nginx: administra los
+        # workers), pero con CHOWN+SETUID+SETGID alcanza para que baje los
+        # WORKERS -los que realmente manejan tráfico- al usuario "nginx" sin
+        # privilegios. Confirmado con "cat /proc/{pid}/status" por cada
+        # worker: CapEff en 0 para los 12 workers, master con exactamente
+        # estos 3 caps (0xc1), no el set completo por defecto. Puertos
+        # internos todos >1024 (ver corporate-infra/NGINX/config/
+        # streams.dev.conf): no hace falta NET_BIND_SERVICE.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        cap_add:
+            - CHOWN
+            - SETUID
+            - SETGID
         # Proxy L4 puro, sin estado: footprint trivial.
         deploy:
             resources:

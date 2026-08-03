@@ -1,0 +1,235 @@
+{
+    "uid": "mongodb-overview",
+    "title": "MongoDB - Overview",
+    "tags": ["corpinfra", "mongodb"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "editable": true,
+    "time": { "from": "now-6h", "to": "now" },
+    "refresh": "30s",
+    "panels": [
+        {
+            "id": 1,
+            "type": "stat",
+            "title": "MongoDB UP (por instancia)",
+            "description": "mongodb_up: 1 = instancia responde, 0 = caida. Un valor por nodo con datos (primario/secundario; el arbiter no tiene exporter).",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 0, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": {
+                "defaults": {
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ]
+                    },
+                    "mappings": [ { "type": "value", "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } } } ]
+                },
+                "overrides": []
+            },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value_and_name",
+                "colorMode": "background"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "mongodb_up",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "type": "stat",
+            "title": "Estado del replica set",
+            "description": "mongodb_mongod_replset_my_state: 1=PRIMARY, 2=SECONDARY, 7=ARBITER (segun la nomenclatura oficial de MongoDB para member state).",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 6, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": {
+                "defaults": {
+                    "mappings": [
+                        {
+                            "type": "value",
+                            "options": {
+                                "1": { "text": "PRIMARY", "color": "green" },
+                                "2": { "text": "SECONDARY", "color": "blue" },
+                                "7": { "text": "ARBITER", "color": "yellow" }
+                            }
+                        }
+                    ],
+                    "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] }
+                },
+                "overrides": []
+            },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value_and_name",
+                "colorMode": "background"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "mongodb_mongod_replset_my_state",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 3,
+            "type": "stat",
+            "title": "Conexiones actuales (total)",
+            "description": "mongodb_connections{state=\"current\"} sumado en ambos nodos.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 12, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value",
+                "colorMode": "value"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "sum(mongodb_connections{state=\"current\"})",
+                    "legendFormat": "conexiones",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 4,
+            "type": "stat",
+            "title": "Replication lag (segundos, propio)",
+            "description": "mongodb_mongod_replset_member_replication_lag{self=\"1\"}: lo que cada nodo reporta sobre si mismo.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 18, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "s",
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 30 } ]
+                    }
+                },
+                "overrides": []
+            },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value_and_name",
+                "colorMode": "background"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "mongodb_mongod_replset_member_replication_lag{self=\"1\"}",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 5,
+            "type": "timeseries",
+            "title": "Conexiones current / available por nodo",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "mongodb_connections{state=\"current\"}",
+                    "legendFormat": "{{role}} current",
+                    "refId": "A"
+                },
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "mongodb_connections{state=\"available\"}",
+                    "legendFormat": "{{role}} available",
+                    "refId": "B"
+                }
+            ]
+        },
+        {
+            "id": 6,
+            "type": "timeseries",
+            "title": "Memoria residente (MB)",
+            "description": "mongodb_memory{type=\"resident\"}, por nodo.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "decmbytes" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "mongodb_memory{type=\"resident\"}",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 7,
+            "type": "timeseries",
+            "title": "Replication lag en el tiempo (propio)",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 0, "y": 14, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "mongodb_mongod_replset_member_replication_lag{self=\"1\"}",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 8,
+            "type": "timeseries",
+            "title": "Asserts (user) por segundo",
+            "description": "mongodb_asserts_total{type=\"user\"}: errores reportados al cliente (ej. duplicate key). Util como senal temprana de problemas de aplicacion.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 12, "y": 14, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "sum by (role) (rate(mongodb_asserts_total{type=\"user\"}[5m]))",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 9,
+            "type": "logs",
+            "title": "Logs recientes (MongoDB, primario/secundario/arbiter y exporters)",
+            "description": "Loki, contenedores arthurus* (incluye el arbiter, que no tiene metricas pero si logs).",
+            "datasource": { "type": "loki", "uid": "loki" },
+            "gridPos": { "x": 0, "y": 22, "w": 24, "h": 9 },
+            "options": {
+                "showTime": true,
+                "wrapLogMessage": true,
+                "sortOrder": "Descending",
+                "dedupStrategy": "none"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "loki", "uid": "loki" },
+                    "expr": "{service_name=~\"arthurus.*\"}",
+                    "refId": "A"
+                }
+            ]
+        }
+    ]
+}

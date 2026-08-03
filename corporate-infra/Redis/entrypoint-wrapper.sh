@@ -2,6 +2,15 @@
 # Arranca redis-server con auth (requirepass/masterauth) leída desde el Docker
 # secret y, si el rol es "replica", lo enlaza al primario vía replicaof
 # (replicación nativa asíncrona de Redis).
+#
+# Hardening (hallazgo de auditoría: Redis era el único de los 4 motores que
+# corría como root en runtime -Postgres/Mongo/MSSQL ya bajan privilegios-):
+# el contenedor sigue arrancando como root (sin USER en el Dockerfile) SOLO
+# para poder corregir el ownership de /data antes de arrancar redis-server;
+# mismo patrón ya usado acá en MongoDB/entrypoint-wrapper.sh (root -> chown/
+# install -> gosu), pero con "su-exec" en vez de "gosu" porque la imagen
+# oficial de Redis no trae gosu (sí trae su-exec, agregado vía apk en el
+# Dockerfile).
 set -eu
 
 : "${REDIS_ROLE:?REDIS_ROLE debe ser 'primary' o 'replica'}"
@@ -11,6 +20,14 @@ set -eu
 
 REDIS_PASSWORD="$(cat "$REDIS_PASSWORD_FILE")"
 REDIS_EXPORTER_PASSWORD="$(cat "$REDIS_EXPORTER_PASSWORD_FILE")"
+
+# Necesario tanto para volúmenes nuevos (el punto de montaje ya queda
+# redis:redis por la imagen base, pero por las dudas) como, sobre todo, para
+# volúmenes YA EXISTENTES de antes de este fix: como Redis corría como root
+# hasta ahora, el AOF/RDB que ya escribió quedó root:root -sin este chown,
+# bajar privilegios a "redis" rompería la escritura en esos archivos ya
+# existentes en el primer arranque post-fix-.
+chown -R redis:redis /data
 
 set -- redis-server \
     --requirepass "$REDIS_PASSWORD" \
@@ -45,4 +62,8 @@ if [ "$REDIS_ROLE" = "replica" ]; then
     set -- "$@" --replicaof "$REDIS_PRIMARY_HOST" 6379
 fi
 
-exec "$@"
+# su-exec reemplaza el proceso actual (execve, no fork+wait): "docker top"
+# muestra redis-server corriendo como el usuario "redis", no como root, y las
+# señales (SIGTERM en un "docker stop") le llegan directo al proceso de
+# Redis, no a un wrapper intermedio.
+exec su-exec redis "$@"

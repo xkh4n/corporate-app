@@ -1,0 +1,46 @@
+# Proxy HTTP (capa 7) hacia Grafana -a diferencia del NGINX de corporate-infra,
+# que es un proxy TCP puro (stream) hacia las bases de datos, este SÍ entiende
+# HTTP: reescribe headers, agrega soporte de WebSocket (Grafana Live) y es el
+# único componente de todo corporate-monitoring con un puerto publicado al
+# host (misma postura de seguridad que corporate-infra: nada más expone
+# puertos).
+user nginx;
+worker_processes auto;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    # 127.0.0.11 es el DNS embebido de Docker: sin esto, nginx resolvería el
+    # hostname de Grafana UNA sola vez al arrancar el worker y lo dejaría
+    # cacheado -si el contenedor de Grafana se recrea con otra IP, el proxy
+    # quedaría apuntando a una IP muerta-. Mismo motivo/patrón que
+    # corporate-infra/NGINX/config/nginx.conf.template.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    # Upgrade de conexión para WebSockets (Grafana Live usa uno para
+    # actualizaciones de paneles en tiempo real): si el cliente no pide
+    # upgrade, Connection queda en "close" (comportamiento HTTP normal).
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+
+    server {
+        listen 3333;
+
+        location / {
+            set $grafana_upstream ${GRAFANA_HOST}01${SUFFIX}:3000;
+            proxy_pass http://$grafana_upstream;
+
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+        }
+    }
+}
