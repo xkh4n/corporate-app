@@ -27,12 +27,25 @@ secrets:
         file: ../corporate-secrets/Development/db_mongo_exporter.txt
     mssql_password:
         file: ../corporate-secrets/Development/mssql_password.txt
+    mssql_exporter_password:
+        file: ../corporate-secrets/Development/mssql_exporter_password.txt
     redis_password:
         file: ../corporate-secrets/Development/redis_password.txt
+    redis_exporter_password:
+        file: ../corporate-secrets/Development/redis_exporter_password.txt
 
 networks:
     backend:
         name: ${PROJECT_NAME}_backend${SUFFIX}
+        # NOTA para el futuro stack de observabilidad (corporate-monitoring,
+        # proyecto Compose separado, todavía no existe): esta red es privada
+        # por nombre de proyecto -"${PROJECT_NAME}_backend${SUFFIX}"-, así
+        # que Prometheus corriendo en OTRO proyecto Compose no la va a poder
+        # alcanzar por defecto. Cuando se arme ese stack, va a hacer falta
+        # declarar esta red como "external: true" desde el compose de
+        # corporate-monitoring (referenciando este mismo nombre ya resuelto),
+        # o exponer los exporters de abajo en una red adicional compartida.
+        # No se resuelve acá a propósito: queda fuera del alcance de esta tarea.
 
 volumes:
     pg_primary_data:
@@ -136,6 +149,105 @@ services:
             start_period: 30s
 
     # **************************    FIN Servicios de base de datos para PostgreSQL **************************
+
+    # *********************        Inicio Exporters de Prometheus para PostgreSQL *********************
+    # Un exporter por nodo (no uno compartido): cada uno se conecta a su
+    # propia instancia local, así Prometheus puede scrapear métricas de
+    # ambos nodos por separado (útil para detectar, por ejemplo, que la
+    # réplica está healthy pero atrasada en el WAL).
+    #
+    # Sin Dockerfile propio: la imagen oficial soporta nativamente
+    # DATA_SOURCE_USER + DATA_SOURCE_PASS_FILE (lee el secret directo desde
+    # /run/secrets/), no hace falta un wrapper para resolver el password como
+    # sí hizo falta con MSSQL/Mongo/Redis. Reutiliza PG_EXPORTER_USER /
+    # pg_exporter_password (rol pg_monitor, ver PostgreSQL/init/01-roles.sh) -
+    # el mismo usuario que ya replica físicamente al nodo réplica.
+    postgres-exporter01dev:
+        image: prometheuscommunity/postgres-exporter:v0.20.1
+        container_name: ${POSTGRES_HOST}-exporter01${SUFFIX}
+        hostname: ${POSTGRES_HOST}-exporter01${SUFFIX}
+        restart: ${RESTART_POLICY}
+        # Exporter: proceso liviano, solo ejecuta queries de solo lectura
+        # contra vistas pg_stat_*/pg_settings y sirve /metrics por HTTP.
+        deploy:
+            resources:
+                limits:
+                    memory: 128M
+                    cpus: "0.25"
+        environment:
+            # Conecta a la base "postgres" de mantenimiento (no a
+            # POSTGRES_DATABASE): las vistas pg_stat_*/pg_settings que usa
+            # pg_monitor son de alcance de clúster, visibles desde cualquier
+            # base -conectar a "postgres" evita acoplar el exporter al ciclo
+            # de vida de la base de la aplicación.
+            DATA_SOURCE_URI: "${POSTGRES_HOST}01${SUFFIX}:5432/postgres?sslmode=disable"
+            DATA_SOURCE_USER: ${PG_EXPORTER_USER}${SUFFIX}
+            DATA_SOURCE_PASS_FILE: /run/secrets/pg_exporter_password
+        # Colectores extra habilitados a propósito, más allá de los que
+        # vienen activados por defecto, para un monitoreo "detallado y
+        # completo": wraparound de transaction ID (riesgo real en
+        # producción), transacciones colgadas, checkpointer (reemplazo
+        # moderno de las métricas de bgwriter en PG15+), estado del WAL
+        # receiver (relevante sobre todo en el nodo réplica) y hora de
+        # arranque del postmaster. NO se habilita --collector.stat_statements
+        # porque requiere la extensión pg_stat_statements con
+        # shared_preload_libraries -cambio que exige reiniciar el motor con
+        # otro "command:" y complejiza este primer pase-; queda anotado como
+        # mejora futura, no como pendiente bloqueante.
+        command:
+            - --collector.long_running_transactions
+            - --collector.database_wraparound
+            - --collector.stat_checkpointer
+            - --collector.stat_wal_receiver
+            - --collector.postmaster
+        secrets:
+            - pg_exporter_password
+        networks:
+            - backend
+        depends_on:
+            postgres01dev:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "wget -qO- http://localhost:9187/metrics >/dev/null 2>&1 || exit 1"]
+            interval: 15s
+            timeout: 5s
+            retries: 5
+            start_period: 15s
+
+    postgres-exporter02dev:
+        image: prometheuscommunity/postgres-exporter:v0.20.1
+        container_name: ${POSTGRES_HOST}-exporter02${SUFFIX}
+        hostname: ${POSTGRES_HOST}-exporter02${SUFFIX}
+        restart: ${RESTART_POLICY}
+        deploy:
+            resources:
+                limits:
+                    memory: 128M
+                    cpus: "0.25"
+        environment:
+            DATA_SOURCE_URI: "${POSTGRES_HOST}02${SUFFIX}:5432/postgres?sslmode=disable"
+            DATA_SOURCE_USER: ${PG_EXPORTER_USER}${SUFFIX}
+            DATA_SOURCE_PASS_FILE: /run/secrets/pg_exporter_password
+        command:
+            - --collector.long_running_transactions
+            - --collector.database_wraparound
+            - --collector.stat_checkpointer
+            - --collector.stat_wal_receiver
+            - --collector.postmaster
+        secrets:
+            - pg_exporter_password
+        networks:
+            - backend
+        depends_on:
+            postgres02dev:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "wget -qO- http://localhost:9187/metrics >/dev/null 2>&1 || exit 1"]
+            interval: 15s
+            timeout: 5s
+            retries: 5
+            start_period: 15s
+    # **************************    FIN Exporters de Prometheus para PostgreSQL **************************
 
     # *********************        Inicio Servicios de base de datos para MongoDB *********************
     # Primario
@@ -271,6 +383,106 @@ services:
 
     # **************************    FIN Servicios de base de datos para MongoDB **************************
 
+    # *********************        Inicio Exporters de Prometheus para MongoDB *********************
+    # Un exporter por nodo con datos (mongo01dev/mongo02dev). El arbiter NO
+    # tiene exporter propio: no guarda datos ni sirve tráfico de aplicación,
+    # así que no hay métricas de negocio que aportar -su único estado
+    # relevante (si está arriba y votando) ya se ve reflejado en las métricas
+    # de replicasetstatus que exportan los otros dos nodos-.
+    #
+    # Con Dockerfile propio (MongoDB/Exporter/): la imagen oficial
+    # (percona/mongodb_exporter) es FROM scratch, sin shell, y solo acepta
+    # MONGODB_PASSWORD en texto plano -no soporta leer el secret desde
+    # archivo nativamente-, así que hace falta el wrapper para resolverlo en
+    # runtime. Reutiliza MONGO_EXPORTER_USER / db_mongo_exporter (roles
+    # clusterMonitor@admin + read@local, ver MongoDB/init.sh) - el mismo
+    # usuario que ya vive en "admin" y replica vía oplog a mongo02dev.
+    mongo-exporter01dev:
+        build:
+            context: ./MongoDB/Exporter
+        container_name: ${MONGO_HOST}-exporter01${SUFFIX}
+        hostname: ${MONGO_HOST}-exporter01${SUFFIX}
+        restart: ${RESTART_POLICY}
+        deploy:
+            resources:
+                limits:
+                    memory: 128M
+                    cpus: "0.25"
+        environment:
+            MONGO_EXPORTER_USER: ${MONGO_EXPORTER_USER}${SUFFIX}
+            MONGO_EXPORTER_PASSWORD_FILE: /run/secrets/db_mongo_exporter
+            # directConnection=true: cada exporter apunta al mongod local de
+            # SU contenedor, no quiere que el driver descubra el resto del
+            # replica set y decida enrutar la conexión a otro nodo.
+            MONGO_TARGET_URI: "mongodb://${MONGO_HOST}01${SUFFIX}:27017/?authSource=admin&directConnection=true"
+        # Colectores elegidos para que alcancen con los permisos ya
+        # otorgados (clusterMonitor@admin + read@local, "no hace falta nada
+        # más" según el estándar del propio percona/mongodb_exporter): NO se
+        # habilita --collect-all a propósito, porque incluiría dbstats/
+        # collstats/indexstats/topmetrics (necesitan permiso de lectura por
+        # base, que clusterMonitor no otorga) y shards/pbm (no aplican acá:
+        # no hay sharding ni Percona Backup). diagnosticdata cubre el grueso
+        # de las métricas de servidor (conexiones, memoria, opcounters,
+        # WiredTiger); replicasetstatus/replicasetconfig cubren el estado
+        # del replica set (rol, salud, lag, config de miembros).
+        command:
+            - --collector.diagnosticdata
+            - --collector.replicasetstatus
+            - --collector.replicasetconfig
+            - --collector.fcv
+            - --collector.exporter-metrics
+            - --compatible-mode
+        secrets:
+            - db_mongo_exporter
+        networks:
+            - backend
+        depends_on:
+            mongo01dev:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "wget -qO- http://localhost:9216/metrics >/dev/null 2>&1 || exit 1"]
+            interval: 15s
+            timeout: 5s
+            retries: 5
+            start_period: 15s
+
+    mongo-exporter02dev:
+        build:
+            context: ./MongoDB/Exporter
+        container_name: ${MONGO_HOST}-exporter02${SUFFIX}
+        hostname: ${MONGO_HOST}-exporter02${SUFFIX}
+        restart: ${RESTART_POLICY}
+        deploy:
+            resources:
+                limits:
+                    memory: 128M
+                    cpus: "0.25"
+        environment:
+            MONGO_EXPORTER_USER: ${MONGO_EXPORTER_USER}${SUFFIX}
+            MONGO_EXPORTER_PASSWORD_FILE: /run/secrets/db_mongo_exporter
+            MONGO_TARGET_URI: "mongodb://${MONGO_HOST}02${SUFFIX}:27017/?authSource=admin&directConnection=true"
+        command:
+            - --collector.diagnosticdata
+            - --collector.replicasetstatus
+            - --collector.replicasetconfig
+            - --collector.fcv
+            - --collector.exporter-metrics
+            - --compatible-mode
+        secrets:
+            - db_mongo_exporter
+        networks:
+            - backend
+        depends_on:
+            mongo02dev:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "wget -qO- http://localhost:9216/metrics >/dev/null 2>&1 || exit 1"]
+            interval: 15s
+            timeout: 5s
+            retries: 5
+            start_period: 15s
+    # **************************    FIN Exporters de Prometheus para MongoDB **************************
+
     # *********************        Inicio Servicios de base de datos para MSSQL *********************
     # Primario
     mssql01dev:
@@ -356,8 +568,11 @@ services:
             MSSQL_AG_NAME: ${MSSQL_AG}
             MSSQL_DATABASE: ${MSSQL_DBNAME}
             MSSQL_SA_PASSWORD_FILE: /run/secrets/mssql_password
+            MSSQL_EXPORTER_USER: ${MSSQL_EXPORTER_USER}${SUFFIX}
+            MSSQL_EXPORTER_PASSWORD_FILE: /run/secrets/mssql_exporter_password
         secrets:
             - mssql_password
+            - mssql_exporter_password
         volumes:
             - ./MsSQL/scripts:/scripts:ro
             - ../corporate-secrets/Development/certs:/certs
@@ -370,6 +585,107 @@ services:
                 condition: service_healthy
 
     # **************************    FIN Servicios de base de datos para MSSQL **************************
+
+    # *********************        Inicio Exporters de Prometheus para MSSQL *********************
+    # Un exporter por nodo, apuntando cada uno a su propia instancia local.
+    #
+    # Exporter elegido: burningalchemist/sql_exporter (queries SQL propias
+    # via YAML), NO awaragi/prometheus-mssql-exporter -que da un set fijo de
+    # ~25 métricas pero sin ninguna cobertura de AlwaysOn Availability
+    # Groups-. Como este proyecto vive de un AG (mssql01dev/mssql02dev,
+    # ver MsSQL/scripts/setup-ag.sh), un exporter que no pueda ver el estado
+    # del AG (rol, salud de sincronización, log_send_queue/redo_queue por
+    # base) se queda corto del pedido de monitoreo "detallado y completo".
+    # El costo de esa elección es tener que escribir las queries a mano
+    # (ver MsSQL/Exporter/collectors/*.collector.yml) en vez de usar un
+    # exporter "de métricas fijas" listo para usar.
+    #
+    # Con Dockerfile propio (MsSQL/Exporter/): sql_exporter arma su target
+    # (DSN) desde un archivo de configuración en texto plano, no soporta
+    # leer la contraseña desde un Docker secret nativamente (solo backends
+    # de secret managers en la nube), así que el wrapper genera ese archivo
+    # en runtime con el password resuelto desde /run/secrets/.
+    #
+    # profiles: ["mssql-monitoring"] -A DIFERENCIA de los otros 6 exporters
+    # (Postgres/Mongo/Redis), estos dos NO arrancan con el "up --wait" normal.
+    # Motivo (bug real, encontrado por reality-checker con evidencia de un
+    # "run.ps1 bdd dev" real desde cero): el healthcheck de este exporter
+    # (wget a /metrics) solo pasa una vez que el login SQL
+    # MSSQL_EXPORTER_USER existe, y ese login lo crea ÚNICAMENTE
+    # mssql-initdev (dentro de setup-ag.sh) -que corre DESPUÉS del "up --wait"
+    # inicial, no antes-. Sin profile propio, estos dos exporters quedan en
+    # el profile default y "up --wait" los espera junto con todo lo demás;
+    # como el login todavía no existe en ese momento, su healthcheck nunca
+    # pasa, "up --wait" agota sus 300s y falla, y mssql-initdev NUNCA llega a
+    # correr -deadlock circular, 100% reproducible-. Separarlos en su propio
+    # profile los saca del "up" inicial; infra.ps1 los trae arriba en un paso
+    # aparte, DESPUÉS de que mssql-initdev termine y el login ya exista.
+    #
+    # (El exporter en sí no tiene ningún bug: si arranca antes de que el
+    # login exista, sql_exporter no crashea, solo reporta esa métrica de
+    # scrape puntual como error y se autocura solo en el siguiente scrape
+    # -confirmado con un test real-; el problema era puramente de orden de
+    # arranque contra el timeout del "up --wait" inicial.)
+    mssql-exporter01dev:
+        profiles: ["mssql-monitoring"]
+        build:
+            context: ./MsSQL/Exporter
+        container_name: ${MSSQL_HOST}-exporter01${SUFFIX}
+        hostname: ${MSSQL_HOST}-exporter01${SUFFIX}
+        restart: ${RESTART_POLICY}
+        deploy:
+            resources:
+                limits:
+                    memory: 128M
+                    cpus: "0.25"
+        environment:
+            MSSQL_EXPORTER_USER: ${MSSQL_EXPORTER_USER}${SUFFIX}
+            MSSQL_EXPORTER_PASSWORD_FILE: /run/secrets/mssql_exporter_password
+            MSSQL_TARGET_HOST: ${MSSQL_HOST}01${SUFFIX}
+        secrets:
+            - mssql_exporter_password
+        networks:
+            - backend
+        depends_on:
+            mssql01dev:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "wget -qO- http://localhost:9399/metrics >/dev/null 2>&1 || exit 1"]
+            interval: 15s
+            timeout: 5s
+            retries: 5
+            start_period: 15s
+
+    mssql-exporter02dev:
+        profiles: ["mssql-monitoring"]
+        build:
+            context: ./MsSQL/Exporter
+        container_name: ${MSSQL_HOST}-exporter02${SUFFIX}
+        hostname: ${MSSQL_HOST}-exporter02${SUFFIX}
+        restart: ${RESTART_POLICY}
+        deploy:
+            resources:
+                limits:
+                    memory: 128M
+                    cpus: "0.25"
+        environment:
+            MSSQL_EXPORTER_USER: ${MSSQL_EXPORTER_USER}${SUFFIX}
+            MSSQL_EXPORTER_PASSWORD_FILE: /run/secrets/mssql_exporter_password
+            MSSQL_TARGET_HOST: ${MSSQL_HOST}02${SUFFIX}
+        secrets:
+            - mssql_exporter_password
+        networks:
+            - backend
+        depends_on:
+            mssql02dev:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "wget -qO- http://localhost:9399/metrics >/dev/null 2>&1 || exit 1"]
+            interval: 15s
+            timeout: 5s
+            retries: 5
+            start_period: 15s
+    # **************************    FIN Exporters de Prometheus para MSSQL **************************
 
     # *********************        Inicio Servicios de base de datos para Redis *********************
     # Primario
@@ -387,8 +703,11 @@ services:
         environment:
             REDIS_ROLE: primary
             REDIS_PASSWORD_FILE: /run/secrets/redis_password
+            REDIS_EXPORTER_USER: ${REDIS_EXPORTER_USER}${SUFFIX}
+            REDIS_EXPORTER_PASSWORD_FILE: /run/secrets/redis_exporter_password
         secrets:
             - redis_password
+            - redis_exporter_password
         volumes:
             - redis_primary_data:/data
         networks:
@@ -419,8 +738,11 @@ services:
             REDIS_ROLE: replica
             REDIS_PRIMARY_HOST: ${REDIS_HOST}01${SUFFIX}
             REDIS_PASSWORD_FILE: /run/secrets/redis_password
+            REDIS_EXPORTER_USER: ${REDIS_EXPORTER_USER}${SUFFIX}
+            REDIS_EXPORTER_PASSWORD_FILE: /run/secrets/redis_exporter_password
         secrets:
             - redis_password
+            - redis_exporter_password
         volumes:
             - redis_replica_data:/data
         networks:
@@ -439,6 +761,88 @@ services:
             start_period: 15s
 
     # **************************    FIN Servicios de base de datos para Redis **************************
+
+    # *********************        Inicio Exporters de Prometheus para Redis *********************
+    # Un exporter por nodo. Con Dockerfile propio (Redis/Exporter/): la
+    # imagen oficial (oliver006/redis_exporter) solo acepta REDIS_PASSWORD en
+    # texto plano -su "-redis.password-file" espera un JSON keyed por
+    # dirección, no un secreto "un archivo = un valor" como el resto de este
+    # proyecto-, así que el wrapper resuelve el secret en runtime. Usa el
+    # usuario ACL de solo-lectura creado en Redis/entrypoint-wrapper.sh
+    # (REDIS_EXPORTER_USER / redis_exporter_password).
+    redis-exporter01dev:
+        build:
+            context: ./Redis/Exporter
+        container_name: ${REDIS_HOST}-exporter01${SUFFIX}
+        hostname: ${REDIS_HOST}-exporter01${SUFFIX}
+        restart: ${RESTART_POLICY}
+        deploy:
+            resources:
+                limits:
+                    memory: 128M
+                    cpus: "0.25"
+        environment:
+            REDIS_EXPORTER_USER: ${REDIS_EXPORTER_USER}${SUFFIX}
+            REDIS_EXPORTER_PASSWORD_FILE: /run/secrets/redis_exporter_password
+            REDIS_TARGET_ADDR: redis://${REDIS_HOST}01${SUFFIX}:6379
+        # -include-config-metrics y -include-system-metrics dan visibilidad
+        # extra (config efectiva del server, memoria total del SO) más allá
+        # de lo que INFO expone por defecto; ambos ya cubiertos por el ACL
+        # (+config|get). -export-client-list agrega métricas por cliente
+        # conectado (+client ya otorgado). El resto de lo pedido -
+        # replicación, memoria, comandos lentos, keyspace- ya viene en las
+        # secciones por defecto de INFO, sin flags adicionales.
+        command:
+            - -include-config-metrics
+            - -include-system-metrics
+            - -export-client-list
+        secrets:
+            - redis_exporter_password
+        networks:
+            - backend
+        depends_on:
+            redis01dev:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "wget -qO- http://localhost:9121/metrics >/dev/null 2>&1 || exit 1"]
+            interval: 15s
+            timeout: 5s
+            retries: 5
+            start_period: 15s
+
+    redis-exporter02dev:
+        build:
+            context: ./Redis/Exporter
+        container_name: ${REDIS_HOST}-exporter02${SUFFIX}
+        hostname: ${REDIS_HOST}-exporter02${SUFFIX}
+        restart: ${RESTART_POLICY}
+        deploy:
+            resources:
+                limits:
+                    memory: 128M
+                    cpus: "0.25"
+        environment:
+            REDIS_EXPORTER_USER: ${REDIS_EXPORTER_USER}${SUFFIX}
+            REDIS_EXPORTER_PASSWORD_FILE: /run/secrets/redis_exporter_password
+            REDIS_TARGET_ADDR: redis://${REDIS_HOST}02${SUFFIX}:6379
+        command:
+            - -include-config-metrics
+            - -include-system-metrics
+            - -export-client-list
+        secrets:
+            - redis_exporter_password
+        networks:
+            - backend
+        depends_on:
+            redis02dev:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "wget -qO- http://localhost:9121/metrics >/dev/null 2>&1 || exit 1"]
+            interval: 15s
+            timeout: 5s
+            retries: 5
+            start_period: 15s
+    # **************************    FIN Exporters de Prometheus para Redis **************************
 
     # *********************        Proxy único: NGINX (stream/L4) *********************
     # Único servicio con puertos publicados al host. Ninguna base de datos expone

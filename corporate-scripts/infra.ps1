@@ -33,11 +33,20 @@ foreach ($path in @($composePath, $environmentPath, $envStackPath)) {
     }
 }
 
+# Genera (solo si faltan) los secretos de los usuarios de metricas/exporters
+# de Prometheus antes de levantar el stack -no interactivo e idempotente, ver
+# ensure-monitoring-secrets.ps1-, para que "run.ps1 bdd <ambiente>" deje el
+# ambiente listo para scrapear sin que haga falta acordarse de un paso manual.
+& (Join-Path $PSScriptRoot 'ensure-monitoring-secrets.ps1') -Environment $Ambiente
+
 Write-Host "Levantando stack de bases de datos [$Ambiente] -> $composeFile" -ForegroundColor Cyan
 
 # --env-file admite múltiples ocurrencias: docker compose las mezcla en orden,
 # y en caso de clave repetida gana la del último archivo (Environment/.env).
-# --wait implica -d (detached) y espera a que los healthchecks pasen.
+# --wait implica -d (detached) y espera a que los healthchecks pasen. Sin
+# --profile, este "up" NO levanta servicios con profile propio: ni
+# mssql-init<Ambiente> (profile "init") ni mssql-exporter0N<Ambiente>
+# (profile "mssql-monitoring", ver más abajo por qué).
 docker compose -f $composePath --env-file $envStackPath --env-file $environmentPath up --wait --wait-timeout 300
 
 if ($LASTEXITCODE -ne 0) {
@@ -57,6 +66,28 @@ docker compose -f $composePath --env-file $envStackPath --env-file $environmentP
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "$mssqlInitService finalizó con código $LASTEXITCODE"
+    exit $LASTEXITCODE
+}
+
+# Recién ahora, con mssql-initdev ya corrido, existe el login SQL de métricas
+# (MSSQL_EXPORTER_USER, creado en setup-ag.sh) que necesitan estos dos
+# exporters para pasar su propio healthcheck. Viven bajo el profile
+# "mssql-monitoring" -a propósito, NO junto al resto en el "up" de arriba-:
+# si arrancaran antes de este punto (profile default, junto a todo lo demás),
+# su healthcheck jamás pasaría porque el login todavía no existiría, el
+# "up --wait" inicial agotaría sus 300s esperándolos, fallaría, y
+# mssql-initdev nunca llegaría a correr -deadlock circular real, encontrado
+# por reality-checker con un "run.ps1 bdd dev" desde cero-. Separarlos rompe
+# el ciclo: ahora arrancan en su propio paso, después de que el login ya
+# existe. 60s de timeout alcanza de sobra (confirmado: pasan a healthy en
+# ~8s, un solo ciclo de healthcheck, una vez que el login existe).
+$mssqlExporter1Service = "mssql-exporter01$Ambiente"
+$mssqlExporter2Service = "mssql-exporter02$Ambiente"
+Write-Host "Levantando exporters de métricas de MSSQL..." -ForegroundColor Cyan
+docker compose -f $composePath --env-file $envStackPath --env-file $environmentPath --profile mssql-monitoring up --wait --wait-timeout 60 $mssqlExporter1Service $mssqlExporter2Service
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Exporters de MSSQL finalizaron con código $LASTEXITCODE"
     exit $LASTEXITCODE
 }
 

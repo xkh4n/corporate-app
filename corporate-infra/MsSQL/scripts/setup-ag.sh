@@ -19,10 +19,13 @@ SQLCMD=(/opt/mssql-tools18/bin/sqlcmd -C)
 : "${MSSQL_AG_NAME:?falta MSSQL_AG_NAME}"
 : "${MSSQL_DATABASE:?falta MSSQL_DATABASE}"
 : "${MSSQL_SA_PASSWORD_FILE:?falta MSSQL_SA_PASSWORD_FILE}"
+: "${MSSQL_EXPORTER_USER:?falta MSSQL_EXPORTER_USER}"
+: "${MSSQL_EXPORTER_PASSWORD_FILE:?falta MSSQL_EXPORTER_PASSWORD_FILE}"
 
 SA_PASSWORD="$(cat "$MSSQL_SA_PASSWORD_FILE")"
 CERT_PASSWORD="$SA_PASSWORD"
 HADR_LOGIN_PASSWORD="$SA_PASSWORD"
+EXPORTER_PASSWORD="$(cat "$MSSQL_EXPORTER_PASSWORD_FILE")"
 
 # Sin marker file: cada paso de abajo ya es idempotente por su cuenta (guards
 # "IF NOT EXISTS" contra el estado real de cada instancia). Un marker file
@@ -102,6 +105,29 @@ for pair in "primary:run_primary" "secondary:run_secondary"; do
         CREATE USER hadr_user FOR LOGIN hadr_login;
         GRANT CONNECT ON ENDPOINT::hadr_endpoint TO hadr_login;
     END
+    "
+done
+
+# Login de metricas para sql_exporter (Prometheus). A diferencia de Postgres/
+# Mongo (donde el usuario de metricas se crea una sola vez y replica solo
+# hacia el otro nodo via streaming/oplog), los logins de SQL Server son a
+# nivel de instancia y NO se replican -hay que crearlo explicitamente en
+# AMBAS instancias, igual que hadr_login arriba. Permisos minimos estandar
+# para un exporter de SQL Server: VIEW SERVER STATE (DMVs de rendimiento,
+# sesiones, esperas, estado del AG) + VIEW ANY DEFINITION (metadata de
+# objetos) -sin acceso de lectura/escritura a datos de negocio en ninguna
+# base-.
+for pair in "primary:run_primary" "secondary:run_secondary"; do
+    name="${pair%%:*}"
+    fn="${pair##*:}"
+    echo "[setup-ag] Login de metricas '${MSSQL_EXPORTER_USER}' en $name..."
+    "$fn" "
+    IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = '${MSSQL_EXPORTER_USER}')
+    BEGIN
+        CREATE LOGIN [${MSSQL_EXPORTER_USER}] WITH PASSWORD = N'${EXPORTER_PASSWORD}';
+    END
+    GRANT VIEW SERVER STATE TO [${MSSQL_EXPORTER_USER}];
+    GRANT VIEW ANY DEFINITION TO [${MSSQL_EXPORTER_USER}];
     "
 done
 
