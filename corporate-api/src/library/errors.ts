@@ -68,3 +68,21 @@ export function isDuplicateObjectError(err: unknown): boolean {
     ?? (err as { original?: { code?: string } }).original?.code;
   return code === "42710";
 }
+
+// Mismo problema que isDuplicateObjectError pero para MSSQL: el patron
+// "IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = ...) BEGIN CREATE
+// TABLE ... END" (MSSQL no tiene "CREATE TABLE IF NOT EXISTS") no es atomico
+// -el SELECT y el CREATE son statements separados-, asi que con las 3
+// replicas migrando en paralelo contra una base recien creada (instalacion
+// limpia), dos pueden pasar el IF NOT EXISTS a la vez y una choca al crear
+// (error 2714, "There is already an object named X"). El mismo hueco existe
+// para los INSERT guardados con "IF NOT EXISTS (SELECT 1 FROM ... WHERE ...)
+// INSERT ..." (ver document_numbering en databases/mssql/migrate.ts), que en
+// vez de 2714 chocan contra la PK/UNIQUE (error 2627) -no es un error real,
+// es "otra replica ya dejo la tabla/fila en el estado correcto".
+export function isDuplicateMssqlObjectError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const number = (err as { parent?: { number?: number }; original?: { number?: number } }).parent?.number
+    ?? (err as { original?: { number?: number } }).original?.number;
+  return number === 2714 || number === 2627;
+}

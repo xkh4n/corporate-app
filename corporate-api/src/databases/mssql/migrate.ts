@@ -1,11 +1,27 @@
 import { mssql } from "./connection";
 import { logger } from "../../library/logger";
+import { isDuplicateMssqlObjectError } from "../../library/errors";
 
 // Igual criterio que databases/postgres/migrate.ts: migracion propia de la
 // app, idempotente via guards IF NOT EXISTS (MSSQL no soporta
 // "CREATE TABLE IF NOT EXISTS"). El AG (corporate-infra) replica el esquema
 // del primario al secundario automaticamente al ser DDL sobre una base ya
 // unida al Availability Group -no hace falta correr esto contra el secundario-.
+//
+// El guard "IF NOT EXISTS (...) BEGIN ... END" no es atomico: con las 3
+// replicas de la API migrando en paralelo contra una base recien creada,
+// dos pueden pasar el chequeo casi al mismo tiempo y una choca al crear
+// (ver isDuplicateMssqlObjectError). runDdl() ignora ese choque especifico
+// -la otra replica ya dejo la tabla/fila en el estado correcto- y relanza
+// cualquier otro error real.
+async function runDdl(sql: string, replacements?: Record<string, unknown>): Promise<void> {
+  try {
+    await mssql.query(sql, replacements ? { replacements } : undefined);
+  } catch (err) {
+    if (!isDuplicateMssqlObjectError(err)) throw err;
+  }
+}
+
 export async function migrateMssql(): Promise<void> {
   await migrateAuth();
   await migrateGeography();
@@ -23,7 +39,7 @@ export async function migrateMssql(): Promise<void> {
 // una secuencia de motor, que no hace rollback y deja "huecos"). Ver
 // memoria convention-pk-id-strategy.
 async function migrateDocumentNumbering(): Promise<void> {
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'document_numbering')
     BEGIN
       CREATE TABLE document_numbering (
@@ -34,16 +50,16 @@ async function migrateDocumentNumbering(): Promise<void> {
   `);
 
   for (const docType of ["SOL", "COT", "OC"]) {
-    await mssql.query(
+    await runDdl(
       `IF NOT EXISTS (SELECT 1 FROM document_numbering WHERE doc_type = :docType)
        INSERT INTO document_numbering (doc_type, next_seq) VALUES (:docType, 0);`,
-      { replacements: { docType } },
+      { docType },
     );
   }
 }
 
 async function migrateAuth(): Promise<void> {
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'persons')
     BEGIN
       CREATE TABLE persons (
@@ -61,7 +77,7 @@ async function migrateAuth(): Promise<void> {
     END
   `);
 
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'users')
     BEGIN
       CREATE TABLE users (
@@ -86,7 +102,7 @@ async function migrateAuth(): Promise<void> {
   // antes de cambiar, se compara la nueva contraseña contra el hash actual +
   // las ultimas N filas de aca; despues de cambiar, el hash que quedo viejo
   // se inserta aca y se podan las filas mas antiguas que las ultimas N.
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'password_history')
     BEGIN
       CREATE TABLE password_history (
@@ -108,7 +124,7 @@ async function migrateAuth(): Promise<void> {
 // York" estado vs. ciudad en EEUU) -ver memoria project-erp-scope-and-data-
 // classification-.
 async function migrateGeography(): Promise<void> {
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'countries')
     BEGIN
       CREATE TABLE countries (
@@ -126,7 +142,7 @@ async function migrateGeography(): Promise<void> {
     END
   `);
 
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'cities')
     BEGIN
       CREATE TABLE cities (
@@ -145,7 +161,7 @@ async function migrateGeography(): Promise<void> {
     END
   `);
 
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'states')
     BEGIN
       CREATE TABLE states (
@@ -175,7 +191,7 @@ async function migrateGeography(): Promise<void> {
 // -no repite rut/dni: persons.document_id ya cubre eso, agregarlo de nuevo
 // aca hubiera sido un campo redundante-.
 async function migrateBusinessPartners(): Promise<void> {
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'business_partners')
     BEGIN
       CREATE TABLE business_partners (
@@ -193,7 +209,7 @@ async function migrateBusinessPartners(): Promise<void> {
     END
   `);
 
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'suppliers')
     BEGIN
       CREATE TABLE suppliers (
@@ -215,7 +231,7 @@ async function migrateBusinessPartners(): Promise<void> {
     END
   `);
 
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'customers')
     BEGIN
       CREATE TABLE customers (
@@ -232,7 +248,7 @@ async function migrateBusinessPartners(): Promise<void> {
     END
   `);
 
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'employees')
     BEGIN
       CREATE TABLE employees (
@@ -254,7 +270,7 @@ async function migrateBusinessPartners(): Promise<void> {
   // Depende de states (migrateGeography) y business_partners (arriba en
   // esta misma funcion) -por eso addresses no vive en migrateGeography,
   // pese a estar tematicamente ligada a la jerarquia geografica.
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'addresses')
     BEGIN
       CREATE TABLE addresses (
@@ -290,7 +306,7 @@ async function migrateBusinessPartners(): Promise<void> {
 // NVARCHAR(24) -un ObjectId de Mongo, referencia cross-engine sin FK real,
 // validada en la capa de servicio-.
 async function migratePurchasingFlow(): Promise<void> {
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'purchase_requests')
     BEGIN
       CREATE TABLE purchase_requests (
@@ -320,7 +336,7 @@ async function migratePurchasingFlow(): Promise<void> {
     END
   `);
 
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'purchase_request_lines')
     BEGIN
       CREATE TABLE purchase_request_lines (
@@ -343,7 +359,7 @@ async function migratePurchasingFlow(): Promise<void> {
     END
   `);
 
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'quotes')
     BEGIN
       CREATE TABLE quotes (
@@ -371,7 +387,7 @@ async function migratePurchasingFlow(): Promise<void> {
     END
   `);
 
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'authorizations')
     BEGIN
       CREATE TABLE authorizations (
@@ -397,7 +413,7 @@ async function migratePurchasingFlow(): Promise<void> {
     END
   `);
 
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'purchase_orders')
     BEGIN
       CREATE TABLE purchase_orders (
@@ -419,7 +435,7 @@ async function migratePurchasingFlow(): Promise<void> {
     END
   `);
 
-  await mssql.query(`
+  await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'goods_receipts')
     BEGIN
       CREATE TABLE goods_receipts (
