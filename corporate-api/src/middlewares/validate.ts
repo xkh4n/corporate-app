@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import type { ZodType } from "zod";
-import { env } from "../env";
-import { BadRequestError } from "../errors";
+import { env } from "../library/env";
+import { BadRequestError } from "../library/errors";
 
 // Solo valida req.body a proposito: en Express 5, req.query/req.params son
 // getters de solo lectura (ya no se pueden reasignar), asi que reescribirlos

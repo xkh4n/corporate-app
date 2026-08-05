@@ -1,6 +1,6 @@
 import { Router } from "express";
 import * as stateController from "../controllers/state.controller";
-import { authenticate } from "../library/middlewares/authenticate";
+import { authenticate } from "../middlewares/authenticate";
 
 export const stateRouter = Router();
 

@@ -1,8 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
-import { env } from "../env";
-import { verifyAccessToken } from "../jwt";
-import { UnauthorizedError } from "../errors";
-import type { AuthenticatedUser } from "../../types/auth.types";
+import { env } from "../library/env";
+import { verifyAccessToken } from "../library/jwt";
+import { UnauthorizedError } from "../library/errors";
+import type { AuthenticatedUser } from "../types/auth.types";
 
 function fromSession(req: Request): AuthenticatedUser | undefined {
   const sessionUser = req.session?.user;

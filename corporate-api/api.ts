@@ -10,7 +10,7 @@ import { readSecretFromEnv } from "./src/library/secrets";
 import { redis } from "./src/databases/redis/connection";
 import { logger } from "./src/library/logger";
 import { apiRouter } from "./src/routes";
-import { notFoundHandler, errorHandler } from "./src/library/middlewares/errorHandler";
+import { notFoundHandler, errorHandler } from "./src/middlewares/errorHandler";
 import { metricsMiddleware, metricsHandler } from "./src/library/metrics";
 
 // Identidad de esta replica (hostname del contenedor, p.ej. "miaplacidus01dev"):

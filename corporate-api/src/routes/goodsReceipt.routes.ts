@@ -1,7 +1,7 @@
 import { Router } from "express";
 import * as goodsReceiptController from "../controllers/goodsReceipt.controller";
-import { authenticate } from "../library/middlewares/authenticate";
-import { validateBody } from "../library/middlewares/validate";
+import { authenticate } from "../middlewares/authenticate";
+import { validateBody } from "../middlewares/validate";
 
 export const goodsReceiptRouter = Router();
 

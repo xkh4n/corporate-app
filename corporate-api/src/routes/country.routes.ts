@@ -1,6 +1,6 @@
 import { Router } from "express";
 import * as countryController from "../controllers/country.controller";
-import { authenticate } from "../library/middlewares/authenticate";
+import { authenticate } from "../middlewares/authenticate";
 
 export const countryRouter = Router();
 

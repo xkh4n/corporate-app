@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
-import { env } from "../env";
-import { ForbiddenError, UnauthorizedError } from "../errors";
+import { env } from "../library/env";
+import { ForbiddenError, UnauthorizedError } from "../library/errors";
 
 // authorize() sin argumentos = solo exige estar autenticado.
 // authorize("admin", "supervisor") = ademas exige uno de esos roles.

@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
-import { AppError } from "../errors";
-import { logger } from "../logger";
+import { AppError } from "../library/errors";
+import { logger } from "../library/logger";
 
 export function notFoundHandler(req: Request, res: Response): void {
   res.status(404).json({ error: `Ruta no encontrada: ${req.method} ${req.originalUrl}` });
