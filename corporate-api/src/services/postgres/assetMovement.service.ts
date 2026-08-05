@@ -78,7 +78,7 @@ export async function createAssetMovement(input: CreateAssetMovementInput): Prom
       );
     }
 
-    await setAssetStatus(input.assetId, newStatus.id, transaction);
+    await setAssetStatus(input.assetId, newStatus.id, transaction, input.createdBy ?? undefined);
 
     return created;
   });

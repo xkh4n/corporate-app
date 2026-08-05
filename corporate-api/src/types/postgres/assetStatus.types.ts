@@ -12,4 +12,6 @@ export interface AssetStatusAttributes {
 export type AssetStatusCreationAttributes = Pick<AssetStatusAttributes, "code" | "name"> &
   Partial<Pick<AssetStatusAttributes, "description" | "createdBy" | "updatedBy">>;
 
-export type AssetStatusUpdateAttributes = Partial<Pick<AssetStatusAttributes, "name" | "description">>;
+export type AssetStatusUpdateAttributes = Partial<
+  Pick<AssetStatusAttributes, "name" | "description" | "updatedBy">
+>;

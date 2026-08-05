@@ -83,7 +83,7 @@ export async function createAuthorization(
       },
       { transaction },
     );
-    await quote.update({ status: "SELECTED" }, { transaction });
+    await quote.update({ status: "SELECTED", updatedBy: data.approverId }, { transaction });
     return created;
   });
 

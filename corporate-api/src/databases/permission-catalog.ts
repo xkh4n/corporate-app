@@ -45,6 +45,10 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "suppliers", action: "update", description: "Editar proveedores" },
   { resource: "customers", action: "create", description: "Crear clientes" },
   { resource: "employees", action: "create", description: "Crear colaboradores" },
+  // PII (via la persona asociada): admin-only por defecto, mismo criterio
+  // que persons:read -no lleva grantToUser, corrige el hallazgo de
+  // auditoria donde /employees quedaba abierto a cualquier autenticado.
+  { resource: "employees", action: "read", description: "Consultar colaboradores" },
   { resource: "employees", action: "update", description: "Editar colaboradores" },
   { resource: "products", action: "create", description: "Crear productos" },
   { resource: "products", action: "update", description: "Editar productos" },

@@ -60,7 +60,10 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 export async function update(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof updatePurchaseRequestSchema>;
-    const request = await purchaseRequestService.updatePurchaseRequest(Number(req.params.id), body);
+    const request = await purchaseRequestService.updatePurchaseRequest(Number(req.params.id), {
+      ...body,
+      updatedBy: req.user?.userId,
+    });
     sendOk(res, request, "Solicitud actualizada exitosamente");
   } catch (err) {
     next(err);
@@ -70,7 +73,11 @@ export async function update(req: Request, res: Response, next: NextFunction): P
 export async function updateStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { status } = req.body as z.infer<typeof updateStatusSchema>;
-    const request = await purchaseRequestService.updatePurchaseRequestStatus(Number(req.params.id), status);
+    const request = await purchaseRequestService.updatePurchaseRequestStatus(
+      Number(req.params.id),
+      status,
+      req.user?.userId,
+    );
     sendOk(res, request, "Estado de la solicitud actualizado exitosamente");
   } catch (err) {
     next(err);

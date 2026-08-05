@@ -13,5 +13,5 @@ export type BusinessPartnerCreationAttributes = Pick<BusinessPartnerAttributes, 
   Partial<Pick<BusinessPartnerAttributes, "businessLine" | "createdBy" | "updatedBy">>;
 
 export type BusinessPartnerUpdateAttributes = Partial<
-  Pick<BusinessPartnerAttributes, "legalName" | "nationalId" | "businessLine">
+  Pick<BusinessPartnerAttributes, "legalName" | "nationalId" | "businessLine" | "updatedBy">
 >;

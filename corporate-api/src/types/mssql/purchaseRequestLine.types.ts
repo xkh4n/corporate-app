@@ -19,5 +19,5 @@ export type PurchaseRequestLineCreationAttributes = Pick<
   Partial<Pick<PurchaseRequestLineAttributes, "equipmentType" | "supplierId" | "createdBy" | "updatedBy">>;
 
 export type PurchaseRequestLineUpdateAttributes = Partial<
-  Pick<PurchaseRequestLineAttributes, "equipmentType" | "supplierId" | "quantity" | "status">
+  Pick<PurchaseRequestLineAttributes, "equipmentType" | "supplierId" | "quantity" | "status" | "updatedBy">
 >;

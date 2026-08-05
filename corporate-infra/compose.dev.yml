@@ -1111,11 +1111,15 @@ services:
             REDIS_PORT: ${REDIS_PORT}
             MSSQL_HOST: ${MSSQL_HOST}
             MSSQL_PORT: ${MSSQL_PORT}
+        # Bindeados a ALLOCATED_IP (la IP de LAN del anfitrion, ver
+        # corporate-secrets/Environment/.env), no a 0.0.0.0 -hallazgo de
+        # auditoria: sin esto, Docker publica en TODAS las interfaces del
+        # host (VPN, WiFi, etc.), no solo la red corporativa prevista.
         ports:
-            - "${POSTGRE_PORT}:${POSTGRE_PORT}"
-            - "${MONGO_PORT}:${MONGO_PORT}"
-            - "${REDIS_PORT}:${REDIS_PORT}"
-            - "${MSSQL_PORT}:${MSSQL_PORT}"
+            - "${ALLOCATED_IP}:${POSTGRE_PORT}:${POSTGRE_PORT}"
+            - "${ALLOCATED_IP}:${MONGO_PORT}:${MONGO_PORT}"
+            - "${ALLOCATED_IP}:${REDIS_PORT}:${REDIS_PORT}"
+            - "${ALLOCATED_IP}:${MSSQL_PORT}:${MSSQL_PORT}"
         networks:
             - backend
         depends_on:

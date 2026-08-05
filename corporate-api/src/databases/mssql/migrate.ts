@@ -78,6 +78,26 @@ async function migrateAuth(): Promise<void> {
       );
     END
   `);
+
+  // Historial de contraseñas: implementa PASSWORD_HISTORY_LIMIT (hallazgo de
+  // auditoria -la env var existia pero nada la usaba, "config fantasma").
+  // Solo guarda hashes VIEJOS (el hash actual vive en users.password_hash,
+  // no se duplica aca) -ver changePassword en services/mssql/user.service.ts:
+  // antes de cambiar, se compara la nueva contraseña contra el hash actual +
+  // las ultimas N filas de aca; despues de cambiar, el hash que quedo viejo
+  // se inserta aca y se podan las filas mas antiguas que las ultimas N.
+  await mssql.query(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'password_history')
+    BEGIN
+      CREATE TABLE password_history (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        user_id INT NOT NULL,
+        password_hash NVARCHAR(255) NOT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT fk_password_history_user FOREIGN KEY (user_id) REFERENCES users(id)
+      );
+    END
+  `);
 }
 
 // Jerarquia country -> city -> states (pese al nombre, "states" es el nivel

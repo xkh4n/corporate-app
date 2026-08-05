@@ -38,6 +38,7 @@ export async function update(req: Request, res: Response, next: NextFunction): P
     const asset = await assetService.updateAsset(Number(req.params.id), {
       ...body,
       value: body.value !== undefined ? String(body.value) : undefined,
+      updatedBy: req.user?.userId,
     });
     sendOk(res, asset, "Activo actualizado exitosamente");
   } catch (err) {

@@ -91,6 +91,10 @@ if (-not $apiNetworkExists) {
 
 Write-Host "Red externa '$apiExportersNetwork' encontrada, OK." -ForegroundColor Green
 
+# Certificado TLS autofirmado para nginxmondev (solo si falta): mismo
+# criterio idempotente que ensure-api-tls-cert.ps1.
+& (Join-Path $PSScriptRoot 'ensure-monitoring-tls-cert.ps1') -Environment $Ambiente
+
 Write-Host "Levantando stack de monitoreo [$Ambiente] -> $composeFile" -ForegroundColor Cyan
 
 # --wait implica -d (detached) y espera a que los healthchecks pasen. Sin

@@ -10,6 +10,6 @@ COPY config/nginx.conf.template /etc/nginx/templates/nginx.conf.template
 COPY entrypoint-wrapper.sh /usr/local/bin/entrypoint-wrapper.sh
 RUN chmod +x /usr/local/bin/entrypoint-wrapper.sh
 
-EXPOSE 3333
+EXPOSE 3333 3334
 
 ENTRYPOINT ["/usr/local/bin/entrypoint-wrapper.sh"]

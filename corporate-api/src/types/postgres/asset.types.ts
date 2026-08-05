@@ -27,5 +27,5 @@ export interface CreateAssetFromReceiptInput {
 }
 
 export type AssetUpdateAttributes = Partial<
-  Pick<AssetAttributes, "serialNumber" | "warrantyExpiresAt" | "value">
+  Pick<AssetAttributes, "serialNumber" | "warrantyExpiresAt" | "value" | "updatedBy">
 >;

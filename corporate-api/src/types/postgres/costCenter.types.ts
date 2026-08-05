@@ -13,5 +13,5 @@ export type CostCenterCreationAttributes = Pick<CostCenterAttributes, "code" | "
   Partial<Pick<CostCenterAttributes, "description" | "createdBy" | "updatedBy">>;
 
 export type CostCenterUpdateAttributes = Partial<
-  Pick<CostCenterAttributes, "code" | "name" | "description">
+  Pick<CostCenterAttributes, "code" | "name" | "description" | "updatedBy">
 >;

@@ -74,7 +74,10 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 export async function update(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof updateEmployeeSchema>;
-    const employee = await employeeService.updateEmployee(Number(req.params.id), body);
+    const employee = await employeeService.updateEmployee(Number(req.params.id), {
+      ...body,
+      updatedBy: req.user?.userId,
+    });
     sendOk(res, employee, "Colaborador actualizado exitosamente");
   } catch (err) {
     next(err);

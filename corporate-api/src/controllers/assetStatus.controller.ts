@@ -47,7 +47,10 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 export async function update(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof updateAssetStatusSchema>;
-    const status = await assetStatusService.updateAssetStatus(Number(req.params.id), body);
+    const status = await assetStatusService.updateAssetStatus(Number(req.params.id), {
+      ...body,
+      updatedBy: req.user?.userId,
+    });
     sendOk(res, status, "Estado de activo actualizado exitosamente");
   } catch (err) {
     next(err);

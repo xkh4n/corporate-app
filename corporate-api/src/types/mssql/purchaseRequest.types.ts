@@ -44,6 +44,13 @@ export type PurchaseRequestCreationAttributes = Pick<
 export type PurchaseRequestUpdateAttributes = Partial<
   Pick<
     PurchaseRequestAttributes,
-    "requesterPosition" | "requesterEmail" | "requesterPhone" | "beneficiaryPhone" | "beneficiaryUserId" | "notes" | "priority"
+    | "requesterPosition"
+    | "requesterEmail"
+    | "requesterPhone"
+    | "beneficiaryPhone"
+    | "beneficiaryUserId"
+    | "notes"
+    | "priority"
+    | "updatedBy"
   >
 >;

@@ -9,6 +9,7 @@ import {
   storeRefreshToken,
   isRefreshTokenValid,
   revokeRefreshToken,
+  invalidateUserSessions,
 } from "../services/redis/session.service";
 import { UnauthorizedError } from "../library/errors";
 import { sendOk, sendNoContent } from "../library/response";
@@ -116,19 +117,39 @@ export async function refresh(req: Request, res: Response, next: NextFunction): 
 export async function logout(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { refreshToken } = (req.body ?? {}) as { refreshToken?: string };
+    let userId: number | undefined;
+
     if (refreshToken) {
       try {
         const payload = verifyRefreshToken(refreshToken);
+        userId = payload.sub;
         if (payload.jti) await revokeRefreshToken(payload.jti, payload.sub);
       } catch {
         // Token ya invalido/expirado: no hay nada que revocar, no es un error de logout.
       }
     }
 
+    if (req.session?.user) {
+      userId = userId ?? req.session.user.userId;
+    }
+
     if (req.session) {
       await new Promise<void>((resolve, reject) => {
         req.session.destroy((err) => (err ? reject(err) : resolve()));
       });
+    }
+
+    // Hallazgo de auditoria: hasta ahora logout() solo revocaba EL refresh
+    // token puntual (o destruia la sesion de cookie), pero el access token
+    // JWT que el cliente ya tiene en la mano seguia siendo valido hasta su
+    // TTL natural (12h) aunque el usuario hiciera logout explicito. Mismo
+    // mecanismo que role_changed/password_changed (ver user.controller.ts):
+    // nota que esto invalida TODOS los dispositivos del usuario, no solo la
+    // sesion/token que esta llamando a logout -mismo alcance que
+    // revokeAllRefreshTokens, que ya se documenta como "logout de todos los
+    // dispositivos"-.
+    if (userId !== undefined) {
+      await invalidateUserSessions(userId, "logout");
     }
 
     sendNoContent(res);

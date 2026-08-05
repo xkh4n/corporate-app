@@ -18,4 +18,6 @@ export type AddressCreationAttributes = Pick<AddressAttributes, "addressType" | 
   Partial<Pick<AddressAttributes, "createdBy">> &
   ({ personId: number; businessPartnerId?: never } | { businessPartnerId: number; personId?: never });
 
-export type AddressUpdateAttributes = Partial<Pick<AddressAttributes, "addressType" | "addressLine" | "stateId">>;
+export type AddressUpdateAttributes = Partial<
+  Pick<AddressAttributes, "addressType" | "addressLine" | "stateId" | "updatedBy">
+>;

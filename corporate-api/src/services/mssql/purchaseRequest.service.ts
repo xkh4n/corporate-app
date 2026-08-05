@@ -87,8 +87,9 @@ export type PurchaseRequestStatus = (typeof VALID_STATUSES)[number];
 export async function updatePurchaseRequestStatus(
   id: number,
   status: PurchaseRequestStatus,
+  updatedBy?: number,
 ): Promise<PurchaseRequestModel> {
   const request = await getPurchaseRequestByIdOrThrow(id);
-  await request.update({ status });
+  await request.update({ status, updatedBy });
   return request;
 }

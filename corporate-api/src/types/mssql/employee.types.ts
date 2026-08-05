@@ -12,4 +12,6 @@ export interface EmployeeAttributes {
 export type EmployeeCreationAttributes = Pick<EmployeeAttributes, "personId" | "employeeCode" | "costCenterId"> &
   Partial<Pick<EmployeeAttributes, "createdBy" | "updatedBy">>;
 
-export type EmployeeUpdateAttributes = Partial<Pick<EmployeeAttributes, "employeeCode" | "costCenterId">>;
+export type EmployeeUpdateAttributes = Partial<
+  Pick<EmployeeAttributes, "employeeCode" | "costCenterId" | "updatedBy">
+>;

@@ -19,5 +19,5 @@ export type SupplierCreationAttributes = Pick<
   Partial<Pick<SupplierAttributes, "paymentTermDays" | "createdBy" | "updatedBy">>;
 
 export type SupplierUpdateAttributes = Partial<
-  Pick<SupplierAttributes, "serviceType" | "paymentTermDays" | "deliveryTerms">
+  Pick<SupplierAttributes, "serviceType" | "paymentTermDays" | "deliveryTerms" | "updatedBy">
 >;

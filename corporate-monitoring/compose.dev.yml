@@ -381,9 +381,12 @@ services:
             # URL externa (la que ve el navegador, a través del proxy NGINX de
             # este stack, NO localhost:3000 interno) -Grafana la usa para
             # armar links absolutos-.
-            GF_SERVER_ROOT_URL: http://${GF_SERVER_ROOT_URL}:${MONITORING_PROXY_PORT}
+            # https + MONITORING_SSL_PORT: hallazgo de auditoría, Grafana
+            # pasó a servirse por TLS (ver nginxmondev/nginx.conf.template),
+            # asi que su URL externa real ahora es la HTTPS, no la HTTP.
+            GF_SERVER_ROOT_URL: https://${GF_SERVER_ROOT_URL}:${MONITORING_SSL_PORT}
             GF_SECURITY_COOKIE_SAMESITE: lax
-            GF_SECURITY_COOKIE_SECURE: "false"
+            GF_SECURITY_COOKIE_SECURE: "true"
             GF_AUTH_LOGIN_COOKIE_NAME: grafana_session_${SUFFIX}
             GF_AUTH_TOKEN_ROTATION_INTERVAL_MINUTES: "10"
             # Consumidas por provisioning/datasources/datasources.yml
@@ -472,8 +475,18 @@ services:
         environment:
             GRAFANA_HOST: ${GRAFANA_HOST}
             SUFFIX: ${SUFFIX}
+            MONITORING_SSL_PORT: ${MONITORING_SSL_PORT}
+        volumes:
+            # Development hardcodeado a proposito, mismo criterio que
+            # corporate-api/compose.dev.yml: este archivo es dev-only (no
+            # existe compose.test.yml/compose.prod.yml todavia).
+            - ../corporate-secrets/Development/certs/monitoring:/etc/nginx/certs:ro
+        # Bindeado a ALLOCATED_IP, no a 0.0.0.0 -mismo criterio que
+        # corporate-infra/corporate-api. Puerto 3333 (interno) solo hace el
+        # 301 a HTTPS (3334 interno) -mismo patron que corporate-api/nginx.
         ports:
-            - "${MONITORING_PROXY_PORT}:3333"
+            - "${ALLOCATED_IP}:${MONITORING_PROXY_PORT}:3333"
+            - "${ALLOCATED_IP}:${MONITORING_SSL_PORT}:3334"
         networks:
             - monitoring
         depends_on:

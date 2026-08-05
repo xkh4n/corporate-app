@@ -1,10 +1,13 @@
 import { Op } from "sequelize";
+import { mssql } from "../../databases/mssql/connection";
 import { UserModel } from "../../models/mssql/user.model";
 import { PersonModel } from "../../models/mssql/person.model";
+import { PasswordHistoryModel } from "../../models/mssql/passwordHistory.model";
 import { getPersonByIdOrThrow } from "./person.service";
 import { getRoleByIdOrThrow } from "../postgres/role.service";
-import { hashPassword, assertPasswordPolicy } from "../../library/password";
+import { hashPassword, comparePassword, assertPasswordPolicy } from "../../library/password";
 import { ConflictError, NotFoundError } from "../../library/errors";
+import { env } from "../../library/env";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
@@ -86,11 +89,62 @@ export async function updateUser(id: number, data: UserUpdateAttributes): Promis
   return toSafeUser(await getUserByIdOrThrow(id));
 }
 
+// PASSWORD_HISTORY_LIMIT: no puede reutilizarse ninguna de las ultimas N
+// contraseñas (incluyendo la ACTUAL, que todavia no esta en password_history
+// -ese insert pasa recien despues de este check-). Transaccion: inserta el
+// hash VIEJO en el historial, poda lo que sobre de las ultimas N, y recien
+// ahi pisa users.password_hash -si algo falla a mitad de camino, no queda
+// la contraseña cambiada con el historial a medio actualizar.
 export async function changePassword(id: number, newPassword: string): Promise<void> {
   const user = await getUserByIdOrThrow(id);
   assertPasswordPolicy(newPassword);
+
+  const historyLimit = env.password.historyLimit;
+  if (historyLimit > 0) {
+    if (await comparePassword(newPassword, user.passwordHash)) {
+      throw new ConflictError("No puede reutilizar su contraseña actual", { field: "password" });
+    }
+
+    const recentHistory = await PasswordHistoryModel.findAll({
+      where: { userId: id },
+      order: [["createdAt", "DESC"]],
+      limit: historyLimit - 1,
+    });
+    for (const entry of recentHistory) {
+      if (await comparePassword(newPassword, entry.passwordHash)) {
+        throw new ConflictError(
+          `No puede reutilizar ninguna de sus ultimas ${historyLimit} contraseñas`,
+          { field: "password" },
+        );
+      }
+    }
+  }
+
   const passwordHash = await hashPassword(newPassword);
-  await user.update({ passwordHash });
+
+  await mssql.transaction(async (transaction) => {
+    await PasswordHistoryModel.create(
+      { userId: id, passwordHash: user.passwordHash },
+      { transaction },
+    );
+
+    if (historyLimit > 0) {
+      const staleEntries = await PasswordHistoryModel.findAll({
+        where: { userId: id },
+        order: [["createdAt", "DESC"]],
+        offset: historyLimit,
+        transaction,
+      });
+      if (staleEntries.length > 0) {
+        await PasswordHistoryModel.destroy({
+          where: { id: staleEntries.map((entry) => entry.id) },
+          transaction,
+        });
+      }
+    }
+
+    await user.update({ passwordHash }, { transaction });
+  });
 }
 
 export async function deactivateUser(id: number): Promise<void> {

@@ -15,6 +15,7 @@ import { seedProducts } from "./src/services/mongo/product.service";
 // *.model.ts) antes de que cualquier query las necesite.
 import "./src/models/mssql/person.model";
 import "./src/models/mssql/user.model";
+import "./src/models/mssql/passwordHistory.model";
 import "./src/models/postgres/role.model";
 import "./src/models/postgres/permission.model";
 import "./src/models/postgres/rolePermission.model";

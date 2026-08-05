@@ -79,7 +79,13 @@ x-api-common: &api-common
                 memory: 512M
                 cpus: "1.0"
     environment:
-        NODE_ENV: development
+        # NODE_ENV/CORS_ORIGIN vienen del .env de CADA ambiente (Development/
+        # Testing/Production), no hardcodeados aca -hallazgo de auditoria:
+        # antes, este valor literal se aplicaba SIEMPRE sin importar que
+        # dijera el .env cargado, asi que "development" hardcodeado rompia
+        # silenciosamente cookie.secure (ver api.ts) el dia que este mismo
+        # compose se reusara para test/prod.
+        NODE_ENV: ${NODE_ENV}
         PORT: ${API_INTERNAL_PORT}
         SUFFIX: ${SUFFIX}
         # Docker Desktop (Windows) no siempre propaga eventos inotify del
@@ -88,7 +94,7 @@ x-api-common: &api-common
         # a mano -confirmado en este host, ver corporate-api/compose.dev.yml-.
         CHOKIDAR_USEPOLLING: "true"
         CHOKIDAR_INTERVAL: "300"
-        CORS_ORIGIN: "*"
+        CORS_ORIGIN: ${CORS_ORIGIN}
         # Hosts ya resueltos al nodo PRIMARIO de cada motor, mismo criterio
         # que los exporters de corporate-infra (la concatenación
         # "${HOST}01${SUFFIX}" se hace acá, no en el código de la app).
@@ -208,9 +214,11 @@ services:
             # "listen 443" adentro del contenedor no tiene relacion con el
             # puerto publicado afuera-.
             API_SSL_PORT: ${API_SSL_PORT}
+        # Bindeado a ALLOCATED_IP, no a 0.0.0.0 -mismo criterio que
+        # corporate-infra/compose.dev.yml, ver comentario ahi.
         ports:
-            - "${API_PORT}:80"
-            - "${API_SSL_PORT}:443"
+            - "${ALLOCATED_IP}:${API_PORT}:80"
+            - "${ALLOCATED_IP}:${API_SSL_PORT}:443"
         volumes:
             # tls.crt/tls.key: autofirmados por defecto (ver
             # corporate-scripts/ensure-api-tls-cert.ps1), reemplazables por

@@ -44,7 +44,10 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 export async function update(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof updateCostCenterSchema>;
-    const costCenter = await costCenterService.updateCostCenter(Number(req.params.id), body);
+    const costCenter = await costCenterService.updateCostCenter(Number(req.params.id), {
+      ...body,
+      updatedBy: req.user?.userId,
+    });
     sendOk(res, costCenter, "Centro de costo actualizado exitosamente");
   } catch (err) {
     next(err);

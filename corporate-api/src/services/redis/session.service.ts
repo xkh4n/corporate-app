@@ -43,7 +43,7 @@ export async function revokeAllRefreshTokens(userId: number): Promise<void> {
   await pipeline.exec();
 }
 
-export type InvalidationReason = "role_changed" | "password_changed" | "deactivated";
+export type InvalidationReason = "role_changed" | "password_changed" | "deactivated" | "logout";
 
 export interface UserInvalidation {
   validAfter: number; // epoch seconds

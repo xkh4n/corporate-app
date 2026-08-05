@@ -94,6 +94,11 @@ export async function updateAsset(id: number, data: AssetUpdateAttributes): Prom
   return asset;
 }
 
-export async function setAssetStatus(id: number, statusId: number, transaction?: Transaction): Promise<void> {
-  await AssetModel.update({ statusId }, { where: { id }, transaction });
+export async function setAssetStatus(
+  id: number,
+  statusId: number,
+  transaction?: Transaction,
+  updatedBy?: number,
+): Promise<void> {
+  await AssetModel.update({ statusId, updatedBy }, { where: { id }, transaction });
 }

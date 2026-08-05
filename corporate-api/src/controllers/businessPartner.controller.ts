@@ -44,7 +44,10 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 export async function update(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof updateBusinessPartnerSchema>;
-    const partner = await businessPartnerService.updateBusinessPartner(Number(req.params.id), body);
+    const partner = await businessPartnerService.updateBusinessPartner(Number(req.params.id), {
+      ...body,
+      updatedBy: req.user?.userId,
+    });
     sendOk(res, partner, "Tercero actualizado exitosamente");
   } catch (err) {
     next(err);
