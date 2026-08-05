@@ -1,0 +1,1012 @@
+[
+  {
+    "iata_code": "ANF",
+    "name_city": "ANTOFAGASTA",
+    "iso_code": "CHL"
+  },
+  {
+    "iata_code": "SCL",
+    "name_city": "METROPOLITANA DE SANTIAG",
+    "iso_code": "CHL"
+  },
+  {
+    "iata_code": "ANU",
+    "name_city": "SAINT JOHNS",
+    "iso_code": "ATG"
+  },
+  {
+    "iata_code": "APW",
+    "name_city": "APIA",
+    "iso_code": "WSM"
+  },
+  {
+    "iata_code": "ARI",
+    "name_city": "ARICA Y PARINACOTA",
+    "iso_code": "CHL"
+  },
+  {
+    "iata_code": "ARN",
+    "name_city": "ESTOCOLMO",
+    "iso_code": "SWE"
+  },
+  {
+    "iata_code": "ASB",
+    "name_city": "ASJABAD",
+    "iso_code": "TKM"
+  },
+  {
+    "iata_code": "ASM",
+    "name_city": "ASMARA",
+    "iso_code": "ERI"
+  },
+  {
+    "iata_code": "ASU",
+    "name_city": "ASUNCION",
+    "iso_code": "PRY"
+  },
+  {
+    "iata_code": "ATH",
+    "name_city": "ATENAS",
+    "iso_code": "GRC"
+  },
+  {
+    "iata_code": "AUH",
+    "name_city": "ABU DABI",
+    "iso_code": "ARE"
+  },
+  {
+    "iata_code": "BAH",
+    "name_city": "MANAMA",
+    "iso_code": "BHR"
+  },
+  {
+    "iata_code": "BAK",
+    "name_city": "BAKU",
+    "iso_code": "AZE"
+  },
+  {
+    "iata_code": "BBA",
+    "name_city": "AYSEN DEL GENERAL CARLOS IBANEZ DEL CAMPO",
+    "iso_code": "CHL"
+  },
+  {
+    "iata_code": "BCV",
+    "name_city": "BELMOPAN",
+    "iso_code": "BLZ"
+  },
+  {
+    "iata_code": "BEG",
+    "name_city": "BELGRADO",
+    "iso_code": "SRB"
+  },
+  {
+    "iata_code": "BER",
+    "name_city": "BERLIN",
+    "iso_code": "DEU"
+  },
+  {
+    "iata_code": "BEY",
+    "name_city": "BEIRUT",
+    "iso_code": "LBN"
+  },
+  {
+    "iata_code": "BGF",
+    "name_city": "BANGUI",
+    "iso_code": "CAF"
+  },
+  {
+    "iata_code": "BGI",
+    "name_city": "BRIDGETOWN",
+    "iso_code": "BRB"
+  },
+  {
+    "iata_code": "BGW",
+    "name_city": "BAGDAD",
+    "iso_code": "IRQ"
+  },
+  {
+    "iata_code": "BJL",
+    "name_city": "BANJUL",
+    "iso_code": "GMB"
+  },
+  {
+    "iata_code": "BJM",
+    "name_city": "BUJUMBURA",
+    "iso_code": "BDI"
+  },
+  {
+    "iata_code": "BKK",
+    "name_city": "BANGKOK",
+    "iso_code": "THA"
+  },
+  {
+    "iata_code": "BKO",
+    "name_city": "BAMAKO",
+    "iso_code": "MLI"
+  },
+  {
+    "iata_code": "BOG",
+    "name_city": "BOGOTA",
+    "iso_code": "COL"
+  },
+  {
+    "iata_code": "BRU",
+    "name_city": "BRUSELAS",
+    "iso_code": "BEL"
+  },
+  {
+    "iata_code": "BSB",
+    "name_city": "BRASILIA",
+    "iso_code": "BRA"
+  },
+  {
+    "iata_code": "BTS",
+    "name_city": "BRATISLAVA",
+    "iso_code": "SVK"
+  },
+  {
+    "iata_code": "BUD",
+    "name_city": "BUDAPEST",
+    "iso_code": "HUN"
+  },
+  {
+    "iata_code": "BUE",
+    "name_city": "BUENOS AIRES",
+    "iso_code": "ARG"
+  },
+  {
+    "iata_code": "BWN",
+    "name_city": "BANDAR SERI BEGAWAN",
+    "iso_code": "BRN"
+  },
+  {
+    "iata_code": "BZV",
+    "name_city": "BRAZZAVILLE",
+    "iso_code": "COG"
+  },
+  {
+    "iata_code": "CAI",
+    "name_city": "EL CAIRO",
+    "iso_code": "EGY"
+  },
+  {
+    "iata_code": "CBR",
+    "name_city": "CANBERRA",
+    "iso_code": "AUS"
+  },
+  {
+    "iata_code": "CCP",
+    "name_city": "BIOBIO",
+    "iso_code": "CHL"
+  },
+  {
+    "iata_code": "CCS",
+    "name_city": "CARACAS",
+    "iso_code": "VEN"
+  },
+  {
+    "iata_code": "CDG",
+    "name_city": "PARIS",
+    "iso_code": "FRA"
+  },
+  {
+    "iata_code": "CGK",
+    "name_city": "YAKARTA",
+    "iso_code": "IDN"
+  },
+  {
+    "iata_code": "CIA",
+    "name_city": "CIUDAD DEL VATICANO",
+    "iso_code": "VAT"
+  },
+  {
+    "iata_code": "CKY",
+    "name_city": "CONAKRI",
+    "iso_code": "GIN"
+  },
+  {
+    "iata_code": "CMB",
+    "name_city": "COLOMBO",
+    "iso_code": "LKA"
+  },
+  {
+    "iata_code": "CMN",
+    "name_city": "RABAT",
+    "iso_code": "MAR"
+  },
+  {
+    "iata_code": "COO",
+    "name_city": "PORTO NOVO",
+    "iso_code": "BEN"
+  },
+  {
+    "iata_code": "CPH",
+    "name_city": "COPENHAGUE",
+    "iso_code": "DNK"
+  },
+  {
+    "iata_code": "CPO",
+    "name_city": "ATACAMA",
+    "iso_code": "CHL"
+  },
+  {
+    "iata_code": "DAC",
+    "name_city": "DACA",
+    "iso_code": "BGD"
+  },
+  {
+    "iata_code": "DAM",
+    "name_city": "DAMASCO",
+    "iso_code": "SYR"
+  },
+  {
+    "iata_code": "DAR",
+    "name_city": "DODOMA",
+    "iso_code": "TZA"
+  },
+  {
+    "iata_code": "DEL",
+    "name_city": "NUEVA DELHI",
+    "iso_code": "IND"
+  },
+  {
+    "iata_code": "DIL",
+    "name_city": "DILI",
+    "iso_code": "TLS"
+  },
+  {
+    "iata_code": "DKR",
+    "name_city": "DAKAR",
+    "iso_code": "SEN"
+  },
+  {
+    "iata_code": "DOH",
+    "name_city": "DOHA",
+    "iso_code": "QAT"
+  },
+  {
+    "iata_code": "DOM",
+    "name_city": "ROSEAU",
+    "iso_code": "DMA"
+  },
+  {
+    "iata_code": "DUB",
+    "name_city": "DUBLIN",
+    "iso_code": "IRL"
+  },
+  {
+    "iata_code": "DYU",
+    "name_city": "DUSAMBE",
+    "iso_code": "TJK"
+  },
+  {
+    "iata_code": "EBB",
+    "name_city": "KAMPALA",
+    "iso_code": "UGA"
+  },
+  {
+    "iata_code": "EVN",
+    "name_city": "EREVAN",
+    "iso_code": "ARM"
+  },
+  {
+    "iata_code": "FCO",
+    "name_city": "ROMA",
+    "iso_code": "ITA"
+  },
+  {
+    "iata_code": "FIH",
+    "name_city": "KINSHASA",
+    "iso_code": "COD"
+  },
+  {
+    "iata_code": "FNA",
+    "name_city": "FREETOWN",
+    "iso_code": "SLE"
+  },
+  {
+    "iata_code": "FNJ",
+    "name_city": "PYONGYANG",
+    "iso_code": "PRK"
+  },
+  {
+    "iata_code": "FRU",
+    "name_city": "BISKEK",
+    "iso_code": "KGZ"
+  },
+  {
+    "iata_code": "FUN",
+    "name_city": "FUNAFUTI",
+    "iso_code": "TUV"
+  },
+  {
+    "iata_code": "GBE",
+    "name_city": "GABORONE",
+    "iso_code": "BWA"
+  },
+  {
+    "iata_code": "GEO",
+    "name_city": "GEORGETOWN",
+    "iso_code": "GUY"
+  },
+  {
+    "iata_code": "GND",
+    "name_city": "SAINT GEORGES",
+    "iso_code": "GRD"
+  },
+  {
+    "iata_code": "GUA",
+    "name_city": "CIUDAD DE GUATEMALA",
+    "iso_code": "GTM"
+  },
+  {
+    "iata_code": "HAH",
+    "name_city": "MORONI",
+    "iso_code": "COM"
+  },
+  {
+    "iata_code": "HAV",
+    "name_city": "LA HABANA",
+    "iso_code": "CUB"
+  },
+  {
+    "iata_code": "HEL",
+    "name_city": "HELSINKI",
+    "iso_code": "FIN"
+  },
+  {
+    "iata_code": "HIR",
+    "name_city": "HONIARA",
+    "iso_code": "SLB"
+  },
+  {
+    "iata_code": "HND",
+    "name_city": "TOKIO",
+    "iso_code": "JPN"
+  },
+  {
+    "iata_code": "HRE",
+    "name_city": "HARARE",
+    "iso_code": "ZWE"
+  },
+  {
+    "iata_code": "ICN",
+    "name_city": "SEUL",
+    "iso_code": "KOR"
+  },
+  {
+    "iata_code": "INU",
+    "name_city": "YAREN",
+    "iso_code": "NRU"
+  },
+  {
+    "iata_code": "IPC",
+    "name_city": "VALPARAISO",
+    "iso_code": "CHL"
+  },
+  {
+    "iata_code": "IQQ",
+    "name_city": "TARAPACA",
+    "iso_code": "CHL"
+  },
+  {
+    "iata_code": "ISB",
+    "name_city": "ISLAMABAD",
+    "iso_code": "PAK"
+  },
+  {
+    "iata_code": "IST",
+    "name_city": "ANKARA",
+    "iso_code": "TUR"
+  },
+  {
+    "iata_code": "JIB",
+    "name_city": "YIBUTI",
+    "iso_code": "DJI"
+  },
+  {
+    "iata_code": "JNB",
+    "name_city": "PRETORIA",
+    "iso_code": "ZAF"
+  },
+  {
+    "iata_code": "JUB",
+    "name_city": "YUBA",
+    "iso_code": "SSD"
+  },
+  {
+    "iata_code": "KBL",
+    "name_city": "KABUL",
+    "iso_code": "AFG"
+  },
+  {
+    "iata_code": "KBP",
+    "name_city": "KIEV",
+    "iso_code": "UKR"
+  },
+  {
+    "iata_code": "KEF",
+    "name_city": "REIKIAVIK",
+    "iso_code": "ISL"
+  },
+  {
+    "iata_code": "KGL",
+    "name_city": "KIGALI",
+    "iso_code": "RWA"
+  },
+  {
+    "iata_code": "KIN",
+    "name_city": "KINGSTON",
+    "iso_code": "JAM"
+  },
+  {
+    "iata_code": "KIV",
+    "name_city": "CHISINAU",
+    "iso_code": "MDA"
+  },
+  {
+    "iata_code": "KRT",
+    "name_city": "JARTUM",
+    "iso_code": "SDN"
+  },
+  {
+    "iata_code": "KTM",
+    "name_city": "KATMANDU",
+    "iso_code": "NPL"
+  },
+  {
+    "iata_code": "KUL",
+    "name_city": "KUALA LUMPUR",
+    "iso_code": "MYS"
+  },
+  {
+    "iata_code": "KWI",
+    "name_city": "KUWAIT",
+    "iso_code": "KWT"
+  },
+  {
+    "iata_code": "LAD",
+    "name_city": "LUANDA",
+    "iso_code": "AGO"
+  },
+  {
+    "iata_code": "LBV",
+    "name_city": "LIBREVILLE",
+    "iso_code": "GAB"
+  },
+  {
+    "iata_code": "LFW",
+    "name_city": "LOME",
+    "iso_code": "TGO"
+  },
+  {
+    "iata_code": "LHR",
+    "name_city": "LONDRES",
+    "iso_code": "GBR"
+  },
+  {
+    "iata_code": "LIM",
+    "name_city": "LIMA",
+    "iso_code": "PER"
+  },
+  {
+    "iata_code": "LIS",
+    "name_city": "LISBOA",
+    "iso_code": "PRT"
+  },
+  {
+    "iata_code": "LJU",
+    "name_city": "LIUBLIANA",
+    "iso_code": "SVN"
+  },
+  {
+    "iata_code": "LLW",
+    "name_city": "LILONG�E",
+    "iso_code": "MWI"
+  },
+  {
+    "iata_code": "LOS",
+    "name_city": "ABUYA",
+    "iso_code": "NGA"
+  },
+  {
+    "iata_code": "LSC",
+    "name_city": "COQUIMBO",
+    "iso_code": "CHL"
+  },
+  {
+    "iata_code": "LUN",
+    "name_city": "LUSAKA",
+    "iso_code": "ZMB"
+  },
+  {
+    "iata_code": "LUX",
+    "name_city": "LUXEMBURGO",
+    "iso_code": "LUX"
+  },
+  {
+    "iata_code": "MAD",
+    "name_city": "MADRID",
+    "iso_code": "ESP"
+  },
+  {
+    "iata_code": "MAJ",
+    "name_city": "MAJURO",
+    "iso_code": "MHL"
+  },
+  {
+    "iata_code": "MCT",
+    "name_city": "MASCATE",
+    "iso_code": "OMN"
+  },
+  {
+    "iata_code": "MEX",
+    "name_city": "CIUDAD DE MEXICO",
+    "iso_code": "MEX"
+  },
+  {
+    "iata_code": "MGA",
+    "name_city": "MANAGUA",
+    "iso_code": "NIC"
+  },
+  {
+    "iata_code": "MGQ",
+    "name_city": "MOGADISCIO",
+    "iso_code": "SOM"
+  },
+  {
+    "iata_code": "MHC",
+    "name_city": "LOS LAGOS",
+    "iso_code": "CHL"
+  },
+  {
+    "iata_code": "MLA",
+    "name_city": "LA VALETA",
+    "iso_code": "MLT"
+  },
+  {
+    "iata_code": "MLE",
+    "name_city": "MALE",
+    "iso_code": "MDV"
+  },
+  {
+    "iata_code": "MNL",
+    "name_city": "MANILA",
+    "iso_code": "PHL"
+  },
+  {
+    "iata_code": "MPM",
+    "name_city": "MAPUTO",
+    "iso_code": "MOZ"
+  },
+  {
+    "iata_code": "MRU",
+    "name_city": "PORT LOUIS",
+    "iso_code": "MUS"
+  },
+  {
+    "iata_code": "MSQ",
+    "name_city": "MINSK",
+    "iso_code": "BLR"
+  },
+  {
+    "iata_code": "MSU",
+    "name_city": "MASERU",
+    "iso_code": "LSO"
+  },
+  {
+    "iata_code": "MTS",
+    "name_city": "MBABANE",
+    "iso_code": "SWZ"
+  },
+  {
+    "iata_code": "MVD",
+    "name_city": "MONTEVIDEO",
+    "iso_code": "URY"
+  },
+  {
+    "iata_code": "NAS",
+    "name_city": "NASAU",
+    "iso_code": "BHS"
+  },
+  {
+    "iata_code": "NBO",
+    "name_city": "NAIROBI",
+    "iso_code": "KEN"
+  },
+  {
+    "iata_code": "NCE",
+    "name_city": "MONACO",
+    "iso_code": "MCO"
+  },
+  {
+    "iata_code": "NDJ",
+    "name_city": "YAMENA",
+    "iso_code": "TCD"
+  },
+  {
+    "iata_code": "NIC",
+    "name_city": "NICOSIA",
+    "iso_code": "CYP"
+  },
+  {
+    "iata_code": "NIM",
+    "name_city": "NIAMEY",
+    "iso_code": "NER"
+  },
+  {
+    "iata_code": "NKC",
+    "name_city": "NUAKCHOT",
+    "iso_code": "MRT"
+  },
+  {
+    "iata_code": "NQZ",
+    "name_city": "NUR-SULTAN",
+    "iso_code": "KAZ"
+  },
+  {
+    "iata_code": "NSI",
+    "name_city": "YAUNDE",
+    "iso_code": "CMR"
+  },
+  {
+    "iata_code": "NYT",
+    "name_city": "NAIPYIDO",
+    "iso_code": "MMR"
+  },
+  {
+    "iata_code": "OSL",
+    "name_city": "OSLO",
+    "iso_code": "NOR"
+  },
+  {
+    "iata_code": "OTP",
+    "name_city": "BUCAREST",
+    "iso_code": "ROU"
+  },
+  {
+    "iata_code": "OUA",
+    "name_city": "UAGADUGU",
+    "iso_code": "BFA"
+  },
+  {
+    "iata_code": "OXB",
+    "name_city": "BISAU",
+    "iso_code": "GNB"
+  },
+  {
+    "iata_code": "PAP",
+    "name_city": "PUERTO PRINCIPE",
+    "iso_code": "HTI"
+  },
+  {
+    "iata_code": "PBH",
+    "name_city": "TIMBU",
+    "iso_code": "BTN"
+  },
+  {
+    "iata_code": "PBM",
+    "name_city": "PARAMARIBO",
+    "iso_code": "SUR"
+  },
+  {
+    "iata_code": "PEK",
+    "name_city": "PEKIN",
+    "iso_code": "CHN"
+  },
+  {
+    "iata_code": "PNH",
+    "name_city": "NOM PEN",
+    "iso_code": "KHM"
+  },
+  {
+    "iata_code": "PNI",
+    "name_city": "PALIKIR",
+    "iso_code": "FSM"
+  },
+  {
+    "iata_code": "PNT",
+    "name_city": "MAGALLANES Y ANTARTICA CHILENA",
+    "iso_code": "CHL"
+  },
+  {
+    "iata_code": "POM",
+    "name_city": "PORT MORESBY",
+    "iso_code": "PNG"
+  },
+  {
+    "iata_code": "POS",
+    "name_city": "PUERTO ESPANA",
+    "iso_code": "TTO"
+  },
+  {
+    "iata_code": "PRG",
+    "name_city": "PRAGA",
+    "iso_code": "CZE"
+  },
+  {
+    "iata_code": "PTY",
+    "name_city": "PANAMA",
+    "iso_code": "PAN"
+  },
+  {
+    "iata_code": "QRC",
+    "name_city": "LIB GRAL BERNARDO O HIGGINS",
+    "iso_code": "CHL"
+  },
+  {
+    "iata_code": "RAI",
+    "name_city": "PRAIA",
+    "iso_code": "CPV"
+  },
+  {
+    "iata_code": "RIX",
+    "name_city": "RIGA",
+    "iso_code": "LVA"
+  },
+  {
+    "iata_code": "ROB",
+    "name_city": "MONROVIA",
+    "iso_code": "LBR"
+  },
+  {
+    "iata_code": "ROR",
+    "name_city": "MELEKEOK",
+    "iso_code": "PLW"
+  },
+  {
+    "iata_code": "RUH",
+    "name_city": "RIAD",
+    "iso_code": "SAU"
+  },
+  {
+    "iata_code": "SAH",
+    "name_city": "SANA",
+    "iso_code": "YEM"
+  },
+  {
+    "iata_code": "SAI",
+    "name_city": "SAN MARINO",
+    "iso_code": "SMR"
+  },
+  {
+    "iata_code": "SAL",
+    "name_city": "SAN SALVADOR",
+    "iso_code": "SLV"
+  },
+  {
+    "iata_code": "SDQ",
+    "name_city": "SANTO DOMINGO",
+    "iso_code": "DOM"
+  },
+  {
+    "iata_code": "SEZ",
+    "name_city": "VICTORIA",
+    "iso_code": "SYC"
+  },
+  {
+    "iata_code": "SGN",
+    "name_city": "HANOI",
+    "iso_code": "VNM"
+  },
+  {
+    "iata_code": "SIN",
+    "name_city": "SINGAPUR",
+    "iso_code": "SGP"
+  },
+  {
+    "iata_code": "SJJ",
+    "name_city": "SARAJEVO",
+    "iso_code": "BIH"
+  },
+  {
+    "iata_code": "SJO",
+    "name_city": "SAN JOSE",
+    "iso_code": "CRI"
+  },
+  {
+    "iata_code": "SKB",
+    "name_city": "BASSETERRE",
+    "iso_code": "KNA"
+  },
+  {
+    "iata_code": "SKP",
+    "name_city": "SKOPIE",
+    "iso_code": "MKD"
+  },
+  {
+    "iata_code": "SOF",
+    "name_city": "SOFIA",
+    "iso_code": "BGR"
+  },
+  {
+    "iata_code": "SRE",
+    "name_city": "SUCRE",
+    "iso_code": "BOL"
+  },
+  {
+    "iata_code": "SSG",
+    "name_city": "MALABO",
+    "iso_code": "GNQ"
+  },
+  {
+    "iata_code": "SUV",
+    "name_city": "SUVA",
+    "iso_code": "FJI"
+  },
+  {
+    "iata_code": "SVD",
+    "name_city": "KINGSTOWN",
+    "iso_code": "VCT"
+  },
+  {
+    "iata_code": "SVO",
+    "name_city": "MOSCU",
+    "iso_code": "RUS"
+  },
+  {
+    "iata_code": "TAS",
+    "name_city": "TASKENT",
+    "iso_code": "UZB"
+  },
+  {
+    "iata_code": "TBS",
+    "name_city": "TIFLIS",
+    "iso_code": "GEO"
+  },
+  {
+    "iata_code": "TBU",
+    "name_city": "NUKUALOFA",
+    "iso_code": "TON"
+  },
+  {
+    "iata_code": "TGD",
+    "name_city": "PODGORICA",
+    "iso_code": "MNE"
+  },
+  {
+    "iata_code": "TGU",
+    "name_city": "TEGUCIGALPA",
+    "iso_code": "HND"
+  },
+  {
+    "iata_code": "THR",
+    "name_city": "TEHERAN",
+    "iso_code": "IRN"
+  },
+  {
+    "iata_code": "TIA",
+    "name_city": "TIRANA",
+    "iso_code": "ALB"
+  },
+  {
+    "iata_code": "TIP",
+    "name_city": "TRIPOLI",
+    "iso_code": "LBY"
+  },
+  {
+    "iata_code": "TLL",
+    "name_city": "TALLIN",
+    "iso_code": "EST"
+  },
+  {
+    "iata_code": "TLV",
+    "name_city": "JERUSALEN",
+    "iso_code": "ISR"
+  },
+  {
+    "iata_code": "TMS",
+    "name_city": "SANTO TOME",
+    "iso_code": "STP"
+  },
+  {
+    "iata_code": "TNR",
+    "name_city": "ANTANANARIVO",
+    "iso_code": "MDG"
+  },
+  {
+    "iata_code": "TPE",
+    "name_city": "TAIPEI",
+    "iso_code": "TWN"
+  },
+  {
+    "iata_code": "TRW",
+    "name_city": "TARAWA",
+    "iso_code": "KIR"
+  },
+  {
+    "iata_code": "TUN",
+    "name_city": "TUNEZ",
+    "iso_code": "TUN"
+  },
+  {
+    "iata_code": "UIO",
+    "name_city": "QUITO",
+    "iso_code": "ECU"
+  },
+  {
+    "iata_code": "ULN",
+    "name_city": "ULAN BATOR",
+    "iso_code": "MNG"
+  },
+  {
+    "iata_code": "UVF",
+    "name_city": "CASTRIES",
+    "iso_code": "LCA"
+  },
+  {
+    "iata_code": "VIE",
+    "name_city": "VIENA",
+    "iso_code": "AUT"
+  },
+  {
+    "iata_code": "VLI",
+    "name_city": "PORT VILA",
+    "iso_code": "VUT"
+  },
+  {
+    "iata_code": "VNO",
+    "name_city": "VILNA",
+    "iso_code": "LTU"
+  },
+  {
+    "iata_code": "VTE",
+    "name_city": "VIENTIAN",
+    "iso_code": "LAO"
+  },
+  {
+    "iata_code": "WAS",
+    "name_city": "WASHINGTON DC",
+    "iso_code": "USA"
+  },
+  {
+    "iata_code": "WAW",
+    "name_city": "VARSOVIA",
+    "iso_code": "POL"
+  },
+  {
+    "iata_code": "WDH",
+    "name_city": "WINDHOEK",
+    "iso_code": "NAM"
+  },
+  {
+    "iata_code": "WLG",
+    "name_city": "WELLINGTON",
+    "iso_code": "NZL"
+  },
+  {
+    "iata_code": "YAI",
+    "name_city": "NUBLE",
+    "iso_code": "CHL"
+  },
+  {
+    "iata_code": "YOW",
+    "name_city": "OTTAWA",
+    "iso_code": "CAN"
+  },
+  {
+    "iata_code": "ZAG",
+    "name_city": "ZAGREB",
+    "iso_code": "HRV"
+  },
+  {
+    "iata_code": "ZAL",
+    "name_city": "LOS RIOS",
+    "iso_code": "CHL"
+  },
+  {
+    "iata_code": "ZCO",
+    "name_city": "LA ARAUCANIA",
+    "iso_code": "CHL"
+  },
+  {
+    "iata_code": "ZLR",
+    "name_city": "MAULE",
+    "iso_code": "CHL"
+  },
+  {
+    "iata_code": "ZRH",
+    "name_city": "BERNA",
+    "iso_code": "CHE"
+  }
+]

@@ -21,11 +21,14 @@ SQLCMD=(/opt/mssql-tools18/bin/sqlcmd -C)
 : "${MSSQL_SA_PASSWORD_FILE:?falta MSSQL_SA_PASSWORD_FILE}"
 : "${MSSQL_EXPORTER_USER:?falta MSSQL_EXPORTER_USER}"
 : "${MSSQL_EXPORTER_PASSWORD_FILE:?falta MSSQL_EXPORTER_PASSWORD_FILE}"
+: "${MSSQL_APP_USER:?falta MSSQL_APP_USER}"
+: "${MSSQL_APP_USER_PASSWORD_FILE:?falta MSSQL_APP_USER_PASSWORD_FILE}"
 
 SA_PASSWORD="$(cat "$MSSQL_SA_PASSWORD_FILE")"
 CERT_PASSWORD="$SA_PASSWORD"
 HADR_LOGIN_PASSWORD="$SA_PASSWORD"
 EXPORTER_PASSWORD="$(cat "$MSSQL_EXPORTER_PASSWORD_FILE")"
+APP_USER_PASSWORD="$(cat "$MSSQL_APP_USER_PASSWORD_FILE")"
 
 # Sin marker file: cada paso de abajo ya es idempotente por su cuenta (guards
 # "IF NOT EXISTS" contra el estado real de cada instancia). Un marker file
@@ -131,6 +134,24 @@ for pair in "primary:run_primary" "secondary:run_secondary"; do
     "
 done
 
+# Login de aplicacion para corporate-api. Mismo motivo que hadr_login/
+# MSSQL_EXPORTER_USER arriba: los logins de SQL Server son a nivel de
+# instancia, hay que crearlo explicitamente en AMBAS instancias. Los permisos
+# de datos (db_datareader/db_datawriter/db_ddladmin) se otorgan mas abajo,
+# UNA sola vez sobre el primario, despues de crear la base -el usuario a
+# nivel de base SI replica al secundario via el AG, a diferencia del login-.
+for pair in "primary:run_primary" "secondary:run_secondary"; do
+    name="${pair%%:*}"
+    fn="${pair##*:}"
+    echo "[setup-ag] Login de aplicacion '${MSSQL_APP_USER}' en $name..."
+    "$fn" "
+    IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = '${MSSQL_APP_USER}')
+    BEGIN
+        CREATE LOGIN [${MSSQL_APP_USER}] WITH PASSWORD = N'${APP_USER_PASSWORD}';
+    END
+    "
+done
+
 echo "[setup-ag] Creando Availability Group '${MSSQL_AG_NAME}' (read-scale, CLUSTER_TYPE=NONE)..."
 run_primary "
 IF NOT EXISTS (SELECT 1 FROM sys.availability_groups WHERE name = '${MSSQL_AG_NAME}')
@@ -172,6 +193,19 @@ echo "[setup-ag] Agregando '${MSSQL_DATABASE}' al AG (auto-seeding hacia el secu
 run_primary "
 IF NOT EXISTS (SELECT 1 FROM sys.availability_databases_cluster WHERE database_name = '${MSSQL_DATABASE}')
     ALTER AVAILABILITY GROUP [${MSSQL_AG_NAME}] ADD DATABASE [${MSSQL_DATABASE}];
+"
+
+echo "[setup-ag] Usuario de aplicacion '${MSSQL_APP_USER}' en '${MSSQL_DATABASE}' (db_datareader+db_datawriter+db_ddladmin)..."
+run_primary "
+USE [${MSSQL_DATABASE}];
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = '${MSSQL_APP_USER}')
+    CREATE USER [${MSSQL_APP_USER}] FOR LOGIN [${MSSQL_APP_USER}];
+ALTER ROLE db_datareader ADD MEMBER [${MSSQL_APP_USER}];
+ALTER ROLE db_datawriter ADD MEMBER [${MSSQL_APP_USER}];
+-- db_ddladmin (no sysadmin/sa): corporate-api corre sus propias migraciones
+-- idempotentes (CREATE TABLE IF NOT EXISTS) contra su propio esquema, sin
+-- necesitar el usuario de superadministracion del motor.
+ALTER ROLE db_ddladmin ADD MEMBER [${MSSQL_APP_USER}];
 "
 
 echo "[setup-ag] Esperando a que el secundario sincronice via auto-seeding..."

@@ -1,0 +1,230 @@
+name: ${PROJECT_NAME_BACKEND}${SUFFIX}
+
+secrets:
+    pg_user_password:
+        file: ../corporate-secrets/Development/pg_user_password.txt
+    mssql_app_password:
+        file: ../corporate-secrets/Development/mssql_app_password.txt
+    redis_password:
+        file: ../corporate-secrets/Development/redis_password.txt
+    jwt_access_secret:
+        file: ../corporate-secrets/Development/jwt_access_secret.txt
+    jwt_refresh_secret:
+        file: ../corporate-secrets/Development/jwt_refresh_secret.txt
+    session_secret:
+        file: ../corporate-secrets/Development/session_secret.txt
+    bootstrap_admin_password:
+        file: ../corporate-secrets/Development/bootstrap_admin_password.txt
+    mongo_user_password:
+        file: ../corporate-secrets/Development/db_mongo_user_password.txt
+
+networks:
+    # Red del OTRO proyecto Compose (corporate-infra), declarada "external"
+    # porque ya existe (la crea "corpinfra dev" al levantar ese stack). A
+    # diferencia de corporate-monitoring (que solo se conecta a "exporters",
+    # nunca a "backend": ver el hallazgo de auditoría en corporate-infra/
+    # compose.dev.yml), esta API SI necesita ruta directa a los motores de BD
+    # -es justamente para lo que existe-, así que se conecta a "backend" en
+    # vez de a "exporters".
+    infra-backend:
+        external: true
+        name: ${PROJECT_NAME}_backend${SUFFIX}
+    # Red propia de este stack: viven acá las 3 réplicas de la API y su proxy NGINX.
+    internal:
+        name: ${PROJECT_NAME_BACKEND}_internal${SUFFIX}
+    # Red pre-creada por "run.ps1 backend <ambiente>" (ver root run.ps1),
+    # externa a este stack. Solo el proxy NGINX se conecta acá -mismo patrón
+    # de "un solo punto de entrada" que el resto del proyecto-, nunca las
+    # réplicas de la API directamente.
+    public:
+        external: true
+        name: backend-net-${SUFFIX}
+    # Equivalente a "exporters" en corporate-infra: cada réplica expone su
+    # propio /metrics (prom-client, sin auth) SOLO alcanzable desde acá, no
+    # desde "public" ni desde "infra-backend". corporate-monitoring (otro
+    # proyecto Compose) declara esta misma red como external para que su
+    # Prometheus pueda scrapear -mismo patrón dual-homed que ya usan los 8
+    # exporters de corporate-infra-.
+    api-exporters:
+        name: ${PROJECT_NAME_BACKEND}_exporters${SUFFIX}
+
+# Definición común a las 3 réplicas (YAML anchor, no una feature propia de
+# Compose): mismo binario/imagen/config, solo cambia la identidad
+# (container_name/hostname) de cada una. 3 réplicas SIEMPRE activas -no
+# "sleep"- para que NGINX pueda dejar de enviarles tráfico con un simple
+# passive health check (max_fails/fail_timeout) en vez de necesitar un
+# watcher propio que las despierte.
+x-api-common: &api-common
+    # Las 3 réplicas son la MISMA imagen (build context idéntico): "image:"
+    # explícito e igual en las 3 hace que Compose la construya una sola vez
+    # y la reutilice, en vez de 3 builds redundantes en paralelo (que además
+    # sobrecargan la red -tres "npm install" concurrentes contra el registry
+    # llegaron a gatillar errores TLS intermitentes en este host-).
+    image: ${PROJECT_NAME_BACKEND}-apidev:${SUFFIX}
+    build:
+        context: ./
+        dockerfile: Dockerfile.dev
+    restart: ${RESTART_POLICY}
+    # Corre como el usuario "node" (no root) de la imagen oficial desde
+    # el Dockerfile, sin ninguna operación que requiera privilegios en
+    # runtime: cap_drop:[ALL] sin cap_add alcanza, mismo criterio que los
+    # exporters de corporate-infra.
+    security_opt:
+        - no-new-privileges:true
+    cap_drop:
+        - ALL
+    deploy:
+        resources:
+            limits:
+                memory: 512M
+                cpus: "1.0"
+    environment:
+        NODE_ENV: development
+        PORT: ${API_INTERNAL_PORT}
+        SUFFIX: ${SUFFIX}
+        # Docker Desktop (Windows) no siempre propaga eventos inotify del
+        # bind mount al watcher de tsx (chokidar): sin polling, "pnpm dev"
+        # no detecta cambios de archivo y hay que reiniciar el contenedor
+        # a mano -confirmado en este host, ver corporate-api/compose.dev.yml-.
+        CHOKIDAR_USEPOLLING: "true"
+        CHOKIDAR_INTERVAL: "300"
+        CORS_ORIGIN: "*"
+        # Hosts ya resueltos al nodo PRIMARIO de cada motor, mismo criterio
+        # que los exporters de corporate-infra (la concatenación
+        # "${HOST}01${SUFFIX}" se hace acá, no en el código de la app).
+        POSTGRES_HOST: "${POSTGRES_HOST}01${SUFFIX}"
+        POSTGRES_DATABASE: ${POSTGRES_DATABASE}
+        PG_APP_USER: ${PG_APP_USER}${SUFFIX}
+        PG_APP_USER_PASSWORD_FILE: /run/secrets/pg_user_password
+        MSSQL_HOST: "${MSSQL_HOST}01${SUFFIX}"
+        MSSQL_DBNAME: ${MSSQL_DBNAME}
+        MSSQL_APP_USER: ${MSSQL_APP_USER}${SUFFIX}
+        MSSQL_APP_USER_PASSWORD_FILE: /run/secrets/mssql_app_password
+        REDIS_HOST: "${REDIS_HOST}01${SUFFIX}"
+        REDIS_PASSWORD_FILE: /run/secrets/redis_password
+        MONGO_HOST: "${MONGO_HOST}01${SUFFIX}"
+        MONGO_DATABASE: ${MPONGO_DB_NAME}
+        MONGO_USER: ${MONGO_USER}${SUFFIX}
+        MONGO_USER_PASSWORD_FILE: /run/secrets/mongo_user_password
+        SESSION_NAME: ${SESSION_NAME}
+        SESSION_TTL_HOURS: ${SESSION_TTL_HOURS}
+        SESSION_SECRET_FILE: /run/secrets/session_secret
+        JWT_ACCESS_TTL: ${JWT_ACCESS_TTL}
+        JWT_REFRESH_TTL: ${JWT_REFRESH_TTL}
+        JWT_ACCESS_SECRET_FILE: /run/secrets/jwt_access_secret
+        JWT_REFRESH_SECRET_FILE: /run/secrets/jwt_refresh_secret
+        ADMIN_BOOTSTRAP_PASSWORD_FILE: /run/secrets/bootstrap_admin_password
+        PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH}
+        PASSWORD_HISTORY_LIMIT: ${PASSWORD_HISTORY_LIMIT}
+        DISABLE_AUTH: ${DISABLE_AUTH}
+        DISABLE_PERMISSIONS: ${DISABLE_PERMISSIONS}
+        DISABLE_VALIDATION: ${DISABLE_VALIDATION}
+        MAX_POOL: ${MAX_POOL}
+        MIN_POOL: ${MIN_POOL}
+    secrets:
+        - pg_user_password
+        - mssql_app_password
+        - redis_password
+        - jwt_access_secret
+        - jwt_refresh_secret
+        - session_secret
+        - bootstrap_admin_password
+        - mongo_user_password
+    # Bind mount del código + volumen anónimo sobre node_modules (evita que
+    # el bind mount tape los node_modules ya instalados en la imagen con
+    # los del host, que pueden no existir o ser de otro SO): hot reload
+    # real con "pnpm dev" (tsx watch) sin tener que rebuildear la imagen
+    # en cada cambio. Volumen anónimo independiente por réplica (no
+    # compartido): cada una tiene su propia copia de node_modules.
+    volumes:
+        - ./:/app
+        - /app/node_modules
+    networks:
+        - infra-backend
+        - internal
+        - api-exporters
+    healthcheck:
+        test: ["CMD-SHELL", "wget -qO- http://localhost:${API_INTERNAL_PORT}/health >/dev/null 2>&1 || exit 1"]
+        interval: 10s
+        timeout: 5s
+        retries: 10
+        start_period: 20s
+
+services:
+    # *********************        API (Express/TypeScript) — 3 réplicas *********************
+    apidev01:
+        <<: *api-common
+        container_name: ${API_HOST}01${SUFFIX}
+        hostname: ${API_HOST}01${SUFFIX}
+
+    apidev02:
+        <<: *api-common
+        container_name: ${API_HOST}02${SUFFIX}
+        hostname: ${API_HOST}02${SUFFIX}
+
+    apidev03:
+        <<: *api-common
+        container_name: ${API_HOST}03${SUFFIX}
+        hostname: ${API_HOST}03${SUFFIX}
+    # **************************    FIN API **************************
+
+    # *********************        Proxy único: NGINX (HTTP/L7, balanceo de carga) *********************
+    # Único servicio de este stack con puertos publicados al host, mismo
+    # criterio que corporate-infra/corporate-monitoring: las réplicas de la
+    # API nunca se conectan a "public" directamente. Balancea entre las 3
+    # réplicas (round-robin, ver nginx/config/nginx.conf.template) con
+    # health checks pasivos: si una réplica cae, NGINX deja de mandarle
+    # tráfico apenas falla, sin necesitar ningún watcher externo.
+    nginx-apidev:
+        build:
+            context: ./nginx
+        container_name: ${API_PROXY_HOST}${SUFFIX}
+        hostname: ${API_PROXY_HOST}${SUFFIX}
+        restart: ${RESTART_POLICY}
+        # Mismo criterio que nginxdev en corporate-infra: el master process
+        # necesita quedarse root, pero CHOWN+SETUID+SETGID alcanza para que
+        # baje los workers (los que manejan trafico real) a "nginx" sin
+        # privilegios.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        cap_add:
+            - CHOWN
+            - SETUID
+            - SETGID
+        deploy:
+            resources:
+                limits:
+                    memory: 128M
+                    cpus: "0.25"
+        environment:
+            API_HOST: ${API_HOST}
+            API_INTERNAL_PORT: ${API_INTERNAL_PORT}
+            SUFFIX: ${SUFFIX}
+            # Puerto HTTPS publicado al host: nginx necesita el numero exacto
+            # para armar el redirect 80->443 con el puerto correcto (ver
+            # nginx/config/nginx.conf.template) -no lo puede inferir solo,
+            # "listen 443" adentro del contenedor no tiene relacion con el
+            # puerto publicado afuera-.
+            API_SSL_PORT: ${API_SSL_PORT}
+        ports:
+            - "${API_PORT}:80"
+            - "${API_SSL_PORT}:443"
+        volumes:
+            # tls.crt/tls.key: autofirmados por defecto (ver
+            # corporate-scripts/ensure-api-tls-cert.ps1), reemplazables por
+            # los de una CA real con el mismo nombre de archivo sin tocar
+            # este compose ni nginx.conf.template. Solo lectura.
+            - ../corporate-secrets/Development/certs/api:/etc/nginx/certs:ro
+        networks:
+            - internal
+            - public
+        depends_on:
+            apidev01:
+                condition: service_healthy
+            apidev02:
+                condition: service_healthy
+            apidev03:
+                condition: service_healthy
+    # **************************    FIN Proxy NGINX **************************

@@ -1,0 +1,184 @@
+{
+    "uid": "corporate-api-overview",
+    "title": "Corporate API - Overview",
+    "tags": ["corpbackend", "api"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "editable": true,
+    "time": { "from": "now-30m", "to": "now" },
+    "refresh": "5s",
+    "panels": [
+        {
+            "id": 1,
+            "type": "stat",
+            "title": "Replicas UP",
+            "description": "up{job=\"corporate-api\"}: 1 = replica responde su /metrics, 0 = caida.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 0, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": {
+                "defaults": {
+                    "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] },
+                    "mappings": [ { "type": "value", "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } } } ]
+                },
+                "overrides": []
+            },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value_and_name",
+                "colorMode": "background"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "up{job=\"corporate-api\"}",
+                    "legendFormat": "{{instance}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "type": "stat",
+            "title": "Requests/seg (total, 3 replicas)",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 6, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": { "defaults": { "unit": "reqps", "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value",
+                "colorMode": "value"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "sum(rate(http_requests_total{job=\"corporate-api\"}[1m]))",
+                    "legendFormat": "req/s",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 3,
+            "type": "stat",
+            "title": "Tasa de error 5xx (%)",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 12, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "percent",
+                    "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 } ] }
+                },
+                "overrides": []
+            },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value",
+                "colorMode": "value"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "100 * sum(rate(http_requests_total{job=\"corporate-api\",status_code=~\"5..\"}[1m])) / clamp_min(sum(rate(http_requests_total{job=\"corporate-api\"}[1m])), 1e-9)",
+                    "legendFormat": "5xx %",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 4,
+            "type": "stat",
+            "title": "p95 latencia (todas las replicas)",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 18, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": { "defaults": { "unit": "s", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.3 }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value",
+                "colorMode": "value"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job=\"corporate-api\"}[1m])))",
+                    "legendFormat": "p95",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 5,
+            "type": "timeseries",
+            "title": "Requests/seg por replica (verifica balanceo de carga)",
+            "description": "Si NGINX esta balanceando bien, las 3 lineas deberian quedar parejas bajo carga sostenida.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "sum by (instance) (rate(http_requests_total{job=\"corporate-api\"}[1m]))",
+                    "legendFormat": "{{instance}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 6,
+            "type": "timeseries",
+            "title": "p95 latencia por replica",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "histogram_quantile(0.95, sum by (le, instance) (rate(http_request_duration_seconds_bucket{job=\"corporate-api\"}[1m])))",
+                    "legendFormat": "{{instance}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 7,
+            "type": "timeseries",
+            "title": "Event loop lag por replica",
+            "description": "nodejs_eventloop_lag_seconds: subidas sostenidas durante una prueba de stress indican que el proceso Node esta saturado.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 0, "y": 14, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "nodejs_eventloop_lag_seconds{job=\"corporate-api\"}",
+                    "legendFormat": "{{instance}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 8,
+            "type": "timeseries",
+            "title": "Memoria RSS por replica",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 12, "y": 14, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "process_resident_memory_bytes{job=\"corporate-api\"}",
+                    "legendFormat": "{{instance}}",
+                    "refId": "A"
+                }
+            ]
+        }
+    ]
+}

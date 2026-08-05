@@ -29,6 +29,8 @@ secrets:
         file: ../corporate-secrets/Development/mssql_password.txt
     mssql_exporter_password:
         file: ../corporate-secrets/Development/mssql_exporter_password.txt
+    mssql_app_password:
+        file: ../corporate-secrets/Development/mssql_app_password.txt
     redis_password:
         file: ../corporate-secrets/Development/redis_password.txt
     redis_exporter_password:
@@ -725,9 +727,12 @@ services:
             MSSQL_SA_PASSWORD_FILE: /run/secrets/mssql_password
             MSSQL_EXPORTER_USER: ${MSSQL_EXPORTER_USER}${SUFFIX}
             MSSQL_EXPORTER_PASSWORD_FILE: /run/secrets/mssql_exporter_password
+            MSSQL_APP_USER: ${MSSQL_APP_USER}${SUFFIX}
+            MSSQL_APP_USER_PASSWORD_FILE: /run/secrets/mssql_app_password
         secrets:
             - mssql_password
             - mssql_exporter_password
+            - mssql_app_password
         volumes:
             - ./MsSQL/scripts:/scripts:ro
             - ../corporate-secrets/Development/certs:/certs

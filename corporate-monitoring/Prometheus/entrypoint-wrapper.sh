@@ -16,6 +16,8 @@ set -eu
 : "${MONGO_HOST:?falta MONGO_HOST}"
 : "${REDIS_HOST:?falta REDIS_HOST}"
 : "${MSSQL_HOST:?falta MSSQL_HOST}"
+: "${API_HOST:?falta API_HOST}"
+: "${API_INTERNAL_PORT:?falta API_INTERNAL_PORT}"
 
 sed \
     -e "s|\${SUFFIX}|${SUFFIX}|g" \
@@ -23,6 +25,8 @@ sed \
     -e "s|\${MONGO_HOST}|${MONGO_HOST}|g" \
     -e "s|\${REDIS_HOST}|${REDIS_HOST}|g" \
     -e "s|\${MSSQL_HOST}|${MSSQL_HOST}|g" \
+    -e "s|\${API_HOST}|${API_HOST}|g" \
+    -e "s|\${API_INTERNAL_PORT}|${API_INTERNAL_PORT}|g" \
     /etc/prometheus/prometheus.yml.template > /etc/prometheus/prometheus.yml
 
 exec /bin/prometheus \

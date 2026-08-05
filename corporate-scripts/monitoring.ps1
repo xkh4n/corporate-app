@@ -76,6 +76,21 @@ if (-not $networkExists) {
 
 Write-Host "Red externa '$infraBackendNetwork' encontrada, OK." -ForegroundColor Green
 
+# Mismo motivo que la validación de arriba: corporate-monitoring/compose.dev.yml
+# también declara "api-exporters" (red de corporate-api) como external, para
+# que Prometheus pueda scrapear las 3 réplicas de la API (ver
+# corporate-api/compose.dev.yml).
+$projectNameBackend = Get-EnvVarValue -Files @($envStackPath, $environmentPath) -Name 'PROJECT_NAME_BACKEND'
+$apiExportersNetwork = "${projectNameBackend}_exporters${suffix}"
+$apiNetworkExists = docker network ls --format '{{.Name}}' | Select-String -Pattern "^$([regex]::Escape($apiExportersNetwork))$"
+
+if (-not $apiNetworkExists) {
+    Write-Error "La red externa '$apiExportersNetwork' no existe todavía. Corré '.\run.ps1 backend $Ambiente' primero -el stack de la API (corporate-api) tiene que estar levantado ANTES que el de monitoreo, para que Prometheus pueda alcanzar sus réplicas por nombre-."
+    exit 1
+}
+
+Write-Host "Red externa '$apiExportersNetwork' encontrada, OK." -ForegroundColor Green
+
 Write-Host "Levantando stack de monitoreo [$Ambiente] -> $composeFile" -ForegroundColor Cyan
 
 # --wait implica -d (detached) y espera a que los healthchecks pasen. Sin

@@ -28,6 +28,14 @@ networks:
     infra-exporters:
         external: true
         name: ${PROJECT_NAME}_exporters${SUFFIX}
+    # Red del proyecto Compose de corporate-api (ver ese compose.dev.yml,
+    # red "api-exporters"), declarada "external" por el mismo motivo que
+    # "infra-exporters": Prometheus necesita alcanzar el /metrics (sin auth,
+    # prom-client) de las 3 réplicas de la API, sin tener ruta hacia
+    # "internal" ni "infra-backend" -las otras redes de ese stack-.
+    api-exporters:
+        external: true
+        name: ${PROJECT_NAME_BACKEND}_exporters${SUFFIX}
     # Hallazgo CRÍTICO de auditoría, tercera vuelta: con dockerproxydev en la
     # misma red "monitoring" que Alloy, el filtro (dockerproxyfilterdev) era
     # una elección de CONFIGURACIÓN de Alloy, no una barrera real -nada le
@@ -83,11 +91,14 @@ services:
             MONGO_HOST: ${MONGO_HOST}
             REDIS_HOST: ${REDIS_HOST}
             MSSQL_HOST: ${MSSQL_HOST}
+            API_HOST: ${API_HOST}
+            API_INTERNAL_PORT: ${API_INTERNAL_PORT}
         volumes:
             - prometheus_data:/prometheus
         networks:
             - monitoring
             - infra-exporters
+            - api-exporters
         healthcheck:
             test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy >/dev/null 2>&1 || exit 1"]
             interval: 15s

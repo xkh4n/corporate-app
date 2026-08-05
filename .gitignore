@@ -4,3 +4,5 @@ claude/
 .vscode/
 vscode/
 agents/
+initial-data/
+*/node_modules/

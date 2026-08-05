@@ -63,3 +63,17 @@ scrape_configs:
             labels:
                 engine: mssql
                 role: replica
+
+    # corporate-api: 3 réplicas SIEMPRE activas detrás de NGINX (round-robin
+    # + health check pasivo, ver corporate-api/nginx/config/nginx.conf.template)
+    # -no hay "primary"/"replica" acá, las 3 son equivalentes-, cada una
+    # expone su propio /metrics (prom-client, sin auth) en el mismo puerto
+    # que usa la app para servir HTTP.
+    - job_name: corporate-api
+      static_configs:
+          - targets:
+                - "${API_HOST}01${SUFFIX}:${API_INTERNAL_PORT}"
+                - "${API_HOST}02${SUFFIX}:${API_INTERNAL_PORT}"
+                - "${API_HOST}03${SUFFIX}:${API_INTERNAL_PORT}"
+            labels:
+                service: corporate-api
