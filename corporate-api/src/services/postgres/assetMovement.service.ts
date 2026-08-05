@@ -5,6 +5,9 @@ import { getAssetByIdOrThrow, setAssetStatus } from "./asset.service";
 import { getAssetStatusByCodeOrThrow } from "./assetStatus.service";
 import { getUserByIdOrThrow } from "../mssql/user.service";
 import { BadRequestError, NotFoundError } from "../../library/errors";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder } from "../../library/sequelizeSearch";
 import type { CreateAssetMovementInput } from "../../types/postgres/assetMovement.types";
 
 // El estado ACTUAL del activo (Asset.statusId) se actualiza aca como efecto
@@ -20,8 +23,17 @@ const STATUS_CODE_BY_MOVEMENT_TYPE = {
 
 const MOVEMENT_TYPES_REQUIRING_USERS = new Set(["ASSIGNED", "REASSIGNED"]);
 
-export async function listMovementsByAsset(assetId: number): Promise<AssetMovementModel[]> {
-  return AssetMovementModel.findAll({ where: { assetId }, order: [["movementDate", "DESC"]] });
+export async function listMovementsByAsset(
+  assetId: number,
+  params: PaginationParams,
+): Promise<{ items: AssetMovementModel[]; total: number }> {
+  const { rows, count } = await AssetMovementModel.findAndCountAll({
+    where: { assetId },
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+  });
+  return { items: rows, total: count };
 }
 
 export async function getMovementUsers(assetMovementId: number): Promise<AssetMovementUserModel[]> {

@@ -1,12 +1,26 @@
+import { Op } from "sequelize";
 import { BusinessPartnerModel } from "../../models/mssql/businessPartner.model";
 import { ConflictError, NotFoundError } from "../../library/errors";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type {
   BusinessPartnerCreationAttributes,
   BusinessPartnerUpdateAttributes,
 } from "../../types/mssql/businessPartner.types";
 
-export async function listBusinessPartners(): Promise<BusinessPartnerModel[]> {
-  return BusinessPartnerModel.findAll({ order: [["legalName", "ASC"]] });
+const SEARCH_FIELDS = ["legalName", "nationalId", "businessLine"];
+
+export async function listBusinessPartners(
+  params: PaginationParams,
+): Promise<{ items: BusinessPartnerModel[]; total: number }> {
+  const { rows, count } = await BusinessPartnerModel.findAndCountAll({
+    where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like),
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+  });
+  return { items: rows, total: count };
 }
 
 export async function getBusinessPartnerById(id: number): Promise<BusinessPartnerModel | null> {

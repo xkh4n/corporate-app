@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import { mssql } from "../../databases/mssql/connection";
 import { PurchaseRequestModel } from "../../models/mssql/purchaseRequest.model";
 import { PersonModel } from "../../models/mssql/person.model";
@@ -7,6 +8,9 @@ import { getUserByIdOrThrow } from "./user.service";
 import { getCostCenterByIdOrThrow } from "../postgres/costCenter.service";
 import { generateDocumentNumber } from "../../library/documentNumbering";
 import { NotFoundError } from "../../library/errors";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type {
   PurchaseRequestCreationAttributes,
   PurchaseRequestUpdateAttributes,
@@ -18,8 +22,19 @@ const includeParties = [
   { model: UserModel, as: "beneficiaryUser" },
 ];
 
-export async function listPurchaseRequests(): Promise<PurchaseRequestModel[]> {
-  return PurchaseRequestModel.findAll({ include: includeParties, order: [["id", "DESC"]] });
+const SEARCH_FIELDS = ["requestNumber", "notes", "status", "priority"];
+
+export async function listPurchaseRequests(
+  params: PaginationParams,
+): Promise<{ items: PurchaseRequestModel[]; total: number }> {
+  const { rows, count } = await PurchaseRequestModel.findAndCountAll({
+    where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like),
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+    include: includeParties,
+  });
+  return { items: rows, total: count };
 }
 
 export async function getPurchaseRequestById(id: number): Promise<PurchaseRequestModel | null> {

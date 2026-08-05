@@ -2,6 +2,8 @@ import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as assetMovementService from "../services/postgres/assetMovement.service";
 import { BadRequestError } from "../library/errors";
+import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
+import { sendList, sendOk } from "../library/response";
 
 export const createAssetMovementSchema = z.object({
   assetId: z.number().int().positive(),
@@ -13,7 +15,9 @@ export const createAssetMovementSchema = z.object({
 export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     if (!req.query.assetId) throw new BadRequestError("Debe indicar assetId como query param");
-    res.json(await assetMovementService.listMovementsByAsset(Number(req.query.assetId)));
+    const params = parsePaginationParams({ ...req.query, ...req.body }, "movementDate", "desc");
+    const { items, total } = await assetMovementService.listMovementsByAsset(Number(req.query.assetId), params);
+    sendList(res, items, buildPaginationMeta(params, total), "Movimientos de activo obtenidos exitosamente");
   } catch (err) {
     next(err);
   }
@@ -22,9 +26,8 @@ export async function list(req: Request, res: Response, next: NextFunction): Pro
 export async function create(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof createAssetMovementSchema>;
-    res
-      .status(201)
-      .json(await assetMovementService.createAssetMovement({ ...body, createdBy: req.user?.userId }));
+    const movement = await assetMovementService.createAssetMovement({ ...body, createdBy: req.user?.userId });
+    sendOk(res, movement, "Movimiento de activo creado exitosamente", 201);
   } catch (err) {
     next(err);
   }

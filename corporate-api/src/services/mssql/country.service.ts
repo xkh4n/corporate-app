@@ -1,8 +1,12 @@
+import { Op } from "sequelize";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CountryModel } from "../../models/mssql/country.model";
 import { ConflictError, NotFoundError, isUniqueConstraintError } from "../../library/errors";
 import { logger } from "../../library/logger";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type { CountryCreationAttributes, CountryUpdateAttributes } from "../../types/mssql/country.types";
 
 interface CountrySeedRow {
@@ -11,8 +15,16 @@ interface CountrySeedRow {
   iata_code: string;
 }
 
-export async function listCountries(): Promise<CountryModel[]> {
-  return CountryModel.findAll({ order: [["nameCountry", "ASC"]] });
+const SEARCH_FIELDS = ["isoCode", "iataCode", "nameCountry"];
+
+export async function listCountries(params: PaginationParams): Promise<{ items: CountryModel[]; total: number }> {
+  const { rows, count } = await CountryModel.findAndCountAll({
+    where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like),
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+  });
+  return { items: rows, total: count };
 }
 
 export async function getCountryById(id: number): Promise<CountryModel | null> {

@@ -1,9 +1,13 @@
+import { Op } from "sequelize";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CityModel } from "../../models/mssql/city.model";
 import { CountryModel } from "../../models/mssql/country.model";
 import { NotFoundError, isUniqueConstraintError } from "../../library/errors";
 import { logger } from "../../library/logger";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type { CityCreationAttributes, CityUpdateAttributes } from "../../types/mssql/city.types";
 
 // OJO: en cities.json el campo se llama "iso_code" pero en realidad contiene
@@ -17,8 +21,16 @@ interface CitySeedRow {
   iso_code: string;
 }
 
-export async function listCities(): Promise<CityModel[]> {
-  return CityModel.findAll({ order: [["nameCity", "ASC"]] });
+const SEARCH_FIELDS = ["nameCity", "iataCodes"];
+
+export async function listCities(params: PaginationParams): Promise<{ items: CityModel[]; total: number }> {
+  const { rows, count } = await CityModel.findAndCountAll({
+    where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like),
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+  });
+  return { items: rows, total: count };
 }
 
 export async function getCityById(id: number): Promise<CityModel | null> {

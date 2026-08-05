@@ -1,11 +1,30 @@
+import { Op } from "sequelize";
 import { SupplierModel } from "../../models/mssql/supplier.model";
 import { BusinessPartnerModel } from "../../models/mssql/businessPartner.model";
 import { getBusinessPartnerByIdOrThrow } from "./businessPartner.service";
 import { ConflictError, NotFoundError } from "../../library/errors";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type { SupplierCreationAttributes, SupplierUpdateAttributes } from "../../types/mssql/supplier.types";
 
-export async function listSuppliers(): Promise<SupplierModel[]> {
-  return SupplierModel.findAll({ include: [{ model: BusinessPartnerModel, as: "businessPartner" }] });
+// Sin campo de texto propio significativo (el resto son FK/enums): se busca
+// por serviceType/deliveryTerms directos. Buscar por el nombre del
+// BusinessPartner asociado requeriria sintaxis $businessPartner.legalName$
+// -se deja fuera por ahora para no sumar mas riesgo a un cambio ya grande.
+const SEARCH_FIELDS = ["serviceType", "deliveryTerms"];
+
+export async function listSuppliers(
+  params: PaginationParams,
+): Promise<{ items: SupplierModel[]; total: number }> {
+  const { rows, count } = await SupplierModel.findAndCountAll({
+    where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like),
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+    include: [{ model: BusinessPartnerModel, as: "businessPartner" }],
+  });
+  return { items: rows, total: count };
 }
 
 export async function getSupplierById(id: number): Promise<SupplierModel | null> {

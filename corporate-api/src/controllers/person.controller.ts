@@ -1,6 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as personService from "../services/mssql/person.service";
+import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
+import { sendList, sendOk, sendNoContent } from "../library/response";
 
 export const createPersonSchema = z.object({
   firstName: z.string().min(1).max(100),
@@ -14,9 +16,11 @@ export const createPersonSchema = z.object({
 
 export const updatePersonSchema = createPersonSchema.partial();
 
-export async function list(_req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    res.json(await personService.listPersons());
+    const params = parsePaginationParams({ ...req.query, ...req.body }, "id");
+    const { items, total } = await personService.listPersons(params);
+    sendList(res, items, buildPaginationMeta(params, total), "Personas obtenidas exitosamente");
   } catch (err) {
     next(err);
   }
@@ -24,7 +28,8 @@ export async function list(_req: Request, res: Response, next: NextFunction): Pr
 
 export async function getById(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    res.json(await personService.getPersonByIdOrThrow(Number(req.params.id)));
+    const person = await personService.getPersonByIdOrThrow(Number(req.params.id));
+    sendOk(res, person, "Persona obtenida exitosamente");
   } catch (err) {
     next(err);
   }
@@ -33,7 +38,8 @@ export async function getById(req: Request, res: Response, next: NextFunction): 
 export async function create(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof createPersonSchema>;
-    res.status(201).json(await personService.createPerson(body));
+    const person = await personService.createPerson(body);
+    sendOk(res, person, "Persona creada exitosamente", 201);
   } catch (err) {
     next(err);
   }
@@ -42,7 +48,8 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 export async function update(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof updatePersonSchema>;
-    res.json(await personService.updatePerson(Number(req.params.id), body));
+    const person = await personService.updatePerson(Number(req.params.id), body);
+    sendOk(res, person, "Persona actualizada exitosamente");
   } catch (err) {
     next(err);
   }
@@ -51,7 +58,7 @@ export async function update(req: Request, res: Response, next: NextFunction): P
 export async function deactivate(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     await personService.deactivatePerson(Number(req.params.id));
-    res.status(204).send();
+    sendNoContent(res);
   } catch (err) {
     next(err);
   }

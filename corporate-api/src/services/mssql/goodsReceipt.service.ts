@@ -1,13 +1,29 @@
+import { Op } from "sequelize";
 import { GoodsReceiptModel } from "../../models/mssql/goodsReceipt.model";
 import { getPurchaseOrderByIdOrThrow } from "./purchaseOrder.service";
 import { getQuoteByIdOrThrow } from "./quote.service";
 import { createAssetFromReceipt } from "../postgres/asset.service";
 import { NotFoundError } from "../../library/errors";
 import { logger } from "../../library/logger";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type { GoodsReceiptCreationInput } from "../../types/mssql/goodsReceipt.types";
 
-export async function listGoodsReceiptsByOrder(purchaseOrderId: number): Promise<GoodsReceiptModel[]> {
-  return GoodsReceiptModel.findAll({ where: { purchaseOrderId }, order: [["id", "ASC"]] });
+const SEARCH_FIELDS = ["documentNumber", "documentType"];
+
+export async function listGoodsReceiptsByOrder(
+  purchaseOrderId: number,
+  params: PaginationParams,
+): Promise<{ items: GoodsReceiptModel[]; total: number }> {
+  const searchWhere = buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like);
+  const { rows, count } = await GoodsReceiptModel.findAndCountAll({
+    where: { purchaseOrderId, ...searchWhere },
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+  });
+  return { items: rows, total: count };
 }
 
 export async function getGoodsReceiptById(id: number): Promise<GoodsReceiptModel | null> {

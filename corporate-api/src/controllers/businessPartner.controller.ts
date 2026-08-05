@@ -1,6 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as businessPartnerService from "../services/mssql/businessPartner.service";
+import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
+import { sendList, sendOk } from "../library/response";
 
 export const createBusinessPartnerSchema = z.object({
   legalName: z.string().min(1).max(200),
@@ -10,9 +12,11 @@ export const createBusinessPartnerSchema = z.object({
 
 export const updateBusinessPartnerSchema = createBusinessPartnerSchema.partial();
 
-export async function list(_req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    res.json(await businessPartnerService.listBusinessPartners());
+    const params = parsePaginationParams({ ...req.query, ...req.body }, "legalName");
+    const { items, total } = await businessPartnerService.listBusinessPartners(params);
+    sendList(res, items, buildPaginationMeta(params, total), "Terceros obtenidos exitosamente");
   } catch (err) {
     next(err);
   }
@@ -20,7 +24,8 @@ export async function list(_req: Request, res: Response, next: NextFunction): Pr
 
 export async function getById(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    res.json(await businessPartnerService.getBusinessPartnerByIdOrThrow(Number(req.params.id)));
+    const partner = await businessPartnerService.getBusinessPartnerByIdOrThrow(Number(req.params.id));
+    sendOk(res, partner, "Tercero obtenido exitosamente");
   } catch (err) {
     next(err);
   }
@@ -29,9 +34,8 @@ export async function getById(req: Request, res: Response, next: NextFunction): 
 export async function create(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof createBusinessPartnerSchema>;
-    res
-      .status(201)
-      .json(await businessPartnerService.createBusinessPartner({ ...body, createdBy: req.user?.userId }));
+    const partner = await businessPartnerService.createBusinessPartner({ ...body, createdBy: req.user?.userId });
+    sendOk(res, partner, "Tercero creado exitosamente", 201);
   } catch (err) {
     next(err);
   }
@@ -40,7 +44,8 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 export async function update(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof updateBusinessPartnerSchema>;
-    res.json(await businessPartnerService.updateBusinessPartner(Number(req.params.id), body));
+    const partner = await businessPartnerService.updateBusinessPartner(Number(req.params.id), body);
+    sendOk(res, partner, "Tercero actualizado exitosamente");
   } catch (err) {
     next(err);
   }

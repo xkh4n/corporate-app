@@ -1,12 +1,26 @@
+import { Op } from "sequelize";
 import { AssetStatusModel } from "../../models/postgres/assetStatus.model";
 import { ConflictError, NotFoundError } from "../../library/errors";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type {
   AssetStatusCreationAttributes,
   AssetStatusUpdateAttributes,
 } from "../../types/postgres/assetStatus.types";
 
-export async function listAssetStatuses(): Promise<AssetStatusModel[]> {
-  return AssetStatusModel.findAll({ order: [["id", "ASC"]] });
+const SEARCH_FIELDS = ["code", "name", "description"];
+
+export async function listAssetStatuses(
+  params: PaginationParams,
+): Promise<{ items: AssetStatusModel[]; total: number }> {
+  const { rows, count } = await AssetStatusModel.findAndCountAll({
+    where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.iLike),
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+  });
+  return { items: rows, total: count };
 }
 
 export async function getAssetStatusById(id: number): Promise<AssetStatusModel | null> {

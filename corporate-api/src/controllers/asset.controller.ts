@@ -1,6 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as assetService from "../services/postgres/asset.service";
+import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
+import { sendList, sendOk } from "../library/response";
 
 // Sin endpoint de creacion directa: un Asset nace SOLO al confirmar un
 // GoodsReceipt (ver services/mssql/goodsReceipt.service.ts) -crearlo suelto
@@ -11,9 +13,11 @@ export const updateAssetSchema = z.object({
   value: z.number().optional(),
 });
 
-export async function list(_req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    res.json(await assetService.listAssets());
+    const params = parsePaginationParams({ ...req.query, ...req.body }, "id", "desc");
+    const { items, total } = await assetService.listAssets(params);
+    sendList(res, items, buildPaginationMeta(params, total), "Activos obtenidos exitosamente");
   } catch (err) {
     next(err);
   }
@@ -21,7 +25,8 @@ export async function list(_req: Request, res: Response, next: NextFunction): Pr
 
 export async function getById(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    res.json(await assetService.getAssetByIdOrThrow(Number(req.params.id)));
+    const asset = await assetService.getAssetByIdOrThrow(Number(req.params.id));
+    sendOk(res, asset, "Activo obtenido exitosamente");
   } catch (err) {
     next(err);
   }
@@ -30,12 +35,11 @@ export async function getById(req: Request, res: Response, next: NextFunction): 
 export async function update(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof updateAssetSchema>;
-    res.json(
-      await assetService.updateAsset(Number(req.params.id), {
-        ...body,
-        value: body.value !== undefined ? String(body.value) : undefined,
-      }),
-    );
+    const asset = await assetService.updateAsset(Number(req.params.id), {
+      ...body,
+      value: body.value !== undefined ? String(body.value) : undefined,
+    });
+    sendOk(res, asset, "Activo actualizado exitosamente");
   } catch (err) {
     next(err);
   }

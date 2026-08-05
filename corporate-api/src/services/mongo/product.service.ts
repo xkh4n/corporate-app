@@ -2,10 +2,25 @@ import { isValidObjectId } from "mongoose";
 import { ProductModel, ProductDocument } from "../../models/mongo/product.model";
 import { NotFoundError } from "../../library/errors";
 import { logger } from "../../library/logger";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildMongoSearchFilter, buildMongoSort } from "../../library/mongoSearch";
 import type { ProductCreationAttributes, ProductUpdateAttributes } from "../../types/mongo/product.types";
 
-export async function listProducts(): Promise<ProductDocument[]> {
-  return ProductModel.find().sort({ name: 1 });
+const SEARCH_FIELDS = ["name", "description"];
+
+export async function listProducts(
+  params: PaginationParams,
+): Promise<{ items: ProductDocument[]; total: number }> {
+  const filter = buildMongoSearchFilter(params.search, SEARCH_FIELDS);
+  const [items, total] = await Promise.all([
+    ProductModel.find(filter)
+      .sort(buildMongoSort(params.sortBy, params.sortOrder))
+      .skip(getOffset(params))
+      .limit(params.limit),
+    ProductModel.countDocuments(filter),
+  ]);
+  return { items, total };
 }
 
 export async function getProductById(id: string): Promise<ProductDocument | null> {

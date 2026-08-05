@@ -2,10 +2,23 @@ import { CustomerModel } from "../../models/mssql/customer.model";
 import { BusinessPartnerModel } from "../../models/mssql/businessPartner.model";
 import { getBusinessPartnerByIdOrThrow } from "./businessPartner.service";
 import { ConflictError, NotFoundError } from "../../library/errors";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder } from "../../library/sequelizeSearch";
 import type { CustomerCreationAttributes } from "../../types/mssql/customer.types";
 
-export async function listCustomers(): Promise<CustomerModel[]> {
-  return CustomerModel.findAll({ include: [{ model: BusinessPartnerModel, as: "businessPartner" }] });
+// Sin campos de texto propios (solo el FK a businessPartner): no hay filtro
+// de busqueda de texto libre, solo paginacion/orden.
+export async function listCustomers(
+  params: PaginationParams,
+): Promise<{ items: CustomerModel[]; total: number }> {
+  const { rows, count } = await CustomerModel.findAndCountAll({
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+    include: [{ model: BusinessPartnerModel, as: "businessPartner" }],
+  });
+  return { items: rows, total: count };
 }
 
 export async function getCustomerById(id: number): Promise<CustomerModel | null> {

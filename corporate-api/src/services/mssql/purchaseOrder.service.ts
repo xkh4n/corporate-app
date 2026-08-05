@@ -1,13 +1,27 @@
+import { Op } from "sequelize";
 import { mssql } from "../../databases/mssql/connection";
 import { PurchaseOrderModel } from "../../models/mssql/purchaseOrder.model";
 import { getQuoteByIdOrThrow } from "./quote.service";
 import { getSupplierByIdOrThrow } from "./supplier.service";
 import { generateDocumentNumber } from "../../library/documentNumbering";
 import { BadRequestError, NotFoundError } from "../../library/errors";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type { PurchaseOrderCreationAttributes } from "../../types/mssql/purchaseOrder.types";
 
-export async function listPurchaseOrders(): Promise<PurchaseOrderModel[]> {
-  return PurchaseOrderModel.findAll({ order: [["id", "DESC"]] });
+const SEARCH_FIELDS = ["orderNumber", "paymentTerms"];
+
+export async function listPurchaseOrders(
+  params: PaginationParams,
+): Promise<{ items: PurchaseOrderModel[]; total: number }> {
+  const { rows, count } = await PurchaseOrderModel.findAndCountAll({
+    where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like),
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+  });
+  return { items: rows, total: count };
 }
 
 export async function getPurchaseOrderById(id: number): Promise<PurchaseOrderModel | null> {

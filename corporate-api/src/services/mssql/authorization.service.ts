@@ -4,10 +4,24 @@ import { getLineByIdOrThrow } from "./purchaseRequestLine.service";
 import { getQuoteByIdOrThrow } from "./quote.service";
 import { getUserByIdOrThrow } from "./user.service";
 import { BadRequestError, NotFoundError } from "../../library/errors";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder } from "../../library/sequelizeSearch";
 import type { AuthorizationCreationAttributes } from "../../types/mssql/authorization.types";
 
-export async function listAuthorizationsByLine(requestLineId: number): Promise<AuthorizationModel[]> {
-  return AuthorizationModel.findAll({ where: { requestLineId }, order: [["id", "ASC"]] });
+// Sin campos de texto propios significativos (productId es un ObjectId de
+// Mongo, supplierId es FK): solo paginacion/orden, sin filtro de busqueda.
+export async function listAuthorizationsByLine(
+  requestLineId: number,
+  params: PaginationParams,
+): Promise<{ items: AuthorizationModel[]; total: number }> {
+  const { rows, count } = await AuthorizationModel.findAndCountAll({
+    where: { requestLineId },
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+  });
+  return { items: rows, total: count };
 }
 
 export async function getAuthorizationById(id: number): Promise<AuthorizationModel | null> {

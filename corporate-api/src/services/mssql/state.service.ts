@@ -1,9 +1,13 @@
+import { Op } from "sequelize";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { StateModel } from "../../models/mssql/state.model";
 import { CityModel } from "../../models/mssql/city.model";
 import { NotFoundError, isUniqueConstraintError } from "../../library/errors";
 import { logger } from "../../library/logger";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type { StateCreationAttributes, StateUpdateAttributes } from "../../types/mssql/state.types";
 
 // "ciudad" en states.json es el iata_code de cities (ej. "ARI" para Arica),
@@ -18,8 +22,16 @@ interface StateSeedRow {
   cod_sii: string;
 }
 
-export async function listStates(): Promise<StateModel[]> {
-  return StateModel.findAll({ order: [["nameState", "ASC"]] });
+const SEARCH_FIELDS = ["nameState", "territorialCode", "postalCode", "siiCode"];
+
+export async function listStates(params: PaginationParams): Promise<{ items: StateModel[]; total: number }> {
+  const { rows, count } = await StateModel.findAndCountAll({
+    where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like),
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+  });
+  return { items: rows, total: count };
 }
 
 export async function getStateById(id: number): Promise<StateModel | null> {

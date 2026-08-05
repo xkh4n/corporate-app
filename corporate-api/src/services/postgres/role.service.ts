@@ -1,9 +1,21 @@
+import { Op } from "sequelize";
 import { RoleModel } from "../../models/postgres/role.model";
 import { ConflictError, NotFoundError } from "../../library/errors";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type { RoleCreationAttributes, RoleUpdateAttributes } from "../../types/postgres/role.types";
 
-export async function listRoles(): Promise<RoleModel[]> {
-  return RoleModel.findAll({ order: [["id", "ASC"]] });
+const SEARCH_FIELDS = ["name", "description"];
+
+export async function listRoles(params: PaginationParams): Promise<{ items: RoleModel[]; total: number }> {
+  const { rows, count } = await RoleModel.findAndCountAll({
+    where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.iLike),
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+  });
+  return { items: rows, total: count };
 }
 
 export async function getRoleById(id: number): Promise<RoleModel | null> {

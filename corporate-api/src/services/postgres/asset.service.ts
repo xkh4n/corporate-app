@@ -1,10 +1,13 @@
-import { QueryTypes, Transaction } from "sequelize";
+import { Op, QueryTypes, Transaction } from "sequelize";
 import { postgres } from "../../databases/postgres/connection";
 import { AssetModel } from "../../models/postgres/asset.model";
 import { AssetStatusModel } from "../../models/postgres/assetStatus.model";
 import { getAssetStatusByCodeOrThrow } from "./assetStatus.service";
 import { getProductByIdOrThrow } from "../mongo/product.service";
 import { NotFoundError } from "../../library/errors";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type { ProductType } from "../../types/mongo/product.types";
 import type { AssetUpdateAttributes, CreateAssetFromReceiptInput } from "../../types/postgres/asset.types";
 
@@ -32,8 +35,17 @@ async function generateAssetTag(prefix: "ARR" | "SRV" | "ACT", transaction: Tran
   return `${prefix}${String(nextSeq).padStart(PAD_LENGTH, "0")}`;
 }
 
-export async function listAssets(): Promise<AssetModel[]> {
-  return AssetModel.findAll({ include: [{ model: AssetStatusModel, as: "status" }], order: [["id", "DESC"]] });
+const SEARCH_FIELDS = ["tag", "serialNumber"];
+
+export async function listAssets(params: PaginationParams): Promise<{ items: AssetModel[]; total: number }> {
+  const { rows, count } = await AssetModel.findAndCountAll({
+    where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.iLike),
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+    include: [{ model: AssetStatusModel, as: "status" }],
+  });
+  return { items: rows, total: count };
 }
 
 export async function getAssetById(id: number): Promise<AssetModel | null> {

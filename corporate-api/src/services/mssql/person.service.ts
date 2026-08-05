@@ -1,13 +1,26 @@
 import { Op } from "sequelize";
 import { PersonModel } from "../../models/mssql/person.model";
 import { ConflictError, NotFoundError } from "../../library/errors";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type {
   PersonCreationAttributes,
   PersonUpdateAttributes,
 } from "../../types/mssql/person.types";
 
-export async function listPersons(): Promise<PersonModel[]> {
-  return PersonModel.findAll({ order: [["id", "ASC"]] });
+const SEARCH_FIELDS = ["firstName", "lastName", "documentId", "email", "phone"];
+
+export async function listPersons(
+  params: PaginationParams,
+): Promise<{ items: PersonModel[]; total: number }> {
+  const { rows, count } = await PersonModel.findAndCountAll({
+    where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like),
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+  });
+  return { items: rows, total: count };
 }
 
 export async function getPersonById(id: number): Promise<PersonModel | null> {

@@ -1,6 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as productService from "../services/mongo/product.service";
+import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
+import { sendList, sendOk, sendNoContent } from "../library/response";
 
 export const createProductSchema = z.object({
   name: z.string().min(1).max(200),
@@ -14,9 +16,11 @@ export const updateProductSchema = z.object({
   productType: z.enum(["LEASE", "SERVICE", "PURCHASE"]).optional(),
 });
 
-export async function list(_req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    res.json(await productService.listProducts());
+    const params = parsePaginationParams({ ...req.query, ...req.body }, "name");
+    const { items, total } = await productService.listProducts(params);
+    sendList(res, items, buildPaginationMeta(params, total), "Productos obtenidos exitosamente");
   } catch (err) {
     next(err);
   }
@@ -24,7 +28,8 @@ export async function list(_req: Request, res: Response, next: NextFunction): Pr
 
 export async function getById(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    res.json(await productService.getProductByIdOrThrow(req.params.id as string));
+    const product = await productService.getProductByIdOrThrow(req.params.id as string);
+    sendOk(res, product, "Producto obtenido exitosamente");
   } catch (err) {
     next(err);
   }
@@ -33,7 +38,8 @@ export async function getById(req: Request, res: Response, next: NextFunction): 
 export async function create(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof createProductSchema>;
-    res.status(201).json(await productService.createProduct(body));
+    const product = await productService.createProduct(body);
+    sendOk(res, product, "Producto creado exitosamente", 201);
   } catch (err) {
     next(err);
   }
@@ -42,7 +48,8 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 export async function update(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof updateProductSchema>;
-    res.json(await productService.updateProduct(req.params.id as string, body));
+    const product = await productService.updateProduct(req.params.id as string, body);
+    sendOk(res, product, "Producto actualizado exitosamente");
   } catch (err) {
     next(err);
   }
@@ -51,7 +58,7 @@ export async function update(req: Request, res: Response, next: NextFunction): P
 export async function deactivate(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     await productService.deactivateProduct(req.params.id as string);
-    res.status(204).send();
+    sendNoContent(res);
   } catch (err) {
     next(err);
   }

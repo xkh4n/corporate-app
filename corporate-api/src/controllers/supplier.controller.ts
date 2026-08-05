@@ -1,6 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as supplierService from "../services/mssql/supplier.service";
+import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
+import { sendList, sendOk } from "../library/response";
 
 export const createSupplierSchema = z.object({
   businessPartnerId: z.number().int().positive(),
@@ -11,9 +13,11 @@ export const createSupplierSchema = z.object({
 
 export const updateSupplierSchema = createSupplierSchema.omit({ businessPartnerId: true }).partial();
 
-export async function list(_req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    res.json(await supplierService.listSuppliers());
+    const params = parsePaginationParams({ ...req.query, ...req.body }, "id");
+    const { items, total } = await supplierService.listSuppliers(params);
+    sendList(res, items, buildPaginationMeta(params, total), "Proveedores obtenidos exitosamente");
   } catch (err) {
     next(err);
   }
@@ -21,7 +25,8 @@ export async function list(_req: Request, res: Response, next: NextFunction): Pr
 
 export async function getById(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    res.json(await supplierService.getSupplierByIdOrThrow(Number(req.params.id)));
+    const supplier = await supplierService.getSupplierByIdOrThrow(Number(req.params.id));
+    sendOk(res, supplier, "Proveedor obtenido exitosamente");
   } catch (err) {
     next(err);
   }
@@ -30,7 +35,8 @@ export async function getById(req: Request, res: Response, next: NextFunction): 
 export async function create(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof createSupplierSchema>;
-    res.status(201).json(await supplierService.createSupplier({ ...body, createdBy: req.user?.userId }));
+    const supplier = await supplierService.createSupplier({ ...body, createdBy: req.user?.userId });
+    sendOk(res, supplier, "Proveedor creado exitosamente", 201);
   } catch (err) {
     next(err);
   }
@@ -39,7 +45,8 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 export async function update(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof updateSupplierSchema>;
-    res.json(await supplierService.updateSupplier(Number(req.params.id), body));
+    const supplier = await supplierService.updateSupplier(Number(req.params.id), body);
+    sendOk(res, supplier, "Proveedor actualizado exitosamente");
   } catch (err) {
     next(err);
   }

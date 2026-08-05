@@ -1,6 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as addressService from "../services/mssql/address.service";
+import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
+import { sendList, sendOk } from "../library/response";
 import { BadRequestError } from "../library/errors";
 
 export const createAddressSchema = z
@@ -23,14 +25,18 @@ export const updateAddressSchema = z.object({
 
 export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
+    const params = parsePaginationParams({ ...req.query, ...req.body }, "id");
     const personId = req.query.personId ? Number(req.query.personId) : undefined;
     const businessPartnerId = req.query.businessPartnerId ? Number(req.query.businessPartnerId) : undefined;
+
     if (personId !== undefined) {
-      res.json(await addressService.listAddressesByPerson(personId));
+      const { items, total } = await addressService.listAddressesByPerson(personId, params);
+      sendList(res, items, buildPaginationMeta(params, total), "Direcciones obtenidas exitosamente");
       return;
     }
     if (businessPartnerId !== undefined) {
-      res.json(await addressService.listAddressesByBusinessPartner(businessPartnerId));
+      const { items, total } = await addressService.listAddressesByBusinessPartner(businessPartnerId, params);
+      sendList(res, items, buildPaginationMeta(params, total), "Direcciones obtenidas exitosamente");
       return;
     }
     throw new BadRequestError("Debe indicar personId o businessPartnerId como query param");
@@ -41,7 +47,8 @@ export async function list(req: Request, res: Response, next: NextFunction): Pro
 
 export async function getById(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    res.json(await addressService.getAddressByIdOrThrow(Number(req.params.id)));
+    const address = await addressService.getAddressByIdOrThrow(Number(req.params.id));
+    sendOk(res, address, "Direccion obtenida exitosamente");
   } catch (err) {
     next(err);
   }
@@ -66,7 +73,8 @@ export async function create(req: Request, res: Response, next: NextFunction): P
             stateId: body.stateId,
             createdBy: req.user?.userId,
           };
-    res.status(201).json(await addressService.createAddress(input));
+    const address = await addressService.createAddress(input);
+    sendOk(res, address, "Direccion creada exitosamente", 201);
   } catch (err) {
     next(err);
   }
@@ -75,7 +83,8 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 export async function update(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof updateAddressSchema>;
-    res.json(await addressService.updateAddress(Number(req.params.id), body));
+    const address = await addressService.updateAddress(Number(req.params.id), body);
+    sendOk(res, address, "Direccion actualizada exitosamente");
   } catch (err) {
     next(err);
   }

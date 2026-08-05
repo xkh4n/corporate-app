@@ -1,15 +1,31 @@
+import { Op } from "sequelize";
 import { PurchaseRequestLineModel } from "../../models/mssql/purchaseRequestLine.model";
 import { getPurchaseRequestByIdOrThrow } from "./purchaseRequest.service";
 import { getSupplierByIdOrThrow } from "./supplier.service";
 import { getProductByIdOrThrow } from "../mongo/product.service";
 import { NotFoundError } from "../../library/errors";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type {
   PurchaseRequestLineCreationAttributes,
   PurchaseRequestLineUpdateAttributes,
 } from "../../types/mssql/purchaseRequestLine.types";
 
-export async function listLinesByRequest(requestId: number): Promise<PurchaseRequestLineModel[]> {
-  return PurchaseRequestLineModel.findAll({ where: { requestId }, order: [["id", "ASC"]] });
+const SEARCH_FIELDS = ["equipmentType", "status"];
+
+export async function listLinesByRequest(
+  requestId: number,
+  params: PaginationParams,
+): Promise<{ items: PurchaseRequestLineModel[]; total: number }> {
+  const searchWhere = buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like);
+  const { rows, count } = await PurchaseRequestLineModel.findAndCountAll({
+    where: { requestId, ...searchWhere },
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+  });
+  return { items: rows, total: count };
 }
 
 export async function getLineById(id: number): Promise<PurchaseRequestLineModel | null> {

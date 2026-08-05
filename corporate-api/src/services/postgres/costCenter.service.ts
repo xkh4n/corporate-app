@@ -1,8 +1,12 @@
+import { Op } from "sequelize";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CostCenterModel } from "../../models/postgres/costCenter.model";
 import { ConflictError, NotFoundError, isUniqueConstraintError } from "../../library/errors";
 import { logger } from "../../library/logger";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type { CostCenterCreationAttributes, CostCenterUpdateAttributes } from "../../types/postgres/costCenter.types";
 
 interface CostCenterSeedRow {
@@ -11,8 +15,20 @@ interface CostCenterSeedRow {
   descripcion: string;
 }
 
-export async function listCostCenters(): Promise<CostCenterModel[]> {
-  return CostCenterModel.findAll({ order: [["code", "ASC"]] });
+// "code" es INTEGER, no participa del search de texto libre (Op.iLike no
+// aplica sobre una columna numerica sin cast).
+const SEARCH_FIELDS = ["name", "description"];
+
+export async function listCostCenters(
+  params: PaginationParams,
+): Promise<{ items: CostCenterModel[]; total: number }> {
+  const { rows, count } = await CostCenterModel.findAndCountAll({
+    where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.iLike),
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+  });
+  return { items: rows, total: count };
 }
 
 export async function getCostCenterById(id: number): Promise<CostCenterModel | null> {

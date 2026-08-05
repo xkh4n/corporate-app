@@ -1,12 +1,27 @@
+import { Op } from "sequelize";
 import { EmployeeModel } from "../../models/mssql/employee.model";
 import { PersonModel } from "../../models/mssql/person.model";
 import { getPersonByIdOrThrow } from "./person.service";
 import { getCostCenterByIdOrThrow } from "../postgres/costCenter.service";
 import { ConflictError, NotFoundError } from "../../library/errors";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type { EmployeeCreationAttributes, EmployeeUpdateAttributes } from "../../types/mssql/employee.types";
 
-export async function listEmployees(): Promise<EmployeeModel[]> {
-  return EmployeeModel.findAll({ include: [{ model: PersonModel, as: "person" }] });
+const SEARCH_FIELDS = ["employeeCode"];
+
+export async function listEmployees(
+  params: PaginationParams,
+): Promise<{ items: EmployeeModel[]; total: number }> {
+  const { rows, count } = await EmployeeModel.findAndCountAll({
+    where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like),
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+    include: [{ model: PersonModel, as: "person" }],
+  });
+  return { items: rows, total: count };
 }
 
 export async function getEmployeeById(id: number): Promise<EmployeeModel | null> {

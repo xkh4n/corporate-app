@@ -1,6 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as purchaseRequestService from "../services/mssql/purchaseRequest.service";
+import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
+import { sendList, sendOk } from "../library/response";
 
 export const createPurchaseRequestSchema = z.object({
   requesterId: z.number().int().positive(),
@@ -23,9 +25,11 @@ export const updateStatusSchema = z.object({
   status: z.enum(["DRAFT", "SUBMITTED", "APPROVED", "REJECTED", "CLOSED", "CANCELLED"]),
 });
 
-export async function list(_req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    res.json(await purchaseRequestService.listPurchaseRequests());
+    const params = parsePaginationParams({ ...req.query, ...req.body }, "id", "desc");
+    const { items, total } = await purchaseRequestService.listPurchaseRequests(params);
+    sendList(res, items, buildPaginationMeta(params, total), "Solicitudes obtenidas exitosamente");
   } catch (err) {
     next(err);
   }
@@ -33,7 +37,8 @@ export async function list(_req: Request, res: Response, next: NextFunction): Pr
 
 export async function getById(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    res.json(await purchaseRequestService.getPurchaseRequestByIdOrThrow(Number(req.params.id)));
+    const request = await purchaseRequestService.getPurchaseRequestByIdOrThrow(Number(req.params.id));
+    sendOk(res, request, "Solicitud obtenida exitosamente");
   } catch (err) {
     next(err);
   }
@@ -42,9 +47,11 @@ export async function getById(req: Request, res: Response, next: NextFunction): 
 export async function create(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof createPurchaseRequestSchema>;
-    res
-      .status(201)
-      .json(await purchaseRequestService.createPurchaseRequest({ ...body, createdBy: req.user?.userId }));
+    const request = await purchaseRequestService.createPurchaseRequest({
+      ...body,
+      createdBy: req.user?.userId,
+    });
+    sendOk(res, request, "Solicitud creada exitosamente", 201);
   } catch (err) {
     next(err);
   }
@@ -53,7 +60,8 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 export async function update(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof updatePurchaseRequestSchema>;
-    res.json(await purchaseRequestService.updatePurchaseRequest(Number(req.params.id), body));
+    const request = await purchaseRequestService.updatePurchaseRequest(Number(req.params.id), body);
+    sendOk(res, request, "Solicitud actualizada exitosamente");
   } catch (err) {
     next(err);
   }
@@ -62,7 +70,8 @@ export async function update(req: Request, res: Response, next: NextFunction): P
 export async function updateStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { status } = req.body as z.infer<typeof updateStatusSchema>;
-    res.json(await purchaseRequestService.updatePurchaseRequestStatus(Number(req.params.id), status));
+    const request = await purchaseRequestService.updatePurchaseRequestStatus(Number(req.params.id), status);
+    sendOk(res, request, "Estado de la solicitud actualizado exitosamente");
   } catch (err) {
     next(err);
   }

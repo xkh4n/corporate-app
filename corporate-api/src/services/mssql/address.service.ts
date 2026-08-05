@@ -1,16 +1,42 @@
+import { Op, type WhereOptions } from "sequelize";
 import { AddressModel } from "../../models/mssql/address.model";
 import { getPersonByIdOrThrow } from "./person.service";
 import { getBusinessPartnerByIdOrThrow } from "./businessPartner.service";
 import { getStateByIdOrThrow } from "./state.service";
 import { NotFoundError } from "../../library/errors";
+import type { PaginationParams } from "../../library/pagination";
+import { getOffset } from "../../library/pagination";
+import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type { AddressCreationAttributes, AddressUpdateAttributes } from "../../types/mssql/address.types";
 
-export async function listAddressesByPerson(personId: number): Promise<AddressModel[]> {
-  return AddressModel.findAll({ where: { personId } });
+const SEARCH_FIELDS = ["addressType", "addressLine"];
+
+async function listAddressesByOwner(
+  owner: WhereOptions,
+  params: PaginationParams,
+): Promise<{ items: AddressModel[]; total: number }> {
+  const searchWhere = buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like);
+  const { rows, count } = await AddressModel.findAndCountAll({
+    where: { ...owner, ...searchWhere },
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+  });
+  return { items: rows, total: count };
 }
 
-export async function listAddressesByBusinessPartner(businessPartnerId: number): Promise<AddressModel[]> {
-  return AddressModel.findAll({ where: { businessPartnerId } });
+export async function listAddressesByPerson(
+  personId: number,
+  params: PaginationParams,
+): Promise<{ items: AddressModel[]; total: number }> {
+  return listAddressesByOwner({ personId }, params);
+}
+
+export async function listAddressesByBusinessPartner(
+  businessPartnerId: number,
+  params: PaginationParams,
+): Promise<{ items: AddressModel[]; total: number }> {
+  return listAddressesByOwner({ businessPartnerId }, params);
 }
 
 export async function getAddressById(id: number): Promise<AddressModel | null> {

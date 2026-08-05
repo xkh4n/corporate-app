@@ -11,6 +11,7 @@ import {
   revokeRefreshToken,
 } from "../services/redis/session.service";
 import { UnauthorizedError } from "../library/errors";
+import { sendOk, sendNoContent } from "../library/response";
 import type { AuthenticatedUser } from "../types/auth.types";
 
 export const loginSchema = z.object({
@@ -78,7 +79,7 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
     const tokens = await issueTokenPair(authUser);
     await touchLastLogin(authUser.userId);
 
-    res.json({ user: authUser, ...tokens });
+    sendOk(res, { user: authUser, ...tokens }, "Login exitoso");
   } catch (err) {
     next(err);
   }
@@ -103,7 +104,7 @@ export async function refresh(req: Request, res: Response, next: NextFunction): 
       roleName: payload.roleName,
     });
 
-    res.json(tokens);
+    sendOk(res, tokens, "Tokens renovados exitosamente");
   } catch (err) {
     next(err instanceof UnauthorizedError ? err : new UnauthorizedError("Refresh token invalido"));
   }
@@ -129,12 +130,12 @@ export async function logout(req: Request, res: Response, next: NextFunction): P
       });
     }
 
-    res.status(204).send();
+    sendNoContent(res);
   } catch (err) {
     next(err);
   }
 }
 
 export function me(req: Request, res: Response): void {
-  res.json({ user: req.user ?? null });
+  sendOk(res, { user: req.user ?? null }, "Usuario actual obtenido exitosamente");
 }

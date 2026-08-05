@@ -2,6 +2,8 @@ import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as userService from "../services/mssql/user.service";
 import { revokeAllRefreshTokens } from "../services/redis/session.service";
+import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
+import { sendList, sendOk, sendNoContent } from "../library/response";
 
 export const createUserSchema = z.object({
   personId: z.number().int().positive(),
@@ -20,9 +22,11 @@ export const changePasswordSchema = z.object({
   password: z.string().min(1),
 });
 
-export async function list(_req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    res.json(await userService.listUsers());
+    const params = parsePaginationParams({ ...req.query, ...req.body }, "id");
+    const { items, total } = await userService.listUsers(params);
+    sendList(res, items, buildPaginationMeta(params, total), "Usuarios obtenidos exitosamente");
   } catch (err) {
     next(err);
   }
@@ -32,7 +36,7 @@ export async function getById(req: Request, res: Response, next: NextFunction): 
   try {
     const user = await userService.getUserByIdOrThrow(Number(req.params.id));
     const { passwordHash, ...safe } = user.get({ plain: true });
-    res.json(safe);
+    sendOk(res, safe, "Usuario obtenido exitosamente");
   } catch (err) {
     next(err);
   }
@@ -41,7 +45,8 @@ export async function getById(req: Request, res: Response, next: NextFunction): 
 export async function create(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof createUserSchema>;
-    res.status(201).json(await userService.createUser(body));
+    const user = await userService.createUser(body);
+    sendOk(res, user, "Usuario creado exitosamente", 201);
   } catch (err) {
     next(err);
   }
@@ -50,7 +55,8 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 export async function update(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof updateUserSchema>;
-    res.json(await userService.updateUser(Number(req.params.id), body));
+    const user = await userService.updateUser(Number(req.params.id), body);
+    sendOk(res, user, "Usuario actualizado exitosamente");
   } catch (err) {
     next(err);
   }
@@ -68,7 +74,7 @@ export async function changePassword(
     // Un cambio de password invalida todas las sesiones stateless activas
     // (mismo criterio que cualquier sistema de auth serio).
     await revokeAllRefreshTokens(id);
-    res.status(204).send();
+    sendNoContent(res);
   } catch (err) {
     next(err);
   }
@@ -79,7 +85,7 @@ export async function deactivate(req: Request, res: Response, next: NextFunction
     const id = Number(req.params.id);
     await userService.deactivateUser(id);
     await revokeAllRefreshTokens(id);
-    res.status(204).send();
+    sendNoContent(res);
   } catch (err) {
     next(err);
   }
