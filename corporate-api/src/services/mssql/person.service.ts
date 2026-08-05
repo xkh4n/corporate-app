@@ -1,4 +1,4 @@
-import { Op } from "sequelize";
+import { Op, type WhereOptions } from "sequelize";
 import { PersonModel } from "../../models/mssql/person.model";
 import { ConflictError, NotFoundError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
@@ -11,11 +11,41 @@ import type {
 
 const SEARCH_FIELDS = ["firstName", "lastName", "documentId", "email", "phone"];
 
+// documentId/name son filtros puntuales (mas precisos que el "search"
+// generico de arriba, que hace LIKE contra 5 campos a la vez): documentId
+// es match EXACTO (es un identificador unico, no tiene sentido un LIKE
+// parcial ahi -"12345678" no deberia matchear "112345678-9"), name es LIKE
+// contra firstName/lastName. Se combinan con AND entre si y con "search" si
+// tambien viene.
+export interface PersonSearchFilters {
+  documentId?: string;
+  name?: string;
+}
+
+function buildPersonFilterConditions(filters: PersonSearchFilters): WhereOptions[] {
+  const conditions: WhereOptions[] = [];
+  if (filters.documentId) conditions.push({ documentId: filters.documentId });
+  if (filters.name) {
+    conditions.push({
+      [Op.or]: [
+        { firstName: { [Op.like]: `%${filters.name}%` } },
+        { lastName: { [Op.like]: `%${filters.name}%` } },
+      ],
+    } as WhereOptions);
+  }
+  return conditions;
+}
+
 export async function listPersons(
   params: PaginationParams,
+  filters: PersonSearchFilters = {},
 ): Promise<{ items: PersonModel[]; total: number }> {
+  const conditions = buildPersonFilterConditions(filters);
+  const searchWhere = buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like);
+  if (Object.keys(searchWhere).length > 0) conditions.push(searchWhere);
+
   const { rows, count } = await PersonModel.findAndCountAll({
-    where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like),
+    where: conditions.length > 0 ? { [Op.and]: conditions } : {},
     order: buildSequelizeOrder(params.sortBy, params.sortOrder),
     limit: params.limit,
     offset: getOffset(params),

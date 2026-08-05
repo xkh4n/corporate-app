@@ -11,13 +11,13 @@ businessPartnerRouter.get("/", businessPartnerController.list);
 businessPartnerRouter.get("/:id", businessPartnerController.getById);
 businessPartnerRouter.post(
   "/",
-  authorize("admin"),
+  authorize("business-partners", "create"),
   validateBody(businessPartnerController.createBusinessPartnerSchema),
   businessPartnerController.create,
 );
 businessPartnerRouter.put(
   "/:id",
-  authorize("admin"),
+  authorize("business-partners", "update"),
   validateBody(businessPartnerController.updateBusinessPartnerSchema),
   businessPartnerController.update,
 );

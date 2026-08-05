@@ -1,6 +1,7 @@
 import { Router } from "express";
 import * as goodsReceiptController from "../controllers/goodsReceipt.controller";
 import { authenticate } from "../middlewares/authenticate";
+import { authorize } from "../middlewares/authorize";
 import { validateBody } from "../middlewares/validate";
 
 export const goodsReceiptRouter = Router();
@@ -10,6 +11,7 @@ goodsReceiptRouter.get("/", goodsReceiptController.list);
 goodsReceiptRouter.get("/:id", goodsReceiptController.getById);
 goodsReceiptRouter.post(
   "/",
+  authorize("goods-receipts", "create"),
   validateBody(goodsReceiptController.createGoodsReceiptSchema),
   goodsReceiptController.create,
 );

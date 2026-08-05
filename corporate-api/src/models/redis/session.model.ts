@@ -9,3 +9,10 @@ export function refreshTokenKey(jti: string): string {
 export function userRefreshTokensKey(userId: number): string {
   return `user-refresh-tokens:${userId}`;
 }
+
+// Watermark de invalidacion (ver services/redis/session.service.ts,
+// invalidateUserSessions/getUserInvalidation): un valor por usuario, no uno
+// por token -mucho mas liviano que un blacklist de jti's individuales.
+export function userInvalidationKey(userId: number): string {
+  return `user-invalidation:${userId}`;
+}

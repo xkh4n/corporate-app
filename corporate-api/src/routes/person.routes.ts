@@ -7,15 +7,41 @@ import { validateBody } from "../middlewares/validate";
 export const personRouter = Router();
 
 // PII: a diferencia de roles (lectura abierta a cualquier autenticado),
-// personas queda restringido a admin de punta a punta.
-personRouter.use(authenticate, authorize("admin"));
+// personas queda restringido por permiso de punta a punta (solo "admin" lo
+// tiene por defecto, ver permission-catalog.ts).
+personRouter.use(authenticate);
 
-personRouter.get("/", personController.list);
-personRouter.get("/:id", personController.getById);
-personRouter.post("/", validateBody(personController.createPersonSchema), personController.create);
+// GET /persons - Lista paginada completa (admite "search" generico, LIKE
+// contra firstName/lastName/documentId/email/phone). Busquedas puntuales:
+// ver POST /bydocumentId y POST /byname mas abajo.
+personRouter.get("/", authorize("persons", "read"), personController.list);
+personRouter.get("/:id", authorize("persons", "read"), personController.getById);
+
+// POST /persons/bydocumentId - {documentId} en el body, match EXACTO.
+personRouter.post(
+  "/bydocumentId",
+  authorize("persons", "read"),
+  validateBody(personController.findByDocumentIdSchema),
+  personController.findByDocumentId,
+);
+
+// POST /persons/byname - {name} en el body, LIKE contra firstName/lastName.
+personRouter.post(
+  "/byname",
+  authorize("persons", "read"),
+  validateBody(personController.findByNameSchema),
+  personController.findByName,
+);
+personRouter.post(
+  "/",
+  authorize("persons", "create"),
+  validateBody(personController.createPersonSchema),
+  personController.create,
+);
 personRouter.put(
   "/:id",
+  authorize("persons", "update"),
   validateBody(personController.updatePersonSchema),
   personController.update,
 );
-personRouter.delete("/:id", personController.deactivate);
+personRouter.delete("/:id", authorize("persons", "delete"), personController.deactivate);

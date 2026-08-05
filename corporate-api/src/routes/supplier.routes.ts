@@ -11,13 +11,13 @@ supplierRouter.get("/", supplierController.list);
 supplierRouter.get("/:id", supplierController.getById);
 supplierRouter.post(
   "/",
-  authorize("admin"),
+  authorize("suppliers", "create"),
   validateBody(supplierController.createSupplierSchema),
   supplierController.create,
 );
 supplierRouter.put(
   "/:id",
-  authorize("admin"),
+  authorize("suppliers", "update"),
   validateBody(supplierController.updateSupplierSchema),
   supplierController.update,
 );

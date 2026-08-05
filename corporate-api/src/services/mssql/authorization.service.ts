@@ -1,9 +1,10 @@
 import { mssql } from "../../databases/mssql/connection";
 import { AuthorizationModel } from "../../models/mssql/authorization.model";
 import { getLineByIdOrThrow } from "./purchaseRequestLine.service";
+import { getPurchaseRequestByIdOrThrow } from "./purchaseRequest.service";
 import { getQuoteByIdOrThrow } from "./quote.service";
 import { getUserByIdOrThrow } from "./user.service";
-import { BadRequestError, NotFoundError } from "../../library/errors";
+import { BadRequestError, ForbiddenError, NotFoundError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder } from "../../library/sequelizeSearch";
@@ -45,13 +46,24 @@ export async function createAuthorization(
 ): Promise<AuthorizationModel> {
   const line = await getLineByIdOrThrow(data.requestLineId);
   const quote = await getQuoteByIdOrThrow(data.quoteId);
-  await getUserByIdOrThrow(data.approverId);
+  const approver = await getUserByIdOrThrow(data.approverId);
 
   if (quote.requestId !== line.requestId) {
     throw new BadRequestError(
       `La cotizacion ${data.quoteId} no pertenece a la misma solicitud que la linea ${data.requestLineId}`,
     );
   }
+
+  // Segregacion de funciones: quien solicito la compra no puede ser quien la
+  // autoriza -sin esto, un usuario con permiso "authorizations:create"
+  // podria aprobarse su propia solicitud. requesterId es un personId; se
+  // compara contra el personId del usuario aprobador, no su userId (son
+  // entidades distintas, ver types/auth.types.ts).
+  const request = await getPurchaseRequestByIdOrThrow(line.requestId);
+  if (request.requesterId === approver.personId) {
+    throw new ForbiddenError("El solicitante de la compra no puede autorizar su propia solicitud");
+  }
+
   if (data.approvedQuantity > line.quantity) {
     throw new BadRequestError(
       `La cantidad aprobada (${data.approvedQuantity}) no puede superar la cantidad solicitada (${line.quantity})`,

@@ -7,7 +7,7 @@ import { connectRedis } from "./src/databases/redis/connection";
 import { connectMongo } from "./src/databases/mongo/connection";
 import { migratePostgres } from "./src/databases/postgres/migrate";
 import { migrateMssql } from "./src/databases/mssql/migrate";
-import { seedBootstrapAdmin, seedGeography } from "./src/databases/seed";
+import { seedBootstrapAdmin, seedGeography, seedPermissions } from "./src/databases/seed";
 import { seedCostCenters } from "./src/services/postgres/costCenter.service";
 import { seedProducts } from "./src/services/mongo/product.service";
 
@@ -16,6 +16,8 @@ import { seedProducts } from "./src/services/mongo/product.service";
 import "./src/models/mssql/person.model";
 import "./src/models/mssql/user.model";
 import "./src/models/postgres/role.model";
+import "./src/models/postgres/permission.model";
+import "./src/models/postgres/rolePermission.model";
 
 // Geografia (country -> city -> states)
 import "./src/models/mssql/country.model";
@@ -49,7 +51,7 @@ async function bootstrap(): Promise<void> {
   await Promise.all([migratePostgres(), migrateMssql()]);
   // seedGeography es secuencial internamente (countries -> cities -> states);
   // seedCostCenters vive en Postgres, sin dependencia con la cadena anterior.
-  await Promise.all([seedGeography(), seedCostCenters(), seedProducts()]);
+  await Promise.all([seedGeography(), seedCostCenters(), seedProducts(), seedPermissions()]);
   await seedBootstrapAdmin();
 
   const app = await createApp();

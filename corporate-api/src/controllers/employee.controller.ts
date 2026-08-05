@@ -12,10 +12,40 @@ export const createEmployeeSchema = z.object({
 
 export const updateEmployeeSchema = createEmployeeSchema.omit({ personId: true }).partial();
 
+export const findByDocumentIdSchema = z.object({ documentId: z.string().min(1) });
+export const findByNameSchema = z.object({ name: z.string().min(1) });
+
 export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const params = parsePaginationParams({ ...req.query, ...req.body }, "employeeCode");
     const { items, total } = await employeeService.listEmployees(params);
+    sendList(res, items, buildPaginationMeta(params, total), "Colaboradores obtenidos exitosamente");
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST (no GET: el body no viaja en un GET real, fetch/axios lo rechazan
+// del lado del cliente) /employees/bydocumentId - match EXACTO contra la
+// persona asociada.
+export async function findByDocumentId(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { documentId } = req.body as z.infer<typeof findByDocumentIdSchema>;
+    const params = parsePaginationParams(req.body, "employeeCode");
+    const { items, total } = await employeeService.listEmployees(params, { documentId });
+    sendList(res, items, buildPaginationMeta(params, total), "Colaboradores obtenidos exitosamente");
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /employees/byname - LIKE contra firstName/lastName de la persona
+// asociada.
+export async function findByName(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { name } = req.body as z.infer<typeof findByNameSchema>;
+    const params = parsePaginationParams(req.body, "employeeCode");
+    const { items, total } = await employeeService.listEmployees(params, { name });
     sendList(res, items, buildPaginationMeta(params, total), "Colaboradores obtenidos exitosamente");
   } catch (err) {
     next(err);

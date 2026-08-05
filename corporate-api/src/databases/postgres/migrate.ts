@@ -1,5 +1,6 @@
 import { postgres } from "./connection";
 import { logger } from "../../library/logger";
+import { isDuplicateObjectError } from "../../library/errors";
 
 // Migracion propia de la app (esquema de negocio), separada del bootstrap de
 // infra (corporate-infra/PostgreSQL/init/*.sh, que solo crea roles/usuarios
@@ -7,6 +8,7 @@ import { logger } from "../../library/logger";
 // ON CONFLICT DO NOTHING, seguro de correr en cada arranque del contenedor.
 export async function migratePostgres(): Promise<void> {
   await migrateRoles();
+  await migratePermissions();
   await migrateAssets();
   await migrateAssetTagCounters();
 
@@ -30,6 +32,59 @@ async function migrateRoles(): Promise<void> {
       ('admin', 'Acceso total al sistema'),
       ('user', 'Acceso estandar')
     ON CONFLICT (name) DO NOTHING;
+  `);
+}
+
+// Catalogo de permisos (resource+action) y su asignacion N:M a roles -
+// reemplaza el chequeo binario "roleName === 'admin'" por una matriz
+// configurable: cada ruta exige un permiso puntual (ver
+// middlewares/authorize.ts), y el catalogo/las asignaciones por defecto se
+// siembran en seed.ts (seedPermissions). "admin" sigue teniendo bypass total
+// hardcodeado en el middleware (superusuario, no depende de filas en esta
+// tabla), asi que nunca puede quedar bloqueado por un seed incompleto.
+async function migratePermissions(): Promise<void> {
+  await postgres.query(`
+    CREATE TABLE IF NOT EXISTS permissions (
+      id SERIAL PRIMARY KEY,
+      resource VARCHAR(50) NOT NULL,
+      action VARCHAR(20) NOT NULL,
+      description VARCHAR(255),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (resource, action)
+    );
+  `);
+
+  // Constraint con nombre explicito (en vez de dejar que Postgres le ponga
+  // el default "permissions_action_check") para poder ensancharla de forma
+  // idempotente cada vez que se agrega una accion nueva al enum
+  // (PermissionAction en permission.model.ts) -"CREATE TABLE IF NOT EXISTS"
+  // no la toca si la tabla ya existia de una corrida anterior con la lista
+  // vieja, por eso el DROP+ADD explicito en cada arranque.
+  // "permissions_action_check" es el nombre que Postgres le puso solo al
+  // CHECK inline de la version anterior de esta migracion (sin nombre
+  // explicito) -hay que tumbarlo tambien, si no queda enforceando la lista
+  // vieja en paralelo con la nueva constraint de abajo.
+  await postgres.query(`ALTER TABLE permissions DROP CONSTRAINT IF EXISTS permissions_action_check;`);
+  await postgres.query(`ALTER TABLE permissions DROP CONSTRAINT IF EXISTS permissions_action_allowed;`);
+  try {
+    await postgres.query(`
+      ALTER TABLE permissions ADD CONSTRAINT permissions_action_allowed
+        CHECK (action IN ('create','read','update','delete','approve'));
+    `);
+  } catch (err) {
+    // Carrera entre las 3 replicas (DROP+ADD sin transaccion compartida):
+    // otra replica ya la agrego entre nuestro DROP y nuestro ADD. Mismo
+    // criterio que isUniqueConstraintError para los seeds de datos.
+    if (!isDuplicateObjectError(err)) throw err;
+  }
+
+  await postgres.query(`
+    CREATE TABLE IF NOT EXISTS role_permissions (
+      role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+      permission_id INTEGER NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (role_id, permission_id)
+    );
   `);
 }
 

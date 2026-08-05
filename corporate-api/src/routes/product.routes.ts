@@ -11,14 +11,14 @@ productRouter.get("/", productController.list);
 productRouter.get("/:id", productController.getById);
 productRouter.post(
   "/",
-  authorize("admin"),
+  authorize("products", "create"),
   validateBody(productController.createProductSchema),
   productController.create,
 );
 productRouter.put(
   "/:id",
-  authorize("admin"),
+  authorize("products", "update"),
   validateBody(productController.updateProductSchema),
   productController.update,
 );
-productRouter.delete("/:id", authorize("admin"), productController.deactivate);
+productRouter.delete("/:id", authorize("products", "delete"), productController.deactivate);

@@ -27,6 +27,7 @@ async function issueTokenPair(user: AuthenticatedUser) {
   const jti = randomUUID();
   const basePayload = {
     sub: user.userId,
+    personId: user.personId,
     username: user.username,
     roleId: user.roleId,
     roleName: user.roleName,
@@ -98,7 +99,7 @@ export async function refresh(req: Request, res: Response, next: NextFunction): 
     await revokeRefreshToken(payload.jti, payload.sub);
     const tokens = await issueTokenPair({
       userId: payload.sub,
-      personId: payload.sub,
+      personId: payload.personId,
       username: payload.username,
       roleId: payload.roleId,
       roleName: payload.roleName,

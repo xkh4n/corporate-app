@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { authRouter } from "./auth.routes";
 import { roleRouter } from "./role.routes";
+import { permissionRouter } from "./permission.routes";
 import { personRouter } from "./person.routes";
 import { userRouter } from "./user.routes";
 import { countryRouter } from "./country.routes";
@@ -27,6 +28,7 @@ export const apiRouter = Router();
 
 apiRouter.use("/auth", authRouter);
 apiRouter.use("/roles", roleRouter);
+apiRouter.use("/permissions", permissionRouter);
 apiRouter.use("/persons", personRouter);
 apiRouter.use("/users", userRouter);
 

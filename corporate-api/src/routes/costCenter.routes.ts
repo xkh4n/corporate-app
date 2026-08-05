@@ -11,13 +11,13 @@ costCenterRouter.get("/", costCenterController.list);
 costCenterRouter.get("/:id", costCenterController.getById);
 costCenterRouter.post(
   "/",
-  authorize("admin"),
+  authorize("cost-centers", "create"),
   validateBody(costCenterController.createCostCenterSchema),
   costCenterController.create,
 );
 costCenterRouter.put(
   "/:id",
-  authorize("admin"),
+  authorize("cost-centers", "update"),
   validateBody(costCenterController.updateCostCenterSchema),
   costCenterController.update,
 );

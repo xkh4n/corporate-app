@@ -1,4 +1,4 @@
-import { Op } from "sequelize";
+import { Op, type WhereOptions } from "sequelize";
 import { EmployeeModel } from "../../models/mssql/employee.model";
 import { PersonModel } from "../../models/mssql/person.model";
 import { getPersonByIdOrThrow } from "./person.service";
@@ -11,15 +11,47 @@ import type { EmployeeCreationAttributes, EmployeeUpdateAttributes } from "../..
 
 const SEARCH_FIELDS = ["employeeCode"];
 
+// documentId/name viven en la persona asociada, no en employees -a
+// diferencia de SEARCH_FIELDS (que solo busca employeeCode), estos se
+// resuelven via el join a PersonModel. Mismo criterio exacto-vs-LIKE que
+// person.service.ts.
+export interface EmployeeSearchFilters {
+  documentId?: string;
+  name?: string;
+}
+
+function buildPersonFilterConditions(filters: EmployeeSearchFilters): WhereOptions[] {
+  const conditions: WhereOptions[] = [];
+  if (filters.documentId) conditions.push({ documentId: filters.documentId });
+  if (filters.name) {
+    conditions.push({
+      [Op.or]: [
+        { firstName: { [Op.like]: `%${filters.name}%` } },
+        { lastName: { [Op.like]: `%${filters.name}%` } },
+      ],
+    } as WhereOptions);
+  }
+  return conditions;
+}
+
 export async function listEmployees(
   params: PaginationParams,
+  filters: EmployeeSearchFilters = {},
 ): Promise<{ items: EmployeeModel[]; total: number }> {
+  const personConditions = buildPersonFilterConditions(filters);
+  const personWhere: WhereOptions | undefined =
+    personConditions.length > 0 ? { [Op.and]: personConditions } : undefined;
+
   const { rows, count } = await EmployeeModel.findAndCountAll({
     where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like),
     order: buildSequelizeOrder(params.sortBy, params.sortOrder),
     limit: params.limit,
     offset: getOffset(params),
-    include: [{ model: PersonModel, as: "person" }],
+    include: [
+      personWhere
+        ? { model: PersonModel, as: "person", where: personWhere, required: true }
+        : { model: PersonModel, as: "person" },
+    ],
   });
   return { items: rows, total: count };
 }

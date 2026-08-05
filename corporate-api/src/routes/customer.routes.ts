@@ -11,7 +11,7 @@ customerRouter.get("/", customerController.list);
 customerRouter.get("/:id", customerController.getById);
 customerRouter.post(
   "/",
-  authorize("admin"),
+  authorize("customers", "create"),
   validateBody(customerController.createCustomerSchema),
   customerController.create,
 );

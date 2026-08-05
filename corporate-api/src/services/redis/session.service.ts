@@ -1,5 +1,9 @@
 import { redis } from "../../databases/redis/connection";
-import { refreshTokenKey, userRefreshTokensKey } from "../../models/redis/session.model";
+import {
+  refreshTokenKey,
+  userRefreshTokensKey,
+  userInvalidationKey,
+} from "../../models/redis/session.model";
 import { env } from "../../library/env";
 
 // Whitelist de refresh tokens en Redis: un JWT firmado no se puede "invalidar"
@@ -37,4 +41,36 @@ export async function revokeAllRefreshTokens(userId: number): Promise<void> {
   }
   pipeline.del(userRefreshTokensKey(userId));
   await pipeline.exec();
+}
+
+export type InvalidationReason = "role_changed" | "password_changed" | "deactivated";
+
+export interface UserInvalidation {
+  validAfter: number; // epoch seconds
+  reason: InvalidationReason;
+}
+
+// Watermark por usuario: cualquier access token/sesion emitido ANTES de
+// "validAfter" se rechaza en authenticate.ts, aunque su JWT todavia no haya
+// expirado -sin esto, cambiar el rol o la contraseña de alguien no tenia
+// efecto sobre un access token stateless ya emitido hasta su TTL natural
+// (hasta 12h), y refresh() tampoco lo corregia (re-firma con el payload
+// viejo, nunca vuelve a leer la BD). revokeAllRefreshTokens sigue haciendo
+// falta ademas de esto: bloquea que se emita un access token NUEVO via
+// refresh (que tendria un iat fresco y pasaria el watermark igual), forzando
+// un login real -el unico punto que vuelve a leer roles/password desde la
+// BD-. TTL = el mas largo entre access token y sesion, con margen: pasado
+// ese tiempo cualquier token afectado ya expiro solo, no hace falta seguir
+// guardando el motivo.
+export async function invalidateUserSessions(userId: number, reason: InvalidationReason): Promise<void> {
+  const validAfter = Math.floor(Date.now() / 1000);
+  const ttlSeconds = Math.max(env.jwt.accessTtlSeconds, env.session.ttlHours * 3600) + 60;
+  await redis.set(userInvalidationKey(userId), JSON.stringify({ validAfter, reason }), {
+    EX: ttlSeconds,
+  });
+}
+
+export async function getUserInvalidation(userId: number): Promise<UserInvalidation | null> {
+  const raw = await redis.get(userInvalidationKey(userId));
+  return raw ? (JSON.parse(raw) as UserInvalidation) : null;
 }

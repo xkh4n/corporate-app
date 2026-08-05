@@ -11,13 +11,13 @@ assetStatusRouter.get("/", assetStatusController.list);
 assetStatusRouter.get("/:id", assetStatusController.getById);
 assetStatusRouter.post(
   "/",
-  authorize("admin"),
+  authorize("asset-statuses", "create"),
   validateBody(assetStatusController.createAssetStatusSchema),
   assetStatusController.create,
 );
 assetStatusRouter.put(
   "/:id",
-  authorize("admin"),
+  authorize("asset-statuses", "update"),
   validateBody(assetStatusController.updateAssetStatusSchema),
   assetStatusController.update,
 );
