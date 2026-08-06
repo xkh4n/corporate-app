@@ -1,7 +1,12 @@
 import type { NextFunction, Request, Response } from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { getUserByUsername, touchLastLogin } from "../services/mssql/user.service";
+import {
+  getUserByUsername,
+  getUserByIdOrThrow,
+  touchLastLogin,
+  changePassword as changeUserPassword,
+} from "../services/mssql/user.service";
 import { getRoleByIdOrThrow } from "../services/postgres/role.service";
 import { comparePassword } from "../library/password";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../library/jwt";
@@ -9,6 +14,7 @@ import {
   storeRefreshToken,
   isRefreshTokenValid,
   revokeRefreshToken,
+  revokeAllRefreshTokens,
   invalidateUserSessions,
 } from "../services/redis/session.service";
 import { UnauthorizedError } from "../library/errors";
@@ -22,6 +28,11 @@ export const loginSchema = z.object({
 
 export const refreshSchema = z.object({
   refreshToken: z.string().min(1),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(1),
 });
 
 async function issueTokenPair(user: AuthenticatedUser) {
@@ -139,15 +150,6 @@ export async function logout(req: Request, res: Response, next: NextFunction): P
       });
     }
 
-    // Hallazgo de auditoria: hasta ahora logout() solo revocaba EL refresh
-    // token puntual (o destruia la sesion de cookie), pero el access token
-    // JWT que el cliente ya tiene en la mano seguia siendo valido hasta su
-    // TTL natural (12h) aunque el usuario hiciera logout explicito. Mismo
-    // mecanismo que role_changed/password_changed (ver user.controller.ts):
-    // nota que esto invalida TODOS los dispositivos del usuario, no solo la
-    // sesion/token que esta llamando a logout -mismo alcance que
-    // revokeAllRefreshTokens, que ya se documenta como "logout de todos los
-    // dispositivos"-.
     if (userId !== undefined) {
       await invalidateUserSessions(userId, "logout");
     }
@@ -160,4 +162,34 @@ export async function logout(req: Request, res: Response, next: NextFunction): P
 
 export function me(req: Request, res: Response): void {
   sendOk(res, { user: req.user ?? null }, "Usuario actual obtenido exitosamente");
+}
+
+// Auto-servicio: cualquier usuario autenticado cambia SU PROPIA contraseña,
+// a diferencia de PATCH /users/:id/password (requiere permiso "users:update"
+// -uso administrativo, no valida contraseña actual). Por eso aca si se exige
+// currentPassword antes de delegar a userService.changePassword.
+export async function changePassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { currentPassword, newPassword } = req.body as z.infer<typeof changePasswordSchema>;
+    const userId = req.user!.userId;
+
+    const user = await getUserByIdOrThrow(userId);
+    const passwordMatches = await comparePassword(currentPassword, user.passwordHash);
+    if (!passwordMatches) {
+      throw new UnauthorizedError("Contraseña actual incorrecta");
+    }
+
+    await changeUserPassword(userId, newPassword);
+
+    // Mismo criterio que el cambio administrativo (ver user.controller.ts):
+    // invalida todas las sesiones/refresh tokens, incluida la que hizo este
+    // request -el cliente debe iniciar sesion de nuevo con la contraseña
+    // nueva.
+    await revokeAllRefreshTokens(userId);
+    await invalidateUserSessions(userId, "password_changed");
+
+    sendNoContent(res);
+  } catch (err) {
+    next(err);
+  }
 }
