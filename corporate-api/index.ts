@@ -10,6 +10,7 @@ import { migrateMssql } from "./src/databases/mssql/migrate";
 import { seedBootstrapAdmin, seedGeography, seedPermissions } from "./src/databases/seed";
 import { seedCostCenters } from "./src/services/postgres/costCenter.service";
 import { seedProducts } from "./src/services/mongo/product.service";
+import { seedProductCategories } from "./src/services/mongo/productCategory.service";
 
 // Registra las asociaciones de Sequelize (belongsTo/hasOne/hasMany en cada
 // *.model.ts) antes de que cualquier query las necesite.
@@ -27,7 +28,11 @@ import "./src/models/mssql/state.model";
 
 // Terceros (business_partners + extensiones supplier/customer) y empleados
 import "./src/models/mssql/businessPartner.model";
+import "./src/models/mssql/supplierServiceType.model";
+import "./src/models/mssql/supplierDeliveryTerms.model";
 import "./src/models/mssql/supplier.model";
+import "./src/models/mssql/supplierProduct.model";
+import "./src/models/mssql/supplierContact.model";
 import "./src/models/mssql/customer.model";
 import "./src/models/mssql/employee.model";
 import "./src/models/mssql/address.model";
@@ -52,7 +57,7 @@ async function bootstrap(): Promise<void> {
   await Promise.all([migratePostgres(), migrateMssql()]);
   // seedGeography es secuencial internamente (countries -> cities -> states);
   // seedCostCenters vive en Postgres, sin dependencia con la cadena anterior.
-  await Promise.all([seedGeography(), seedCostCenters(), seedProducts(), seedPermissions()]);
+  await Promise.all([seedGeography(), seedCostCenters(), seedProductCategories(), seedProducts(), seedPermissions()]);
   await seedBootstrapAdmin();
 
   const app = await createApp();

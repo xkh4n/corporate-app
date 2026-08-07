@@ -7,13 +7,15 @@ import { sendList, sendOk, sendNoContent } from "../library/response";
 export const createProductSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(1000).optional(),
-  productType: z.enum(["LEASE", "SERVICE", "PURCHASE"]),
+  productType: z.enum(["ARRIENDO", "SERVICIO", "COMPRA"]),
+  categoryId: z.string().length(24).optional(),
 });
 
 export const updateProductSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   description: z.string().max(1000).optional(),
-  productType: z.enum(["LEASE", "SERVICE", "PURCHASE"]).optional(),
+  productType: z.enum(["ARRIENDO", "SERVICIO", "COMPRA"]).optional(),
+  categoryId: z.string().length(24).optional(),
 });
 
 export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {

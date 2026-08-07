@@ -6,9 +6,9 @@ import { sendList, sendOk } from "../library/response";
 
 export const createSupplierSchema = z.object({
   businessPartnerId: z.number().int().positive(),
-  serviceType: z.enum(["LEASE", "SERVICE", "SALE"]),
+  serviceTypeId: z.number().int().positive(),
   paymentTermDays: z.number().int().min(0).optional(),
-  deliveryTerms: z.enum(["ON_PURCHASE_ORDER", "ON_INVOICE"]),
+  deliveryTermsId: z.number().int().positive(),
 });
 
 export const updateSupplierSchema = createSupplierSchema.omit({ businessPartnerId: true }).partial();

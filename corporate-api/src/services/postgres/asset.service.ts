@@ -18,9 +18,9 @@ const PAD_LENGTH = 9;
 // (Product.productType, catalogo Mongo) -no del proveedor ni de la OC. "ACT"
 // (no "PUR") porque una compra pasa a ser un activo propio de la empresa.
 const TAG_PREFIX_BY_PRODUCT_TYPE: Record<ProductType, "ARR" | "SRV" | "ACT"> = {
-  LEASE: "ARR",
-  SERVICE: "SRV",
-  PURCHASE: "ACT",
+  ARRIENDO: "ARR",
+  SERVICIO: "SRV",
+  COMPRA: "ACT",
 };
 
 async function generateAssetTag(prefix: "ARR" | "SRV" | "ACT", transaction: Transaction): Promise<string> {
@@ -79,6 +79,7 @@ export async function createAssetFromReceipt(input: CreateAssetFromReceiptInput)
         value: input.value ?? null,
         receivedAt: input.receivedAt ?? new Date().toISOString().slice(0, 10),
         goodsReceiptId: input.goodsReceiptId,
+        costCenterId: input.costCenterId ?? null,
         createdBy: input.createdBy ?? null,
       },
       { transaction },

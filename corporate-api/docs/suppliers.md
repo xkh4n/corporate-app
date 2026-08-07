@@ -60,9 +60,48 @@ Permiso requerido: `business-partners:create`
 }
 ```
 
-Guardar `data.id` — es el `businessPartnerId` que se usa en el paso 2.
+Guardar `data.id` — es el `businessPartnerId` que se usa en el paso 3.
 
-## Paso 2 — Crear el Supplier
+## Paso 2 — Obtener los `id` de tipo de servicio y condición de entrega
+
+`serviceType`/`deliveryTerms` **no son strings libres ni un enum fijo**: son catálogos abiertos
+(tablas lookup, ver "Nota de diseño" al final), pensados para poder agregar valores nuevos sin
+tocar código ni redeployar. El frontend debe poblar sus combos/selects consultando estos 2
+endpoints — ambos de solo lectura para cualquier autenticado, sin permiso especial:
+
+`GET /api/supplier-service-types`
+```json
+{
+  "codigo": 200,
+  "message": "Tipos de servicio de proveedor obtenidos exitosamente",
+  "data": { "items": [
+    { "id": 1, "code": "ARRIENDO", "name": "Arriendo" },
+    { "id": 2, "code": "SERVICIOS", "name": "Servicios" },
+    { "id": 3, "code": "COMPRAS", "name": "Compras" }
+  ], "pagination": { "totalItems": 3 } }
+}
+```
+
+`GET /api/supplier-delivery-terms`
+```json
+{
+  "codigo": 200,
+  "message": "Condiciones de entrega de proveedor obtenidas exitosamente",
+  "data": { "items": [
+    { "id": 1, "code": "ORDEN COMPRA", "name": "Orden de compra" },
+    { "id": 2, "code": "CONTRA FACTURA", "name": "Contra factura" },
+    { "id": 3, "code": "CREDITO", "name": "Crédito" }
+  ], "pagination": { "totalItems": 3 } }
+}
+```
+
+Estos son los valores sembrados por defecto (ids reales de tu ambiente, no asumir que son
+siempre 1/2/3). Si necesitas un valor nuevo (ej. un tipo de servicio distinto), créalo con
+`POST /api/supplier-service-types` (permiso `supplier-service-types:create`, body
+`{ "code": "...", "name": "...", "description"?: "..." }`) o su equivalente
+`POST /api/supplier-delivery-terms` — no requiere tocar el backend.
+
+## Paso 3 — Crear el Supplier
 
 `POST /api/suppliers`
 Permiso requerido: `suppliers:create`
@@ -72,15 +111,15 @@ Permiso requerido: `suppliers:create`
 | Campo | Obligatorio | Tipo / validación |
 |---|---|---|
 | `businessPartnerId` | **Sí** | number, entero positivo. Debe existir y no estar ya asociado a otro proveedor (relación 1:1) |
-| `serviceType` | **Sí** | enum: `"LEASE"` \| `"SERVICE"` \| `"SALE"` |
-| `deliveryTerms` | **Sí** | enum: `"ON_PURCHASE_ORDER"` \| `"ON_INVOICE"` |
+| `serviceTypeId` | **Sí** | number, entero positivo. Debe existir en `supplier_service_types` (paso 2) |
+| `deliveryTermsId` | **Sí** | number, entero positivo. Debe existir en `supplier_delivery_terms` (paso 2) |
 | `paymentTermDays` | No | number, entero ≥ 0 |
 
 ```json
 {
   "businessPartnerId": 1,
-  "serviceType": "SALE",
-  "deliveryTerms": "ON_PURCHASE_ORDER",
+  "serviceTypeId": 3,
+  "deliveryTermsId": 1,
   "paymentTermDays": 30
 }
 ```
@@ -88,7 +127,7 @@ Permiso requerido: `suppliers:create`
 Body mínimo (sin `paymentTermDays`):
 
 ```json
-{ "businessPartnerId": 1, "serviceType": "SERVICE", "deliveryTerms": "ON_INVOICE" }
+{ "businessPartnerId": 1, "serviceTypeId": 2, "deliveryTermsId": 2 }
 ```
 
 ### Respuesta (201)
@@ -100,15 +139,21 @@ Body mínimo (sin `paymentTermDays`):
   "data": {
     "id": 1,
     "businessPartnerId": 1,
-    "serviceType": "SALE",
-    "deliveryTerms": "ON_PURCHASE_ORDER",
+    "serviceTypeId": 3,
+    "deliveryTermsId": 1,
     "paymentTermDays": 30,
-    "businessPartner": { "id": 1, "legalName": "Distribuidora Los Andes SpA", "nationalId": "76543210-1", "businessLine": "Distribución de insumos" }
+    "businessPartner": { "id": 1, "legalName": "Distribuidora Los Andes SpA", "nationalId": "76543210-1", "businessLine": "Distribución de insumos" },
+    "serviceType": { "id": 3, "code": "COMPRAS", "name": "Compras" },
+    "deliveryTerms": { "id": 1, "code": "ORDEN COMPRA", "name": "Orden de compra" }
   }
 }
 ```
 
-### Errores esperables en el paso 2
+`GET /api/suppliers` y `GET /api/suppliers/:id` devuelven la misma forma embebida (
+`businessPartner`, `serviceType`, `deliveryTerms` como objeto completo, no solo el id) — el
+frontend no necesita una segunda consulta para mostrar el nombre en español.
+
+### Errores esperables en el paso 3
 
 Todas las respuestas de error usan la misma forma `{ codigo, message, details? }`.
 
@@ -116,7 +161,9 @@ Todas las respuestas de error usan la misma forma `{ codigo, message, details? }
 |---|---|---|
 | `businessPartnerId` no existe | 404 | `El tercero <id> no existe` |
 | El business partner ya es proveedor | 409 | `El tercero <id> ya es proveedor` |
-| Body no cumple el schema (falta campo, enum inválido) | 400 | detalle de validación en `details` |
+| `serviceTypeId` no existe | 404 | `El tipo de servicio de proveedor <id> no existe` |
+| `deliveryTermsId` no existe | 404 | `La condicion de entrega de proveedor <id> no existe` |
+| Body no cumple el schema (falta campo, id no numérico) | 400 | detalle de validación en `details` |
 
 ## Actualizar un proveedor existente
 
@@ -126,7 +173,16 @@ opcionales.
 
 ## Nota de diseño
 
-Se evaluó exponer un único endpoint `POST /suppliers` que reciba también los campos del business
-partner y cree ambos por dentro en una transacción. Se descartó a propósito: forzaría crear un
-`BusinessPartner` nuevo en cada alta, rompiendo la reutilización entre clientes y proveedores, e
-introduciría el riesgo de duplicar una empresa que ya existe. Se mantiene el flujo en 2 pasos.
+**Combinar business partner + supplier en un solo endpoint**: se evaluó y se descartó a
+propósito — forzaría crear un `BusinessPartner` nuevo en cada alta, rompiendo la reutilización
+entre clientes y proveedores, e introduciría el riesgo de duplicar una empresa que ya existe. Se
+mantiene el flujo en pasos separados.
+
+**`serviceType`/`deliveryTerms` como tablas lookup, no como enum fijo**: los valores originales
+(`LEASE`/`SERVICE`/`SALE`, `ON_PURCHASE_ORDER`/`ON_INVOICE`) vivían como un `CHECK` constraint en
+la base de datos + un enum de validación en el backend — agregar un valor nuevo requería editar
+código en 3 lugares y correr una migración de esquema. Se migró al mismo patrón que ya usan los
+estados de activo (`asset_statuses`): una tabla de catálogo con `code`/`name`, con su propio
+CRUD (`/supplier-service-types`, `/supplier-delivery-terms`), sin `ENUM`/`CHECK` hardcodeado. El
+`code`/`name` de los valores sembrados por defecto está en español a propósito, para que el
+frontend no tenga que traducir nada.

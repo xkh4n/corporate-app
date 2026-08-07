@@ -1,5 +1,6 @@
 import { isValidObjectId } from "mongoose";
 import { ProductModel, ProductDocument } from "../../models/mongo/product.model";
+import { getProductCategoryByIdOrThrow } from "./productCategory.service";
 import { NotFoundError } from "../../library/errors";
 import { logger } from "../../library/logger";
 import type { PaginationParams } from "../../library/pagination";
@@ -35,11 +36,13 @@ export async function getProductByIdOrThrow(id: string): Promise<ProductDocument
 }
 
 export async function createProduct(data: ProductCreationAttributes): Promise<ProductDocument> {
+  if (data.categoryId) await getProductCategoryByIdOrThrow(data.categoryId);
   return ProductModel.create(data);
 }
 
 export async function updateProduct(id: string, data: ProductUpdateAttributes): Promise<ProductDocument> {
   const product = await getProductByIdOrThrow(id);
+  if (data.categoryId) await getProductCategoryByIdOrThrow(data.categoryId);
   product.set(data);
   await product.save();
   return product;
@@ -68,17 +71,17 @@ export async function seedProducts(): Promise<void> {
       {
         name: "Notebook Dell Latitude 5440",
         description: "Notebook corporativo 14 pulgadas, 16GB RAM, 512GB SSD",
-        productType: "PURCHASE",
+        productType: "COMPRA",
       },
       {
         name: "Impresora multifuncional en arriendo",
         description: "Arriendo mensual de impresora multifuncional laser",
-        productType: "LEASE",
+        productType: "ARRIENDO",
       },
       {
         name: "Soporte tecnico anual de servidores",
         description: "Servicio de mantencion y soporte tecnico anual",
-        productType: "SERVICE",
+        productType: "SERVICIO",
       },
     ]);
     logger.info("Seed de products (Mongo) aplicado");

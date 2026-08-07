@@ -1,8 +1,11 @@
+import path from "node:path";
 import { Op } from "sequelize";
 import { GoodsReceiptModel } from "../../models/mssql/goodsReceipt.model";
 import { getPurchaseOrderByIdOrThrow } from "./purchaseOrder.service";
 import { getQuoteByIdOrThrow } from "./quote.service";
+import { getPurchaseRequestByIdOrThrow } from "./purchaseRequest.service";
 import { createAssetFromReceipt } from "../postgres/asset.service";
+import { getAcquisitionFolder, saveBuffer, sanitizeFilenameSegment } from "../../library/documentStorage";
 import { NotFoundError } from "../../library/errors";
 import { logger } from "../../library/logger";
 import type { PaginationParams } from "../../library/pagination";
@@ -48,6 +51,7 @@ export async function getGoodsReceiptByIdOrThrow(id: number): Promise<GoodsRecei
 export async function createGoodsReceipt(input: GoodsReceiptCreationInput): Promise<GoodsReceiptModel> {
   const order = await getPurchaseOrderByIdOrThrow(input.purchaseOrderId);
   const quote = await getQuoteByIdOrThrow(order.quoteId);
+  const request = await getPurchaseRequestByIdOrThrow(quote.requestId);
 
   const receipt = await GoodsReceiptModel.create({
     documentType: input.documentType,
@@ -66,6 +70,7 @@ export async function createGoodsReceipt(input: GoodsReceiptCreationInput): Prom
     await createAssetFromReceipt({
       goodsReceiptId: receipt.id,
       productId: quote.productId,
+      costCenterId: request.costCenterId,
       serialNumber: input.serialNumber ?? null,
       warrantyExpiresAt: input.warrantyExpiresAt ?? null,
       value: quote.purchaseValue,
@@ -80,4 +85,22 @@ export async function createGoodsReceipt(input: GoodsReceiptCreationInput): Prom
   }
 
   return receipt;
+}
+
+// Guia de despacho/factura/boleta: va a la misma carpeta consolidada de la
+// adquisicion (junto a la solicitud/cotizacion/autorizacion del proveedor
+// ganador). documentNumber es texto libre del proveedor -se sanea antes de
+// usarlo en el nombre del archivo.
+export async function attachGoodsReceiptDocument(
+  receiptId: number,
+  file: Express.Multer.File,
+): Promise<string> {
+  const receipt = await getGoodsReceiptByIdOrThrow(receiptId);
+  const request = await getPurchaseRequestByIdOrThrow(receipt.requestId);
+
+  const extension = path.extname(file.originalname) || ".pdf";
+  const documentNumber = sanitizeFilenameSegment(receipt.documentNumber);
+  const filename = `${receipt.documentType}-${documentNumber}${extension}`;
+  saveBuffer(getAcquisitionFolder(request.requestNumber), filename, file.buffer);
+  return filename;
 }

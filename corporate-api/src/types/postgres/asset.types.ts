@@ -7,6 +7,7 @@ export interface AssetAttributes {
   value: string | null;
   receivedAt: string | null;
   goodsReceiptId: number | null;
+  costCenterId: number | null;
   createdBy: number | null;
   updatedBy: number | null;
   createdAt: Date;
@@ -15,10 +16,13 @@ export interface AssetAttributes {
 
 // tag no es input del cliente: lo genera createAssetFromReceipt en base al
 // productType del producto recibido (ARR/SRV/ACT). statusId nace en
-// RECEIVED. Ver services/postgres/asset.service.ts.
+// RECEIVED. costCenterId se copia del PurchaseRequest original (via
+// GoodsReceipt.requestId, resuelto en goodsReceipt.service.ts) -tampoco es
+// input del cliente. Ver services/postgres/asset.service.ts.
 export interface CreateAssetFromReceiptInput {
   goodsReceiptId: number;
   productId: string;
+  costCenterId?: number | null;
   serialNumber?: string | null;
   warrantyExpiresAt?: string | null;
   value?: string | null;

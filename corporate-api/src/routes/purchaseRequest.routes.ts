@@ -19,6 +19,21 @@ purchaseRequestRouter.get(
   authorize("purchase-requests", "read"),
   purchaseRequestController.getById,
 );
+purchaseRequestRouter.get(
+  "/:id/quote-document",
+  authorize("purchase-requests", "read"),
+  purchaseRequestController.downloadQuoteDocument,
+);
+purchaseRequestRouter.get(
+  "/:id/quote-documents",
+  authorize("purchase-requests", "read"),
+  purchaseRequestController.listQuoteDocuments,
+);
+purchaseRequestRouter.get(
+  "/:id/quote-documents/:filename",
+  authorize("purchase-requests", "read"),
+  purchaseRequestController.downloadQuoteDocumentFile,
+);
 purchaseRequestRouter.post(
   "/",
   authorize("purchase-requests", "create"),

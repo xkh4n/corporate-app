@@ -1,6 +1,7 @@
 import { CreationOptional, DataTypes, InferAttributes, InferCreationAttributes, Model } from "sequelize";
 import { postgres } from "../../databases/postgres/connection";
 import { AssetStatusModel } from "./assetStatus.model";
+import { CostCenterModel } from "./costCenter.model";
 
 // Maestro de activos: el estado actual vive aca (statusId), no se recalcula
 // buscando el ultimo AssetMovement. goodsReceiptId es una referencia
@@ -16,6 +17,7 @@ export class AssetModel extends Model<InferAttributes<AssetModel>, InferCreation
   declare value: string | null;
   declare receivedAt: string | null;
   declare goodsReceiptId: number | null;
+  declare costCenterId: number | null;
   declare createdBy: number | null;
   declare updatedBy: number | null;
   declare createdAt: CreationOptional<Date>;
@@ -32,6 +34,7 @@ AssetModel.init(
     value: { type: DataTypes.DECIMAL(18, 2), allowNull: true },
     receivedAt: { type: DataTypes.DATEONLY, allowNull: true, field: "received_at" },
     goodsReceiptId: { type: DataTypes.INTEGER, allowNull: true, field: "goods_receipt_id" },
+    costCenterId: { type: DataTypes.INTEGER, allowNull: true, field: "cost_center_id" },
     createdBy: { type: DataTypes.INTEGER, allowNull: true, field: "created_by" },
     updatedBy: { type: DataTypes.INTEGER, allowNull: true, field: "updated_by" },
     createdAt: { type: DataTypes.DATE, field: "created_at" },
@@ -46,3 +49,6 @@ AssetModel.init(
 
 AssetModel.belongsTo(AssetStatusModel, { foreignKey: "statusId", as: "status" });
 AssetStatusModel.hasMany(AssetModel, { foreignKey: "statusId", as: "assets" });
+
+AssetModel.belongsTo(CostCenterModel, { foreignKey: "costCenterId", as: "costCenter" });
+CostCenterModel.hasMany(AssetModel, { foreignKey: "costCenterId", as: "assets" });

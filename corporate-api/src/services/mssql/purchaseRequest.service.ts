@@ -6,11 +6,17 @@ import { UserModel } from "../../models/mssql/user.model";
 import { getPersonByIdOrThrow } from "./person.service";
 import { getUserByIdOrThrow } from "./user.service";
 import { getCostCenterByIdOrThrow } from "../postgres/costCenter.service";
+import { getSupplierByIdOrThrow } from "./supplier.service";
+import { getBusinessPartnerByIdOrThrow } from "./businessPartner.service";
+import { listAllLinesByRequest } from "./purchaseRequestLine.service";
+import { getProductByIdOrThrow } from "../mongo/product.service";
+import { getProductCategoryById } from "../mongo/productCategory.service";
 import { generateDocumentNumber } from "../../library/documentNumbering";
 import { NotFoundError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
+import type { QuoteRequestPdfData } from "../../library/pdf/quoteRequestPdf";
 import type {
   PurchaseRequestCreationAttributes,
   PurchaseRequestUpdateAttributes,
@@ -92,4 +98,54 @@ export async function updatePurchaseRequestStatus(
   const request = await getPurchaseRequestByIdOrThrow(id);
   await request.update({ status, updatedBy });
   return request;
+}
+
+// Datos para el documento de "solicitud de cotizacion" (PDF, ver
+// library/pdf/quoteRequestPdf.ts): cabecera (folio, solicitante) + TODAS las
+// lineas de la solicitud (cada producto viene de Mongo, incluye su
+// categoria si tiene) y, si se indica supplierId, la razon social del
+// proveedor destinatario -query param opcional, no toda solicitud tiene
+// todavia un proveedor elegido.
+export async function getQuoteRequestDocumentData(
+  requestId: number,
+  supplierId?: number,
+): Promise<QuoteRequestPdfData> {
+  const request = await getPurchaseRequestByIdOrThrow(requestId);
+  const requester = await getPersonByIdOrThrow(request.requesterId);
+  const lines = await listAllLinesByRequest(requestId);
+
+  const items = await Promise.all(
+    lines.map(async (line, index) => {
+      const product = await getProductByIdOrThrow(line.productId);
+      let categoryName: string | null = null;
+      if (product.categoryId) {
+        const category = await getProductCategoryById(String(product.categoryId));
+        categoryName = category?.name ?? null;
+      }
+      return {
+        no: index + 1,
+        productName: product.name,
+        categoryName,
+        description: product.description,
+        quantity: line.quantity,
+      };
+    }),
+  );
+
+  let supplierLegalName: string | null = null;
+  let supplierNationalId: string | null = null;
+  if (supplierId !== undefined) {
+    const supplier = await getSupplierByIdOrThrow(supplierId);
+    const businessPartner = await getBusinessPartnerByIdOrThrow(supplier.businessPartnerId);
+    supplierLegalName = businessPartner.legalName;
+    supplierNationalId = businessPartner.nationalId;
+  }
+
+  return {
+    requestNumber: request.requestNumber,
+    requesterName: `${requester.firstName} ${requester.lastName}`,
+    supplierLegalName,
+    supplierNationalId,
+    items,
+  };
 }

@@ -25,11 +25,75 @@ async function runDdl(sql: string, replacements?: Record<string, unknown>): Prom
 export async function migrateMssql(): Promise<void> {
   await migrateAuth();
   await migrateGeography();
+  await migrateSupplierLookups();
   await migrateBusinessPartners();
   await migratePurchasingFlow();
   await migrateDocumentNumbering();
 
   logger.info("Migracion de MSSQL aplicada");
+}
+
+// Tablas lookup (no ENUM/CHECK hardcodeado) para suppliers.service_type/
+// delivery_terms, mismo criterio que postgres/migrate.ts con asset_statuses:
+// permiten agregar valores nuevos via API/CRUD (ver supplierServiceType.*/
+// supplierDeliveryTerms.*) sin migracion. Van antes de migrateBusinessPartners
+// porque suppliers tiene FK real hacia estas dos tablas.
+async function migrateSupplierLookups(): Promise<void> {
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'supplier_service_types')
+    BEGIN
+      CREATE TABLE supplier_service_types (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        code NVARCHAR(30) NOT NULL UNIQUE,
+        name NVARCHAR(100) NOT NULL,
+        description NVARCHAR(255) NULL,
+        created_by INT NULL,
+        updated_by INT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+      );
+    END
+  `);
+
+  for (const [code, name] of [
+    ["ARRIENDO", "Arriendo"],
+    ["SERVICIOS", "Servicios"],
+    ["COMPRAS", "Compras"],
+  ]) {
+    await runDdl(
+      `IF NOT EXISTS (SELECT 1 FROM supplier_service_types WHERE code = :code)
+       INSERT INTO supplier_service_types (code, name) VALUES (:code, :name);`,
+      { code, name },
+    );
+  }
+
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'supplier_delivery_terms')
+    BEGIN
+      CREATE TABLE supplier_delivery_terms (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        code NVARCHAR(30) NOT NULL UNIQUE,
+        name NVARCHAR(100) NOT NULL,
+        description NVARCHAR(255) NULL,
+        created_by INT NULL,
+        updated_by INT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+      );
+    END
+  `);
+
+  for (const [code, name] of [
+    ["ORDEN COMPRA", "Orden de compra"],
+    ["CONTRA FACTURA", "Contra factura"],
+    ["CREDITO", "Crédito"],
+  ]) {
+    await runDdl(
+      `IF NOT EXISTS (SELECT 1 FROM supplier_delivery_terms WHERE code = :code)
+       INSERT INTO supplier_delivery_terms (code, name) VALUES (:code, :name);`,
+      { code, name },
+    );
+  }
 }
 
 // Contador atomico para los numeros de documento (SOL/COT/OC), ver
@@ -215,18 +279,65 @@ async function migrateBusinessPartners(): Promise<void> {
       CREATE TABLE suppliers (
         id INT IDENTITY(1,1) PRIMARY KEY,
         business_partner_id INT NOT NULL UNIQUE,
-        service_type NVARCHAR(20) NOT NULL,
+        service_type_id INT NOT NULL,
         payment_term_days INT NOT NULL DEFAULT 0,
-        delivery_terms NVARCHAR(20) NOT NULL,
+        delivery_terms_id INT NOT NULL,
         created_by INT NULL,
         updated_by INT NULL,
         created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         CONSTRAINT fk_suppliers_business_partner FOREIGN KEY (business_partner_id) REFERENCES business_partners(id),
-        CONSTRAINT chk_suppliers_service_type CHECK (service_type IN ('LEASE','SERVICE','SALE')),
-        CONSTRAINT chk_suppliers_delivery_terms CHECK (delivery_terms IN ('ON_PURCHASE_ORDER','ON_INVOICE')),
+        CONSTRAINT fk_suppliers_service_type FOREIGN KEY (service_type_id) REFERENCES supplier_service_types(id),
+        CONSTRAINT fk_suppliers_delivery_terms FOREIGN KEY (delivery_terms_id) REFERENCES supplier_delivery_terms(id),
         CONSTRAINT fk_suppliers_created_by FOREIGN KEY (created_by) REFERENCES users(id),
         CONSTRAINT fk_suppliers_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
+      );
+    END
+  `);
+
+  // M:N Supplier<->Product (Mongo): product_id es cross-engine (ObjectId de
+  // Mongo en string), sin FK real -mismo criterio que purchase_request_lines
+  // /quotes/authorizations/goods_receipts.product_id. supplier_id SI tiene FK
+  // real porque suppliers vive en este mismo motor.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'supplier_products')
+    BEGIN
+      CREATE TABLE supplier_products (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        supplier_id INT NOT NULL,
+        product_id NVARCHAR(24) NOT NULL,
+        created_by INT NULL,
+        updated_by INT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT fk_supplier_products_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+        CONSTRAINT uq_supplier_products UNIQUE (supplier_id, product_id),
+        CONSTRAINT fk_supplier_products_created_by FOREIGN KEY (created_by) REFERENCES users(id),
+        CONSTRAINT fk_supplier_products_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
+      );
+    END
+  `);
+
+  // Un proveedor puede tener varios contactos (comercial, facturacion, etc.)
+  // -usados para enviarles la solicitud de cotizacion por correo (ver
+  // corporate-mailer, todavia no existe).
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'supplier_contacts')
+    BEGIN
+      CREATE TABLE supplier_contacts (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        supplier_id INT NOT NULL,
+        name NVARCHAR(150) NOT NULL,
+        email NVARCHAR(150) NOT NULL,
+        phone NVARCHAR(30) NULL,
+        position NVARCHAR(100) NULL,
+        created_by INT NULL,
+        updated_by INT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT fk_supplier_contacts_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+        CONSTRAINT fk_supplier_contacts_created_by FOREIGN KEY (created_by) REFERENCES users(id),
+        CONSTRAINT fk_supplier_contacts_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
       );
     END
   `);

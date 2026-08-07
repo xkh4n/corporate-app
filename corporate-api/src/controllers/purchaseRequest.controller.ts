@@ -1,6 +1,11 @@
+import path from "node:path";
+import fs from "node:fs";
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as purchaseRequestService from "../services/mssql/purchaseRequest.service";
+import { archiveQuoteRequestPdf, renderQuoteRequestPdf } from "../library/pdf/quoteRequestPdf";
+import { getQuoteRequestFolder, listFiles } from "../library/documentStorage";
+import { NotFoundError } from "../library/errors";
 import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
 import { sendList, sendOk } from "../library/response";
 
@@ -79,6 +84,53 @@ export async function updateStatus(req: Request, res: Response, next: NextFuncti
       req.user?.userId,
     );
     sendOk(res, request, "Estado de la solicitud actualizado exitosamente");
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PDF descargable: no depende de nada con salida a internet, corre entero
+// dentro de este contenedor. Lista TODAS las lineas de la solicitud.
+// ?supplierId=X opcional -si se indica, el documento sale dirigido a ese
+// proveedor.
+export async function downloadQuoteDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const supplierId = req.query.supplierId ? Number(req.query.supplierId) : undefined;
+    const data = await purchaseRequestService.getQuoteRequestDocumentData(Number(req.params.id), supplierId);
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${data.requestNumber}.pdf"`);
+    const doc = renderQuoteRequestPdf(data);
+    archiveQuoteRequestPdf(doc, data.requestNumber, data.supplierNationalId);
+    doc.pipe(res);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Para que el aprobador pueda revisar, antes de autorizar, que cotizaciones
+// (SOLCOT-* generado por el backend, COT-* subido al responder el
+// proveedor) ya se acumularon para esta solicitud.
+export async function listQuoteDocuments(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const request = await purchaseRequestService.getPurchaseRequestByIdOrThrow(Number(req.params.id));
+    const files = listFiles(getQuoteRequestFolder(request.requestNumber));
+    sendOk(res, { files }, "Documentos de la solicitud obtenidos exitosamente");
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function downloadQuoteDocumentFile(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const request = await purchaseRequestService.getPurchaseRequestByIdOrThrow(Number(req.params.id));
+    const filename = String(req.params.filename ?? "");
+    if (!filename || path.basename(filename) !== filename) throw new NotFoundError("Archivo no encontrado");
+
+    const filePath = path.join(getQuoteRequestFolder(request.requestNumber), filename);
+    if (!fs.existsSync(filePath)) throw new NotFoundError("Archivo no encontrado");
+
+    res.download(filePath, filename);
   } catch (err) {
     next(err);
   }

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CityModel } from "../../models/mssql/city.model";
 import { CountryModel } from "../../models/mssql/country.model";
-import { NotFoundError, isUniqueConstraintError } from "../../library/errors";
+import { NotFoundError, isUniqueConstraintError, isDuplicateMssqlObjectError } from "../../library/errors";
 import { logger } from "../../library/logger";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
@@ -96,7 +96,9 @@ export async function seedCities(): Promise<void> {
     await CityModel.bulkCreate(toInsert);
     logger.info({ count: toInsert.length, skipped }, "Seed de cities aplicado");
   } catch (err) {
-    if (!isUniqueConstraintError(err)) throw err;
+    // Ver comentario equivalente en country.service.ts: bulkCreate en MSSQL
+    // no normaliza la violacion de UNIQUE a SequelizeUniqueConstraintError.
+    if (!isUniqueConstraintError(err) && !isDuplicateMssqlObjectError(err)) throw err;
     logger.debug("Seed de cities ya aplicado por otra replica, se omite");
   }
 }

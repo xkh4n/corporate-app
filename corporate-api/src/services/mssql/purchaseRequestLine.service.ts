@@ -38,6 +38,13 @@ export async function getLineByIdOrThrow(id: number): Promise<PurchaseRequestLin
   return line;
 }
 
+// Todas las lineas de una solicitud, sin paginar -usado para armar el
+// documento de "solicitud de cotizacion" (PDF), que debe listar el
+// contenido completo de la solicitud, no una pagina parcial.
+export async function listAllLinesByRequest(requestId: number): Promise<PurchaseRequestLineModel[]> {
+  return PurchaseRequestLineModel.findAll({ where: { requestId }, order: [["id", "ASC"]] });
+}
+
 // productId es un ObjectId de Mongo (catalogo de producto) -sin FK real,
 // validado a mano contra el service de Mongo, mismo criterio que
 // getRoleByIdOrThrow en user.service.ts para el cross-engine hacia Postgres.

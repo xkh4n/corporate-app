@@ -80,9 +80,27 @@ export function isDuplicateObjectError(err: unknown): boolean {
 // INSERT ..." (ver document_numbering en databases/mssql/migrate.ts), que en
 // vez de 2714 chocan contra la PK/UNIQUE (error 2627) -no es un error real,
 // es "otra replica ya dejo la tabla/fila en el estado correcto".
+// tedious representa un error de un statement simple (DDL, insert de 1 fila)
+// como {parent: {number}}, pero un bulkCreate (INSERT multi-fila) lo envuelve
+// en un AggregateError -{parent: {aggregateErrors: [{number}, ...]}}-, sin
+// "number" directo en el parent. Hace falta revisar ambas formas: se
+// encontro en un clean install real (3 replicas corriendo seedCountries en
+// paralelo, ver country.service.ts) que el chequeo original solo miraba la
+// forma "simple" y dejaba pasar esta variante sin capturar.
+function extractMssqlErrorNumber(err: unknown): number | undefined {
+  if (!(err instanceof Error)) return undefined;
+  const parent = (err as { parent?: unknown; original?: unknown }).parent
+    ?? (err as { original?: unknown }).original;
+  if (!parent || typeof parent !== "object") return undefined;
+
+  const direct = (parent as { number?: number }).number;
+  if (typeof direct === "number") return direct;
+
+  const aggregateErrors = (parent as { aggregateErrors?: Array<{ number?: number }> }).aggregateErrors;
+  return aggregateErrors?.find((entry) => typeof entry.number === "number")?.number;
+}
+
 export function isDuplicateMssqlObjectError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const number = (err as { parent?: { number?: number }; original?: { number?: number } }).parent?.number
-    ?? (err as { original?: { number?: number } }).original?.number;
+  const number = extractMssqlErrorNumber(err);
   return number === 2714 || number === 2627;
 }

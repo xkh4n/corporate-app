@@ -2,7 +2,7 @@ import { Op } from "sequelize";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CountryModel } from "../../models/mssql/country.model";
-import { ConflictError, NotFoundError, isUniqueConstraintError } from "../../library/errors";
+import { ConflictError, NotFoundError, isUniqueConstraintError, isDuplicateMssqlObjectError } from "../../library/errors";
 import { logger } from "../../library/logger";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
@@ -83,7 +83,12 @@ export async function seedCountries(): Promise<void> {
     logger.info({ count: rows.length }, "Seed de countries aplicado");
   } catch (err) {
     // Otra replica ya gano la carrera e inserto esta misma data primero.
-    if (!isUniqueConstraintError(err)) throw err;
+    // bulkCreate en MSSQL envuelve la violacion de UNIQUE en un
+    // AggregateError que Sequelize NO normaliza a SequelizeUniqueConstraintError
+    // (a diferencia de un create() de una fila) -isUniqueConstraintError sola
+    // no la detecta, hace falta el chequeo numerico tambien. Ver
+    // isDuplicateMssqlObjectError.
+    if (!isUniqueConstraintError(err) && !isDuplicateMssqlObjectError(err)) throw err;
     logger.debug("Seed de countries ya aplicado por otra replica, se omite");
   }
 }

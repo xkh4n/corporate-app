@@ -155,6 +155,15 @@ async function migrateAssets(): Promise<void> {
     );
   `);
 
+  // A diferencia de MSSQL (sin ALTER TABLE, ver migrate.ts de ese motor),
+  // Postgres si soporta agregar una columna a una tabla ya existente de
+  // forma idempotente -no hace falta el patron drop-and-recreate. Nullable:
+  // los assets creados antes de este cambio quedan sin centro de costo,
+  // no hay backfill.
+  await postgres.query(`
+    ALTER TABLE assets ADD COLUMN IF NOT EXISTS cost_center_id INTEGER REFERENCES cost_centers(id);
+  `);
+
   await postgres.query(`
     CREATE TABLE IF NOT EXISTS asset_movements (
       id SERIAL PRIMARY KEY,
@@ -183,7 +192,7 @@ async function migrateAssets(): Promise<void> {
 }
 
 // Contador atomico para el tag de activo (ARR/SRV/ACT segun
-// Product.productType -LEASE/SERVICE/PURCHASE-, ver
+// Product.productType -ARRIENDO/SERVICIO/COMPRA-, ver
 // services/postgres/asset.service.ts). Mismo patron que document_numbering
 // en MSSQL (ver library/documentNumbering.ts), pero con "RETURNING" en vez
 // de "OUTPUT" -sintaxis propia de Postgres para el mismo incremento atomico.

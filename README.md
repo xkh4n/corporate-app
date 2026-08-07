@@ -83,10 +83,14 @@ flowchart TB
 
 ```
 run.ps1 bdd dev          # 1. corporate-infra: bases de datos + replicación
-run.ps1 monitoring dev   # 2. corporate-monitoring: métricas/logs/dashboards
-run.ps1 backend dev      # 3. corporate-api: migra, siembra datos base y levanta las 3 réplicas
+run.ps1 backend dev      # 2. corporate-api: migra, siembra datos base y levanta las 3 réplicas
+run.ps1 monitoring dev   # 3. corporate-monitoring: métricas/logs/dashboards
 run.ps1 frontend dev     # 4. corporate-front: pendiente de implementación
 ```
+
+`monitoring` depende de una red externa que crea `backend` (para que Prometheus alcance a las 3
+réplicas de la API por nombre) — por eso `backend` va antes que `monitoring`, aunque monitoreo no
+dependa de la API para nada más.
 
 Cada script de `corporate-scripts/` genera certificados TLS autofirmados y resuelve credenciales
 desde `corporate-secrets/` (carpeta **excluida de git**, un archivo por credencial, montados como

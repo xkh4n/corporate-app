@@ -5,6 +5,16 @@ import { BadRequestError } from "../library/errors";
 import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
 import { sendList, sendOk } from "../library/response";
 
+export async function uploadAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.file) throw new BadRequestError("Debe adjuntar un archivo (campo 'file')");
+    const filename = await goodsReceiptService.attachGoodsReceiptDocument(Number(req.params.id), req.file);
+    sendOk(res, { filename }, "Documento de recepcion adjuntado exitosamente", 201);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export const createGoodsReceiptSchema = z.object({
   documentType: z.enum(["GUIA_DESPACHO", "BOLETA", "FACTURA"]),
   documentNumber: z.string().min(1).max(50),

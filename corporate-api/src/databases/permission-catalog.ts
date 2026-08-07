@@ -43,6 +43,39 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "cost-centers", action: "update", description: "Editar centros de costo" },
   { resource: "suppliers", action: "create", description: "Crear proveedores" },
   { resource: "suppliers", action: "update", description: "Editar proveedores" },
+  {
+    resource: "supplier-service-types",
+    action: "create",
+    description: "Crear tipos de servicio de proveedor",
+  },
+  {
+    resource: "supplier-service-types",
+    action: "update",
+    description: "Editar tipos de servicio de proveedor",
+  },
+  {
+    resource: "supplier-delivery-terms",
+    action: "create",
+    description: "Crear condiciones de entrega de proveedor",
+  },
+  {
+    resource: "supplier-delivery-terms",
+    action: "update",
+    description: "Editar condiciones de entrega de proveedor",
+  },
+  {
+    resource: "supplier-products",
+    action: "create",
+    description: "Vincular productos a un proveedor",
+  },
+  {
+    resource: "supplier-products",
+    action: "delete",
+    description: "Desvincular productos de un proveedor",
+  },
+  { resource: "supplier-contacts", action: "create", description: "Crear contactos de proveedor" },
+  { resource: "supplier-contacts", action: "update", description: "Editar contactos de proveedor" },
+  { resource: "supplier-contacts", action: "delete", description: "Eliminar contactos de proveedor" },
   { resource: "customers", action: "create", description: "Crear clientes" },
   { resource: "employees", action: "create", description: "Crear colaboradores" },
   // PII (via la persona asociada): admin-only por defecto, mismo criterio
@@ -53,6 +86,8 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "products", action: "create", description: "Crear productos" },
   { resource: "products", action: "update", description: "Editar productos" },
   { resource: "products", action: "delete", description: "Desactivar productos" },
+  { resource: "product-categories", action: "create", description: "Crear categorias de producto" },
+  { resource: "product-categories", action: "update", description: "Editar categorias de producto" },
   { resource: "asset-statuses", action: "create", description: "Crear estados de activo" },
   { resource: "asset-statuses", action: "update", description: "Editar estados de activo" },
 

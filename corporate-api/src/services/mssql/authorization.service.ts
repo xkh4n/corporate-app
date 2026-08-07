@@ -1,10 +1,15 @@
+import path from "node:path";
 import { mssql } from "../../databases/mssql/connection";
 import { AuthorizationModel } from "../../models/mssql/authorization.model";
 import { getLineByIdOrThrow } from "./purchaseRequestLine.service";
 import { getPurchaseRequestByIdOrThrow } from "./purchaseRequest.service";
 import { getQuoteByIdOrThrow } from "./quote.service";
 import { getUserByIdOrThrow } from "./user.service";
+import { getSupplierByIdOrThrow } from "./supplier.service";
+import { getBusinessPartnerByIdOrThrow } from "./businessPartner.service";
+import { copyIfExists, findFileByPrefix, getAcquisitionFolder, getQuoteRequestFolder, saveBuffer } from "../../library/documentStorage";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../../library/errors";
+import { logger } from "../../library/logger";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder } from "../../library/sequelizeSearch";
@@ -87,5 +92,44 @@ export async function createAuthorization(
     return created;
   });
 
+  // Consolida en la carpeta de la adquisicion (best-effort, no bloquea la
+  // autorizacion ya confirmada) el respaldo del proveedor ganador: el
+  // SOLCOT-* que el backend genero al crear la cotizacion, y el COT-* que se
+  // haya subido con la respuesta del proveedor (si existe).
+  try {
+    const supplier = await getSupplierByIdOrThrow(quote.supplierId);
+    const businessPartner = await getBusinessPartnerByIdOrThrow(supplier.businessPartnerId);
+    const sourceFolder = getQuoteRequestFolder(request.requestNumber);
+    const destFolder = getAcquisitionFolder(request.requestNumber);
+
+    copyIfExists(sourceFolder, destFolder, `SOLCOT-${businessPartner.nationalId}.pdf`);
+    const cotFile = findFileByPrefix(sourceFolder, `COT-${businessPartner.nationalId}`);
+    if (cotFile) copyIfExists(sourceFolder, destFolder, cotFile);
+  } catch (err) {
+    logger.error(
+      { err, authorizationId: authorization.id },
+      "No se pudo consolidar los documentos de la solicitud/cotizacion en la carpeta de adquisicion",
+    );
+  }
+
   return getAuthorizationByIdOrThrow(authorization.id);
+}
+
+// Correo o solicitud firmada que respalda la autorizacion -opcional, va a la
+// carpeta consolidada de la adquisicion (misma que solicitud/cotizacion del
+// proveedor ganador y, luego, el documento de recepcion).
+export async function attachAuthorizationDocument(
+  authorizationId: number,
+  file: Express.Multer.File,
+): Promise<string> {
+  const authorization = await getAuthorizationByIdOrThrow(authorizationId);
+  const line = await getLineByIdOrThrow(authorization.requestLineId);
+  const request = await getPurchaseRequestByIdOrThrow(line.requestId);
+  const supplier = await getSupplierByIdOrThrow(authorization.supplierId);
+  const businessPartner = await getBusinessPartnerByIdOrThrow(supplier.businessPartnerId);
+
+  const extension = path.extname(file.originalname) || ".pdf";
+  const filename = `AUTORIZACION-${businessPartner.nationalId}${extension}`;
+  saveBuffer(getAcquisitionFolder(request.requestNumber), filename, file.buffer);
+  return filename;
 }
