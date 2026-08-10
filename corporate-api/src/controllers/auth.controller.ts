@@ -8,6 +8,7 @@ import {
   changePassword as changeUserPassword,
 } from "../services/mssql/user.service";
 import { getRoleByIdOrThrow } from "../services/postgres/role.service";
+import { getPermissionsForRole } from "../services/postgres/permission.service";
 import { comparePassword } from "../library/password";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../library/jwt";
 import {
@@ -165,8 +166,25 @@ export async function logout(req: Request, res: Response, next: NextFunction): P
   }
 }
 
-export function me(req: Request, res: Response): void {
-  sendOk(res, { user: req.user ?? null }, "Usuario actual obtenido exitosamente");
+// Incluye los permisos del propio rol (aplanados "resource:action") ademas
+// del usuario: es el unico endpoint que un no-admin tiene para saber que
+// puede hacer -GET /roles/:id/permissions exige "roles:update" (admin-only),
+// asi que el frontend arma su navegacion a partir de esto. "admin" tiene
+// bypass hardcodeado en authorize() (ver middlewares/authorize.ts), no
+// depende de este array para tener acceso real.
+export async function me(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.user) {
+      sendOk(res, { user: null, permissions: [] }, "Usuario actual obtenido exitosamente");
+      return;
+    }
+
+    const roleId = req.user.roleId;
+    const permissions = (await getPermissionsForRole(roleId)).map((p) => `${p.resource}:${p.action}`);
+    sendOk(res, { user: req.user, permissions }, "Usuario actual obtenido exitosamente");
+  } catch (err) {
+    next(err);
+  }
 }
 
 // Auto-servicio: cualquier usuario autenticado cambia SU PROPIA contraseña,

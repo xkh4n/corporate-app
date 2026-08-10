@@ -1,0 +1,136 @@
+name: ${PROJECT_NAME_FRONTEND}${SUFFIX}
+
+networks:
+    # Red propia de este stack: solo el proceso de Vite y su proxy NGINX
+    # (mismo patron que "internal" en corporate-api/compose.dev.yml).
+    # internal: true -Vite nunca necesita salida a ningun lado, solo lo
+    # alcanza nginx-frontdev por aca.
+    internal:
+        name: ${PROJECT_NAME_FRONTEND}_internal${SUFFIX}
+        internal: true
+    # Red pre-creada por "run.ps1 frontend <ambiente>" (ver root run.ps1),
+    # externa a este stack. Solo el proxy NGINX se conecta acá -mismo patron
+    # de "un solo punto de entrada" que el resto del proyecto-, nunca el
+    # proceso de Vite directamente.
+    #
+    # DELIBERADAMENTE sigue SIN "internal: true" (mismo hallazgo documentado
+    # en corporate-api/compose.dev.yml para "public"/backend-net: en este
+    # host, Docker Desktop/WSL2, una red "--internal" impide que Docker
+    # publique el puerto al host, confirmado en la practica).
+    frontend-net:
+        external: true
+        name: frontend-net-${SUFFIX}
+
+services:
+    # ****************    Vite dev server (hot-reload) — 1 sola instancia ****************
+    # Una sola replica a proposito: el websocket de HMR tiene estado por
+    # conexion, balancearlo entre varias instancias (como las 3 replicas de
+    # la API) rompe el hot-reload. Sin NGINX/TLS propio: nadie fuera de
+    # Docker lo llama directo, solo nginx-frontdev dentro de "internal".
+    frontenddev:
+        image: ${PROJECT_NAME_FRONTEND}-appdev:${SUFFIX}
+        build:
+            context: ./
+            dockerfile: Dockerfile.dev
+        container_name: ${APP_HOST}${SUFFIX}
+        hostname: ${APP_HOST}${SUFFIX}
+        restart: ${RESTART_POLICY}
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        deploy:
+            resources:
+                limits:
+                    memory: 512M
+                    cpus: "1.0"
+        environment:
+            # Flag explicito (mismo criterio que CHOKIDAR_USEPOLLING): le
+            # dice a vite.config.ts que corre detras de NGINX -sin TLS
+            # propia, bind a todas las interfaces, HMR apuntando al puerto
+            # HTTPS publicado, sin el proxy /api propio (NGINX ya lo hace).
+            DOCKER_DEV: "true"
+            # Para que Vite arme correctamente la URL del websocket de HMR
+            # (ve el sitio en wss://host:${FRONT_SSL_PORT} aunque adentro
+            # del contenedor escuche en HTTP plano).
+            FRONT_SSL_PORT: ${FRONT_SSL_PORT}
+            # Docker Desktop (Windows) no siempre propaga eventos inotify del
+            # bind mount al watcher de Vite (mismo chokidar por debajo que
+            # tsx watch): sin polling, no detecta cambios de archivo.
+            CHOKIDAR_USEPOLLING: "true"
+            CHOKIDAR_INTERVAL: "300"
+        # Bind mount del código + volumen anónimo sobre node_modules (evita
+        # que el bind mount tape los node_modules ya instalados en la
+        # imagen): hot reload real con "vite dev" sin rebuildear la imagen
+        # en cada cambio.
+        volumes:
+            - ./:/app
+            - /app/node_modules
+        networks:
+            - internal
+        healthcheck:
+            # Sin endpoint /health dedicado (a diferencia de la API): la
+            # raiz de un dev server de Vite arriba siempre responde 200.
+            test: ["CMD-SHELL", "wget -qO- http://localhost:${FRONT_INTERNAL_PORT}/ >/dev/null 2>&1 || exit 1"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 20s
+    # **************************    FIN Vite dev server **************************
+
+    # *********************        Proxy único: NGINX (TLS + reverse proxy) *********************
+    # Único servicio de este stack con puertos publicados al host, mismo
+    # criterio que corporate-api/corporate-infra/corporate-monitoring.
+    # Proxea "/" a frontenddev (con soporte de websocket para HMR) y
+    # "/api/" directo al endpoint ya publicado de corporate-api (ver
+    # nginx/config/nginx.conf.template) -no depende de ninguna red interna
+    # de ese otro stack Compose.
+    nginx-frontdev:
+        build:
+            context: ./nginx
+        container_name: ${APP_PROXY_HOST}${SUFFIX}
+        hostname: ${APP_PROXY_HOST}${SUFFIX}
+        restart: ${RESTART_POLICY}
+        # Mismo criterio que nginx-apidev: el master process necesita
+        # quedarse root, pero CHOWN+SETUID+SETGID alcanza para que baje los
+        # workers (los que manejan trafico real) a "nginx" sin privilegios.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        cap_add:
+            - CHOWN
+            - SETUID
+            - SETGID
+        deploy:
+            resources:
+                limits:
+                    memory: 128M
+                    cpus: "0.25"
+        environment:
+            APP_HOST: ${APP_HOST}
+            FRONT_INTERNAL_PORT: ${FRONT_INTERNAL_PORT}
+            SUFFIX: ${SUFFIX}
+            FRONT_SSL_PORT: ${FRONT_SSL_PORT}
+            # Destino del proxy "/api/" (ver nginx.conf.template): el mismo
+            # endpoint publicado de corporate-api que ya usa "pnpm dev" hoy.
+            ALLOCATED_IP: ${ALLOCATED_IP}
+            API_SSL_PORT: ${API_SSL_PORT}
+        # Bindeado a ALLOCATED_IP, no a 0.0.0.0 -mismo criterio que el resto
+        # del proyecto, ver comentario en corporate-infra/compose.dev.yml.
+        ports:
+            - "${ALLOCATED_IP}:${FRONT_PORT}:80"
+            - "${ALLOCATED_IP}:${FRONT_SSL_PORT}:443"
+        volumes:
+            # tls.crt/tls.key: autofirmados por defecto (ver
+            # corporate-scripts/ensure-front-tls-cert.ps1), reemplazables
+            # por los de una CA real con el mismo nombre de archivo sin
+            # tocar este compose ni nginx.conf.template. Solo lectura.
+            - ../corporate-secrets/Development/certs/front:/etc/nginx/certs:ro
+        networks:
+            - internal
+            - frontend-net
+        depends_on:
+            frontenddev:
+                condition: service_healthy
+    # **************************    FIN Proxy NGINX **************************

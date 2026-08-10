@@ -1,0 +1,73 @@
+user nginx;
+worker_processes auto;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    sendfile on;
+    keepalive_timeout 65;
+
+    # Una sola instancia de "vite dev" (seraphinedev): a diferencia de
+    # api_backend en corporate-api (3 replicas, round-robin), acá no hay
+    # balanceo -el websocket de HMR tiene estado por conexion, repartirlo
+    # entre replicas rompe el hot-reload (ver compose.dev.yml).
+    upstream vite_dev {
+        server ${APP_HOST}${SUFFIX}:${FRONT_INTERNAL_PORT};
+    }
+
+    # HTTP: solo redirige a HTTPS. $host NO incluye el puerto (a diferencia
+    # de $http_host) -por eso es seguro concatenarle ":${FRONT_SSL_PORT}" sin
+    # terminar con un "host:puerto:puerto" duplicado si el cliente ya
+    # mandó el puerto en el Host header.
+    server {
+        listen 80;
+        return 301 https://$host:${FRONT_SSL_PORT}$request_uri;
+    }
+
+    server {
+        listen 443 ssl;
+
+        # tls.crt/tls.key: autofirmados por defecto (ver
+        # corporate-scripts/ensure-front-tls-cert.ps1), montados read-only
+        # desde corporate-secrets/Development/certs/front/ (ver
+        # compose.dev.yml). Reemplazar por los de una CA real es cambiar
+        # SOLO esos dos archivos en el host -mismo nombre, misma ruta- y
+        # reiniciar este contenedor; nada de esta plantilla cambia.
+        ssl_certificate     /etc/nginx/certs/tls.crt;
+        ssl_certificate_key /etc/nginx/certs/tls.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+
+        # Proxy directo al endpoint YA PUBLICADO de corporate-api (mismo
+        # camino que usa "pnpm dev" en host bare-metal via vite.config.ts):
+        # este stack Compose es independiente del de corporate-api (mismo
+        # criterio que corporate-mailer), no comparte redes Docker con el.
+        # proxy_ssl_verify off: certificado autofirmado de dev en el destino
+        # (mismo criterio que "secure:false" en el proxy de Vite).
+        location /api/ {
+            proxy_pass https://${ALLOCATED_IP}:${API_SSL_PORT};
+            proxy_ssl_verify off;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # Upgrade/Connection: sin esto, el websocket de HMR de Vite no
+        # atraviesa el proxy -el navegador queda con el modulo viejo hasta
+        # un F5 manual, sin ningun error visible salvo en la consola.
+        location / {
+            proxy_pass http://vite_dev;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+}
