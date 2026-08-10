@@ -30,6 +30,15 @@ export default defineConfig([
       // proyecto, ver feedback_frontend_tooling_version_pins): se desactiva
       // puntualmente esta unica regla.
       "react-hooks/set-state-in-effect": "off",
+      // Falso positivo en el patron de icono dinamico (ver src/components/
+      // MenuIcon.tsx): "icon" es texto libre en la DB (menu_items.icon), asi
+      // que el componente de react-icons se resuelve en runtime a partir de
+      // ese string, no es un import estatico. Esta regla (alineada al React
+      // Compiler) no distingue "elegir una referencia estable de un modulo
+      // externo" de "definir un componente nuevo en cada render" -el
+      // resultado de resolveIcon() es siempre el mismo export estable de
+      // "react-icons/io5" para el mismo nombre, nunca una funcion nueva.
+      "react-hooks/static-components": "off",
     },
   },
 ]);

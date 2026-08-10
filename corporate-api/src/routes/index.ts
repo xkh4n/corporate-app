@@ -8,6 +8,7 @@ import { countryRouter } from "./country.routes";
 import { cityRouter } from "./city.routes";
 import { stateRouter } from "./state.routes";
 import { costCenterRouter } from "./costCenter.routes";
+import { menuItemRouter } from "./menuItem.routes";
 import { businessPartnerRouter } from "./businessPartner.routes";
 import { supplierRouter } from "./supplier.routes";
 import { supplierServiceTypeRouter } from "./supplierServiceType.routes";
@@ -34,6 +35,7 @@ export const apiRouter = Router();
 apiRouter.use("/auth", authRouter);
 apiRouter.use("/roles", roleRouter);
 apiRouter.use("/permissions", permissionRouter);
+apiRouter.use("/menu-items", menuItemRouter);
 apiRouter.use("/persons", personRouter);
 apiRouter.use("/users", userRouter);
 

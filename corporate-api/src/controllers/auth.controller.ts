@@ -9,6 +9,7 @@ import {
 } from "../services/mssql/user.service";
 import { getRoleByIdOrThrow } from "../services/postgres/role.service";
 import { getPermissionsForRole } from "../services/postgres/permission.service";
+import { getMenuTreeForRole } from "../services/postgres/menuItem.service";
 import { comparePassword } from "../library/password";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../library/jwt";
 import {
@@ -182,6 +183,25 @@ export async function me(req: Request, res: Response, next: NextFunction): Promi
     const roleId = req.user.roleId;
     const permissions = (await getPermissionsForRole(roleId)).map((p) => `${p.resource}:${p.action}`);
     sendOk(res, { user: req.user, permissions }, "Usuario actual obtenido exitosamente");
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Arbol de navegacion ya podado a lo que el rol del usuario puede ver (ver
+// getMenuTreeForRole en services/postgres/menuItem.service.ts). Separado de
+// "me" a proposito: ese es liviano y se llama seguido (chequeo de sesion al
+// montar la app), armar el arbol completo es mas trabajo y no siempre hace
+// falta en el mismo momento.
+export async function menu(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.user) {
+      sendOk(res, { menu: [] }, "Menu obtenido exitosamente");
+      return;
+    }
+
+    const tree = await getMenuTreeForRole(req.user.roleId, req.user.roleName === "admin");
+    sendOk(res, { menu: tree }, "Menu obtenido exitosamente");
   } catch (err) {
     next(err);
   }

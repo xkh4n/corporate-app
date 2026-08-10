@@ -4,6 +4,7 @@ import {
   logout,
   refresh,
   me,
+  menu,
   changePassword,
   loginSchema,
   refreshSchema,
@@ -19,4 +20,5 @@ authRouter.post("/login", loginRateLimiter, validateBody(loginSchema), login);
 authRouter.post("/refresh", validateBody(refreshSchema), refresh);
 authRouter.post("/logout", logout);
 authRouter.get("/me", authenticate, me);
+authRouter.get("/menu", authenticate, menu);
 authRouter.patch("/change-password", authenticate, validateBody(changePasswordSchema), changePassword);

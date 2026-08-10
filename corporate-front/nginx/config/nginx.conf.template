@@ -41,14 +41,32 @@ http {
         ssl_certificate_key /etc/nginx/certs/tls.key;
         ssl_protocols TLSv1.2 TLSv1.3;
 
-        # Proxy directo al endpoint YA PUBLICADO de corporate-api (mismo
-        # camino que usa "pnpm dev" en host bare-metal via vite.config.ts):
-        # este stack Compose es independiente del de corporate-api (mismo
-        # criterio que corporate-mailer), no comparte redes Docker con el.
+        # Proxy a nginx-apidev de corporate-api por nombre de contenedor
+        # (Docker DNS), via la red compartida "frontapi-net" -ver comentario
+        # en compose.dev.yml. Este stack Compose sigue siendo independiente
+        # del de corporate-api (mismo criterio que corporate-mailer): no
+        # comparte SUS redes internas, solo esta red dedicada de un solo
+        # consumidor por lado (mismo patron que mailer-net).
+        #
+        # Se probaron y descartaron dos alternativas antes de esta: (1)
+        # ALLOCATED_IP (la IP LAN del host) -un contenedor volviendo a salir
+        # por la IP LAN que el propio host tiene publicada es hairpin NAT,
+        # confirmado intermitente en Docker Desktop para Windows (andaba un
+        # rato y despues los requests quedaban colgados hasta 504 sin que
+        # nada de la app cambiara); (2) host.docker.internal -resuelve
+        # siempre, pero nginx-apidev esta bindeado especificamente a
+        # ALLOCATED_IP (no a 0.0.0.0) por diseño de seguridad del proyecto,
+        # asi que la conexion daba "connection refused". El puerto interno
+        # (443) es fijo -es el "listen 443 ssl" de nginx-apidev, no tiene
+        # relacion con el puerto publicado al host (API_SSL_PORT)-.
+        #
+        # El proxy de Vite en host bare-metal (vite.config.ts) SI sigue
+        # usando ALLOCATED_IP: ahi no hay contenedor de por medio, el proceso
+        # corre directo en el host, no hay hairpin NAT posible.
         # proxy_ssl_verify off: certificado autofirmado de dev en el destino
         # (mismo criterio que "secure:false" en el proxy de Vite).
         location /api/ {
-            proxy_pass https://${ALLOCATED_IP}:${API_SSL_PORT};
+            proxy_pass https://${API_PROXY_HOST}${SUFFIX}:443;
             proxy_ssl_verify off;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;

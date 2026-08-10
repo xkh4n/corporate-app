@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
-import { NAV_SECTIONS } from "../config/navigation";
+import { SidebarMenu } from "../components/SidebarMenu";
 import logo from "../assets/imperial-logo.png";
 
 function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }) {
-  const { can } = useAuth();
+  const { menu } = useAuth();
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `block rounded-md px-3 py-2 text-sm font-medium transition-colors ${
@@ -20,28 +20,11 @@ function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }
       <div className="flex h-16 items-center border-b border-slate-200 px-4">
         <img src={logo} alt="Imperial" className="h-7 w-auto" />
       </div>
-      <nav className="space-y-6 overflow-y-auto px-3 py-4">
+      <nav className="space-y-0.5 overflow-y-auto px-3 py-4">
         <NavLink to="/" end onClick={onNavigate} className={linkClass}>
           Panel principal
         </NavLink>
-        {NAV_SECTIONS.map((section) => {
-          const visibleItems = section.items.filter((item) => !item.permission || can(item.permission));
-          if (visibleItems.length === 0) return null;
-          return (
-            <div key={section.title}>
-              <h3 className="px-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                {section.title}
-              </h3>
-              <div className="mt-1 space-y-0.5">
-                {visibleItems.map((item) => (
-                  <NavLink key={item.path} to={item.path} onClick={onNavigate} className={linkClass}>
-                    {item.label}
-                  </NavLink>
-                ))}
-              </div>
-            </div>
-          );
-        })}
+        <SidebarMenu nodes={menu} onNavigate={onNavigate} />
       </nav>
     </aside>
   );

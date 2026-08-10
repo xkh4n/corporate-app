@@ -91,6 +91,19 @@ networks:
     mailer-net:
         external: true
         name: mailer-net-${SUFFIX}
+    # Red compartida con corporate-front (otro proyecto Compose), creada por
+    # root run.ps1 (mismo patron idempotente que mailer-net). Reemplaza el
+    # intento inicial de que nginx-frontdev le pegara a este stack via
+    # ALLOCATED_IP (hairpin NAT, intermitente en Docker Desktop/Windows) -ver
+    # nginx-frontdev en corporate-front/compose.dev.yml. Solo nginx-apidev se
+    # conecta aca (mismo criterio de "unico punto de entrada" que "public":
+    # las 3 replicas nunca quedan expuestas a otro stack, ni siquiera por una
+    # red internal). "internal: true" -asignado en la creacion real (root
+    # run.ps1), no aca: este es solo el camino de ENTRADA desde
+    # corporate-front, nginx-apidev no gana egreso NAT real por compartirla.
+    frontapi-net:
+        external: true
+        name: frontapi-net-${SUFFIX}
 
 # Definición común a las 3 réplicas (YAML anchor, no una feature propia de
 # Compose): mismo binario/imagen/config, solo cambia la identidad
@@ -278,6 +291,7 @@ services:
         networks:
             - internal
             - public
+            - frontapi-net
         depends_on:
             apidev01:
                 condition: service_healthy

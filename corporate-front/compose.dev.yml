@@ -20,6 +20,15 @@ networks:
     frontend-net:
         external: true
         name: frontend-net-${SUFFIX}
+    # Red compartida con corporate-api (ver comentario gemelo en
+    # corporate-api/compose.dev.yml, red "frontapi-net"): reemplaza el
+    # intento inicial de pegarle a corporate-api via ALLOCATED_IP (hairpin
+    # NAT, intermitente en Docker Desktop/Windows) o via host.docker.internal
+    # (hubiera exigido exponer nginx-apidev en 0.0.0.0). Solo nginx-frontdev
+    # se conecta aca, nunca el proceso de Vite directamente.
+    frontapi-net:
+        external: true
+        name: frontapi-net-${SUFFIX}
 
 services:
     # ****************    Vite dev server (hot-reload) — 1 sola instancia ****************
@@ -81,10 +90,11 @@ services:
     # *********************        Proxy único: NGINX (TLS + reverse proxy) *********************
     # Único servicio de este stack con puertos publicados al host, mismo
     # criterio que corporate-api/corporate-infra/corporate-monitoring.
-    # Proxea "/" a frontenddev (con soporte de websocket para HMR) y
-    # "/api/" directo al endpoint ya publicado de corporate-api (ver
-    # nginx/config/nginx.conf.template) -no depende de ninguna red interna
-    # de ese otro stack Compose.
+    # Proxea "/" a frontenddev (con soporte de websocket para HMR) y "/api/"
+    # a nginx-apidev de corporate-api, via la red compartida "frontapi-net"
+    # (ver nginx/config/nginx.conf.template) -stacks Compose independientes
+    # igual que corporate-mailer, pero conectados por una red dedicada de un
+    # solo consumidor por lado, mismo patron que mailer-net.
     nginx-frontdev:
         build:
             context: ./nginx
@@ -112,10 +122,10 @@ services:
             FRONT_INTERNAL_PORT: ${FRONT_INTERNAL_PORT}
             SUFFIX: ${SUFFIX}
             FRONT_SSL_PORT: ${FRONT_SSL_PORT}
-            # Destino del proxy "/api/" (ver nginx.conf.template): el mismo
-            # endpoint publicado de corporate-api que ya usa "pnpm dev" hoy.
-            ALLOCATED_IP: ${ALLOCATED_IP}
-            API_SSL_PORT: ${API_SSL_PORT}
+            # Destino del proxy "/api/" (ver nginx.conf.template): nombre de
+            # contenedor de nginx-apidev, alcanzable via Docker DNS en
+            # "frontapi-net" (mismo host resuelto que su container_name).
+            API_PROXY_HOST: ${API_PROXY_HOST}
         # Bindeado a ALLOCATED_IP, no a 0.0.0.0 -mismo criterio que el resto
         # del proyecto, ver comentario en corporate-infra/compose.dev.yml.
         ports:
@@ -130,6 +140,7 @@ services:
         networks:
             - internal
             - frontend-net
+            - frontapi-net
         depends_on:
             frontenddev:
                 condition: service_healthy

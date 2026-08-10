@@ -27,6 +27,16 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "roles", action: "update", description: "Editar roles y sus permisos" },
   { resource: "roles", action: "delete", description: "Desactivar roles" },
 
+  // Catalogo de menu de navegacion: admin-only por el mismo motivo que
+  // roles -expone labels/estructura real de funcionalidades del sistema,
+  // no es metadata inocua como el catalogo de permissions. El arbol PODADO
+  // por permisos del usuario logueado (GET /auth/menu) no exige ninguno de
+  // estos, solo sesion (ver auth.routes.ts).
+  { resource: "menu-items", action: "read", description: "Consultar catalogo de menu" },
+  { resource: "menu-items", action: "create", description: "Crear items de menu" },
+  { resource: "menu-items", action: "update", description: "Editar items de menu" },
+  { resource: "menu-items", action: "delete", description: "Desactivar items de menu" },
+
   // PII: personas y usuarios, admin-only de punta a punta (igual que hoy).
   { resource: "persons", action: "create", description: "Crear personas" },
   { resource: "persons", action: "read", description: "Consultar personas" },

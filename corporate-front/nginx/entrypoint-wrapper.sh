@@ -8,8 +8,7 @@ set -eu
 : "${FRONT_INTERNAL_PORT:?falta FRONT_INTERNAL_PORT}"
 : "${SUFFIX:?falta SUFFIX}"
 : "${FRONT_SSL_PORT:?falta FRONT_SSL_PORT}"
-: "${ALLOCATED_IP:?falta ALLOCATED_IP}"
-: "${API_SSL_PORT:?falta API_SSL_PORT}"
+: "${API_PROXY_HOST:?falta API_PROXY_HOST}"
 
 # tls.crt/tls.key deben existir ANTES de arrancar (montados desde
 # corporate-secrets/Development/certs/front/, ver corporate-scripts/
@@ -21,7 +20,7 @@ if [ ! -s /etc/nginx/certs/tls.crt ] || [ ! -s /etc/nginx/certs/tls.key ]; then
     exit 1
 fi
 
-VARS='${APP_HOST} ${FRONT_INTERNAL_PORT} ${SUFFIX} ${FRONT_SSL_PORT} ${ALLOCATED_IP} ${API_SSL_PORT}'
+VARS='${APP_HOST} ${FRONT_INTERNAL_PORT} ${SUFFIX} ${FRONT_SSL_PORT} ${API_PROXY_HOST}'
 
 envsubst "$VARS" < /etc/nginx/templates/nginx.conf.template > /etc/nginx/nginx.conf
 

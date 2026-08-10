@@ -89,6 +89,21 @@ switch ($Servicio) {
             Write-Host "  ✅ Creando $mailerNet (internal: true)" -ForegroundColor Green
             docker network create --driver bridge --internal $mailerNet
         }
+        # Crear frontapi-net si todavia no existe (idempotente, mismo patron
+        # que mailer-net): la comparten corporate-api y corporate-front, no
+        # importa cual de los 2 stacks se levante primero. Reemplaza el
+        # intento inicial de que nginx-frontdev le pegara a corporate-api via
+        # ALLOCATED_IP (hairpin NAT, intermitente en Docker Desktop/Windows)
+        # o via host.docker.internal (hubiera exigido exponer nginx-apidev en
+        # 0.0.0.0, aflojando el bind a ALLOCATED_IP). "--internal": mismo
+        # motivo que mailer-net -esta red es solo el camino de ENTRADA
+        # (corporate-front -> corporate-api), nginx-apidev no gana egreso NAT
+        # real por compartirla.
+        $frontApiNet = "frontapi-net-$Ambiente"
+        if (-not (docker network ls --format '{{.Name}}' | Select-String -Pattern "^$frontApiNet$")) {
+            Write-Host "  ✅ Creando $frontApiNet (internal: true)" -ForegroundColor Green
+            docker network create --driver bridge --internal $frontApiNet
+        }
         & ./corporate-scripts/backend.ps1 $Ambiente
     }
     'mailer' {
@@ -123,6 +138,14 @@ switch ($Servicio) {
         if (-not (docker network ls --format '{{.Name}}' | Select-String -Pattern "^$frontendNet$")) {
             Write-Host "  ✅ Creando $frontendNet (internal: false -- ver comentario, el port-publish del proxy del frontend lo requiere)" -ForegroundColor Green
             docker network create --driver bridge $frontendNet
+        }
+        # frontapi-net: mismo patron idempotente que en el case 'backend' -no
+        # importa cual de los 2 stacks (backend/frontend) se levante primero,
+        # el que llega segundo la encuentra ya creada.
+        $frontApiNet = "frontapi-net-$Ambiente"
+        if (-not (docker network ls --format '{{.Name}}' | Select-String -Pattern "^$frontApiNet$")) {
+            Write-Host "  ✅ Creando $frontApiNet (internal: true)" -ForegroundColor Green
+            docker network create --driver bridge --internal $frontApiNet
         }
         & ./corporate-scripts/frontend.ps1 $Ambiente
     }

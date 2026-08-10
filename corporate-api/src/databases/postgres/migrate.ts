@@ -9,6 +9,7 @@ import { isDuplicateObjectError } from "../../library/errors";
 export async function migratePostgres(): Promise<void> {
   await migrateRoles();
   await migratePermissions();
+  await migrateMenuItems();
   await migrateAssets();
   await migrateAssetTagCounters();
 
@@ -85,6 +86,34 @@ async function migratePermissions(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       PRIMARY KEY (role_id, permission_id)
     );
+  `);
+}
+
+// Catalogo jerarquico del menu de navegacion (self-referencing via
+// parent_id): un nodo "carpeta" (sin permission_id) agrupa hijos y no
+// necesita permiso propio -su visibilidad se deriva de tener al menos un
+// hijo alcanzable-, un nodo "hoja" referencia el permiso (resource+action,
+// mismo catalogo que role_permissions) que lo habilita. Arma el arbol
+// getMenuTreeForRole() en services/postgres/menuItem.service.ts, consumido
+// por GET /auth/menu. is_active: soft-delete, mismo criterio que roles.
+async function migrateMenuItems(): Promise<void> {
+  await postgres.query(`
+    CREATE TABLE IF NOT EXISTS menu_items (
+      id SERIAL PRIMARY KEY,
+      label VARCHAR(100) NOT NULL,
+      icon VARCHAR(50),
+      link VARCHAR(255),
+      parent_id INTEGER REFERENCES menu_items(id),
+      permission_id INTEGER REFERENCES permissions(id),
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await postgres.query(`
+    CREATE INDEX IF NOT EXISTS ix_menu_items_parent_id ON menu_items(parent_id);
   `);
 }
 
