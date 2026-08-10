@@ -2,6 +2,7 @@ import { Op } from "sequelize";
 import { postgres } from "../../databases/postgres/connection";
 import { PermissionModel, type PermissionAction } from "../../models/postgres/permission.model";
 import { RolePermissionModel } from "../../models/postgres/rolePermission.model";
+import { RoleModel } from "../../models/postgres/role.model";
 import { getRoleByIdOrThrow } from "./role.service";
 import { BadRequestError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
@@ -88,7 +89,11 @@ export async function removeRolePermission(roleId: number, permissionId: number)
 
 // Usado por el middleware authorize() en cada request -"admin" tiene bypass
 // hardcodeado antes de llegar aca (ver middlewares/authorize.ts), asi que
-// esta consulta solo corre para roles no-admin.
+// esta consulta solo corre para roles no-admin. Exige roles.is_active=true
+// -antes esta funcion ignoraba por completo el estado del rol: "desactivar"
+// un rol (DELETE /roles/:id) no le quitaba ningun acceso real a nadie que ya
+// lo tuviera asignado, quedaba como un flag sin efecto (hallazgo de
+// auditoria de seguridad 2026-08-07).
 export async function hasPermission(
   roleId: number,
   resource: string,
@@ -96,7 +101,10 @@ export async function hasPermission(
 ): Promise<boolean> {
   const count = await RolePermissionModel.count({
     where: { roleId },
-    include: [{ model: PermissionModel, as: "permission", where: { resource, action } }],
+    include: [
+      { model: PermissionModel, as: "permission", where: { resource, action } },
+      { model: RoleModel, as: "role", where: { isActive: true }, attributes: [] },
+    ],
   });
   return count > 0;
 }

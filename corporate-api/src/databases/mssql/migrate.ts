@@ -178,6 +178,17 @@ async function migrateAuth(): Promise<void> {
       );
     END
   `);
+
+  // FK sin indice propio en MSSQL/SQL Server (a diferencia de la PK, no se
+  // crea automaticamente) -changePassword consulta esta tabla por user_id 2
+  // veces por cambio de contraseña, y la tabla crece sin limite con cada
+  // cambio de cualquier usuario.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_password_history_user_id' AND object_id = OBJECT_ID('password_history'))
+    BEGIN
+      CREATE INDEX ix_password_history_user_id ON password_history(user_id);
+    END
+  `);
 }
 
 // Jerarquia country -> city -> states (pese al nombre, "states" es el nivel
@@ -572,6 +583,28 @@ async function migratePurchasingFlow(): Promise<void> {
         CONSTRAINT fk_goods_receipts_created_by FOREIGN KEY (created_by) REFERENCES users(id),
         CONSTRAINT fk_goods_receipts_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
       );
+    END
+  `);
+
+  // FKs sin indice propio, filtradas directo en listX ByY (quote.service.ts,
+  // authorization.service.ts, goodsReceipt.service.ts) -SQL Server no indexa
+  // automaticamente una FK, solo la PK.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_quotes_request_id' AND object_id = OBJECT_ID('quotes'))
+    BEGIN
+      CREATE INDEX ix_quotes_request_id ON quotes(request_id);
+    END
+  `);
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_authorizations_request_line_id' AND object_id = OBJECT_ID('authorizations'))
+    BEGIN
+      CREATE INDEX ix_authorizations_request_line_id ON authorizations(request_line_id);
+    END
+  `);
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_goods_receipts_purchase_order_id' AND object_id = OBJECT_ID('goods_receipts'))
+    BEGIN
+      CREATE INDEX ix_goods_receipts_purchase_order_id ON goods_receipts(purchase_order_id);
     END
   `);
 }

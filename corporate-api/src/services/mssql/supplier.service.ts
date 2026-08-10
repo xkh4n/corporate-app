@@ -47,6 +47,13 @@ export async function getSupplierByIdOrThrow(id: number): Promise<SupplierModel>
   return supplier;
 }
 
+// Batch por ids -evita N+1 al resolver el proveedor de varias filas a la vez
+// (ver attachSupplier en supplierProduct.service.ts).
+export async function getSuppliersByIds(ids: number[]): Promise<SupplierModel[]> {
+  if (ids.length === 0) return [];
+  return SupplierModel.findAll({ where: { id: { [Op.in]: ids } }, include: INCLUDE });
+}
+
 export async function getSupplierByBusinessPartnerId(businessPartnerId: number): Promise<SupplierModel | null> {
   return SupplierModel.findOne({ where: { businessPartnerId } });
 }

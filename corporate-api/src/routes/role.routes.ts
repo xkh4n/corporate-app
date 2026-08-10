@@ -8,12 +8,14 @@ export const roleRouter = Router();
 
 roleRouter.use(authenticate);
 
-// GET /roles - Lista paginada de roles (name, description, isActive). Lectura
-// abierta a cualquier autenticado, sin permiso puntual.
-roleRouter.get("/", roleController.list);
+// GET /roles - Lista paginada de roles (name, description, isActive).
+// Requiere "roles:read" -sin grantToUser, admin-only: expone la
+// configuracion de seguridad del sistema, mismo criterio que
+// create/update/delete de este mismo recurso.
+roleRouter.get("/", authorize("roles", "read"), roleController.list);
 
 // GET /roles/:id - Detalle de un rol por id.
-roleRouter.get("/:id", roleController.getById);
+roleRouter.get("/:id", authorize("roles", "read"), roleController.getById);
 
 // POST /roles - Crea un rol nuevo (nace sin ningun permiso asignado, ver
 // PUT /:id/permissions). Requiere "roles:create".

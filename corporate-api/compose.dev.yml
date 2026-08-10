@@ -17,6 +17,8 @@ secrets:
         file: ../corporate-secrets/Development/bootstrap_admin_password.txt
     mongo_user_password:
         file: ../corporate-secrets/Development/db_mongo_user_password.txt
+    mailer_shared_secret:
+        file: ../corporate-secrets/Development/mailer_shared_secret.txt
 
 networks:
     # Red del OTRO proyecto Compose (corporate-infra), declarada "external"
@@ -30,12 +32,38 @@ networks:
         external: true
         name: ${PROJECT_NAME}_backend${SUFFIX}
     # Red propia de este stack: viven acá las 3 réplicas de la API y su proxy NGINX.
+    # internal: true -hallazgo CRITICO de auditoria: ninguna red custom del
+    # monorepo tenia esto, asi que cualquier replica de la API tenia egreso
+    # NAT real a internet igual que corporate-mailer. Las réplicas solo
+    # necesitan hablar con nginx-apidev (misma red) y con las BD/mailer (otras
+    # redes, ver abajo) -nunca con el exterior directamente-.
     internal:
         name: ${PROJECT_NAME_BACKEND}_internal${SUFFIX}
+        internal: true
     # Red pre-creada por "run.ps1 backend <ambiente>" (ver root run.ps1),
     # externa a este stack. Solo el proxy NGINX se conecta acá -mismo patrón
     # de "un solo punto de entrada" que el resto del proyecto-, nunca las
     # réplicas de la API directamente.
+    #
+    # DELIBERADAMENTE sigue SIN "internal: true" (se probó en la práctica,
+    # como pedía la auditoría, y NO se asumió): con un contenedor conectado a
+    # una red "internal: true" en ESTE host (Docker Desktop/WSL2, Windows),
+    # "docker port"/"docker inspect" muestran el binding vacío -Docker NO
+    # llega a publicar el puerto al host en absoluto, aunque el compose
+    # declare "ports:"-. Confirmado con un contenedor nginx de prueba propio:
+    # en una red "--internal" el puerto publicado no respondia (curl al host
+    # daba connection refused / sin binding), en una red normal si. Esto es
+    # justo lo opuesto a lo que decia el lineamiento original de la auditoria
+    # ("verificar en la practica, no asumir" -se asumio que internal no
+    # afectaba el port-publish, y la practica lo contradijo). Por eso "public"
+    # se queda como la ÚNICA red de corporate-api con egreso NAT real, pero
+    # con un solo miembro posible (nginx-apidev, ver x-api-common: las 3
+    # réplicas NUNCA se conectan acá) -mismo patrón de "un solo consumidor"
+    # que "mailer-egress" en corporate-mailer-. nginx-apidev es un proxy L7
+    # puro (TLS termination + balanceo, sin código de aplicación ni datos de
+    # negocio): el radio de explosión de que ESTE contenedor puntual tenga
+    # egreso real es muchisimo menor que el de las 3 réplicas de la API o
+    # cualquier motor de BD, que es lo que de verdad importaba cerrar.
     public:
         external: true
         name: backend-net-${SUFFIX}
@@ -45,8 +73,24 @@ networks:
     # proyecto Compose) declara esta misma red como external para que su
     # Prometheus pueda scrapear -mismo patrón dual-homed que ya usan los 8
     # exporters de corporate-infra-.
+    # internal: true -mismo motivo que "internal" arriba: Prometheus
+    # (corporate-monitoring) solo necesita alcanzar /metrics de las 3
+    # réplicas por esta red, y las réplicas nunca necesitan egreso real acá.
     api-exporters:
         name: ${PROJECT_NAME_BACKEND}_exporters${SUFFIX}
+        internal: true
+    # Red compartida con corporate-mailer (otro proyecto Compose, el UNICO
+    # con salida a internet -ver corporate-mailer/compose.dev.yml). Creada
+    # por root run.ps1 (mismo patron que "public"/backend-net-${SUFFIX}), no
+    # importa si "run.ps1 mailer" o "run.ps1 backend" se corrio primero.
+    # internal: true -asignado en la creación real (root run.ps1), no acá.
+    # Con esto, compartir esta red con corporate-mailer YA NO le da a las
+    # réplicas de la API egreso "gratis" a internet -el egreso real de
+    # mailerdev vive en una segunda red propia de ese stack (ver
+    # corporate-mailer/compose.dev.yml, "mailer-egress"), no en esta.
+    mailer-net:
+        external: true
+        name: mailer-net-${SUFFIX}
 
 # Definición común a las 3 réplicas (YAML anchor, no una feature propia de
 # Compose): mismo binario/imagen/config, solo cambia la identidad
@@ -127,6 +171,10 @@ x-api-common: &api-common
         DISABLE_VALIDATION: ${DISABLE_VALIDATION}
         MAX_POOL: ${MAX_POOL}
         MIN_POOL: ${MIN_POOL}
+        # corporate-mailer, alcanzable por nombre en "mailer-net" (mismo host
+        # resuelto por Docker DNS que su container_name/hostname).
+        MAILER_URL: "http://${MAILER_HOST}${SUFFIX}:${MAILER_INTERNAL_PORT}/send"
+        MAILER_SHARED_SECRET_FILE: /run/secrets/mailer_shared_secret
     secrets:
         - pg_user_password
         - mssql_app_password
@@ -136,6 +184,7 @@ x-api-common: &api-common
         - session_secret
         - bootstrap_admin_password
         - mongo_user_password
+        - mailer_shared_secret
     # Bind mount del código + volumen anónimo sobre node_modules (evita que
     # el bind mount tape los node_modules ya instalados en la imagen con
     # los del host, que pueden no existir o ser de otro SO): hot reload
@@ -149,6 +198,7 @@ x-api-common: &api-common
         - infra-backend
         - internal
         - api-exporters
+        - mailer-net
     healthcheck:
         test: ["CMD-SHELL", "wget -qO- http://localhost:${API_INTERNAL_PORT}/health >/dev/null 2>&1 || exit 1"]
         interval: 10s

@@ -37,6 +37,14 @@ export async function getProductCategoryByIdOrThrow(id: string): Promise<Product
   return category;
 }
 
+// Batch por ids -evita N+1 al resolver la categoria de varios productos a la
+// vez (ver getQuoteRequestDocumentData en purchaseRequest.service.ts).
+export async function getProductCategoriesByIds(ids: string[]): Promise<ProductCategoryDocument[]> {
+  const validIds = ids.filter((id) => isValidObjectId(id));
+  if (validIds.length === 0) return [];
+  return ProductCategoryModel.find({ _id: { $in: validIds } });
+}
+
 function isMongoDuplicateKeyError(err: unknown): boolean {
   return typeof err === "object" && err !== null && "code" in err && (err as { code?: number }).code === 11000;
 }

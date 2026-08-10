@@ -8,7 +8,7 @@ import { logger } from "../../library/logger";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
-import type { CityCreationAttributes, CityUpdateAttributes } from "../../types/mssql/city.types";
+import type { CityCreationAttributes } from "../../types/mssql/city.types";
 
 // OJO: en cities.json el campo se llama "iso_code" pero en realidad contiene
 // el iata_code (3 letras) del pais, no su iso_code (2 letras) -confirmado
@@ -40,20 +40,6 @@ export async function getCityById(id: number): Promise<CityModel | null> {
 export async function getCityByIdOrThrow(id: number): Promise<CityModel> {
   const city = await getCityById(id);
   if (!city) throw new NotFoundError(`La ciudad ${id} no existe`);
-  return city;
-}
-
-export async function getCityByIataCode(iataCode: string): Promise<CityModel | null> {
-  return CityModel.findOne({ where: { iataCodes: iataCode } });
-}
-
-export async function createCity(data: CityCreationAttributes): Promise<CityModel> {
-  return CityModel.create(data);
-}
-
-export async function updateCity(id: number, data: CityUpdateAttributes): Promise<CityModel> {
-  const city = await getCityByIdOrThrow(id);
-  await city.update(data);
   return city;
 }
 

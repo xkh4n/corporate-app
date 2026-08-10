@@ -8,8 +8,8 @@ import { validateBody } from "../middlewares/validate";
 export const quoteRouter = Router();
 
 quoteRouter.use(authenticate);
-quoteRouter.get("/", quoteController.list);
-quoteRouter.get("/:id", quoteController.getById);
+quoteRouter.get("/", authorize("quotes", "read"), quoteController.list);
+quoteRouter.get("/:id", authorize("quotes", "read"), quoteController.getById);
 quoteRouter.post(
   "/",
   authorize("quotes", "create"),

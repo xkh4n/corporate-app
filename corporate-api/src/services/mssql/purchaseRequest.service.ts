@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { Op } from "sequelize";
 import { mssql } from "../../databases/mssql/connection";
 import { PurchaseRequestModel } from "../../models/mssql/purchaseRequest.model";
@@ -9,10 +11,13 @@ import { getCostCenterByIdOrThrow } from "../postgres/costCenter.service";
 import { getSupplierByIdOrThrow } from "./supplier.service";
 import { getBusinessPartnerByIdOrThrow } from "./businessPartner.service";
 import { listAllLinesByRequest } from "./purchaseRequestLine.service";
-import { getProductByIdOrThrow } from "../mongo/product.service";
-import { getProductCategoryById } from "../mongo/productCategory.service";
+import { listAllContactsBySupplier } from "./supplierContact.service";
+import { getProductsByIds } from "../mongo/product.service";
+import { getProductCategoriesByIds } from "../mongo/productCategory.service";
 import { generateDocumentNumber } from "../../library/documentNumbering";
-import { NotFoundError } from "../../library/errors";
+import { getQuoteRequestFolder } from "../../library/documentStorage";
+import { sendMailViaMailer } from "../../library/mailerClient";
+import { NotFoundError, BadRequestError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
@@ -114,23 +119,27 @@ export async function getQuoteRequestDocumentData(
   const requester = await getPersonByIdOrThrow(request.requesterId);
   const lines = await listAllLinesByRequest(requestId);
 
-  const items = await Promise.all(
-    lines.map(async (line, index) => {
-      const product = await getProductByIdOrThrow(line.productId);
-      let categoryName: string | null = null;
-      if (product.categoryId) {
-        const category = await getProductCategoryById(String(product.categoryId));
-        categoryName = category?.name ?? null;
-      }
-      return {
-        no: index + 1,
-        productName: product.name,
-        categoryName,
-        description: product.description,
-        quantity: line.quantity,
-      };
-    }),
-  );
+  const products = await getProductsByIds(lines.map((line) => line.productId));
+  const productsById = new Map(products.map((product) => [String(product._id), product]));
+
+  const categoryIds = products
+    .map((product) => product.categoryId)
+    .filter((categoryId): categoryId is NonNullable<typeof categoryId> => Boolean(categoryId))
+    .map((categoryId) => String(categoryId));
+  const categories = await getProductCategoriesByIds(categoryIds);
+  const categoriesById = new Map(categories.map((category) => [String(category._id), category.name]));
+
+  const items = lines.map((line, index) => {
+    const product = productsById.get(line.productId);
+    if (!product) throw new NotFoundError(`El producto ${line.productId} no existe`);
+    return {
+      no: index + 1,
+      productName: product.name,
+      categoryName: product.categoryId ? (categoriesById.get(String(product.categoryId)) ?? null) : null,
+      description: product.description,
+      quantity: line.quantity,
+    };
+  });
 
   let supplierLegalName: string | null = null;
   let supplierNationalId: string | null = null;
@@ -147,5 +156,51 @@ export async function getQuoteRequestDocumentData(
     supplierLegalName,
     supplierNationalId,
     items,
+  };
+}
+
+// Envia por correo (via corporate-mailer, el unico contenedor con salida a
+// internet) el PDF SOLCOT-* YA archivado -no se re-renderiza, para que el
+// correo lleve exactamente el mismo documento que quedo archivado al crear
+// el Quote (ver library/pdf/quoteRequestPdf.ts). Si el Quote para este
+// proveedor todavia no existe, tampoco existe el archivo -NotFoundError, no
+// tiene sentido generar uno nuevo aca-. Destinatarios: TODOS los contactos
+// activos del proveedor (supplier_contacts no tiene campo "principal").
+export async function sendQuoteRequestEmail(
+  requestId: number,
+  supplierId: number,
+): Promise<{ sent: boolean; message: string }> {
+  const request = await getPurchaseRequestByIdOrThrow(requestId);
+  const supplier = await getSupplierByIdOrThrow(supplierId);
+  const businessPartner = await getBusinessPartnerByIdOrThrow(supplier.businessPartnerId);
+
+  const pdfPath = path.join(getQuoteRequestFolder(request.requestNumber), `SOLCOT-${businessPartner.nationalId}.pdf`);
+  if (!fs.existsSync(pdfPath)) {
+    throw new NotFoundError(
+      `No existe todavia la solicitud de cotizacion para el proveedor ${supplierId} en la solicitud ${request.requestNumber} -crea el Quote primero`,
+    );
+  }
+
+  const contacts = await listAllContactsBySupplier(supplierId);
+  if (contacts.length === 0) {
+    throw new BadRequestError(`El proveedor ${supplierId} no tiene contactos registrados para enviarle el correo`);
+  }
+
+  const result = await sendMailViaMailer({
+    to: contacts.map((contact) => contact.email),
+    subject: `Solicitud de cotización ${request.requestNumber}`,
+    text:
+      `Estimados, adjuntamos solicitud de cotización ${request.requestNumber} dirigida a ` +
+      `${businessPartner.legalName}. Agradecemos su respuesta a la brevedad.`,
+    attachment: {
+      filename: `${request.requestNumber}.pdf`,
+      content: fs.readFileSync(pdfPath),
+      contentType: "application/pdf",
+    },
+  });
+
+  return {
+    sent: result.ok,
+    message: result.ok ? "Correo enviado exitosamente" : (result.error ?? "No se pudo enviar el correo"),
   };
 }

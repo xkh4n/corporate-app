@@ -10,10 +10,9 @@ export const createSupplierServiceTypeSchema = z.object({
   description: z.string().max(255).optional(),
 });
 
-export const updateSupplierServiceTypeSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  description: z.string().max(255).optional(),
-});
+export const updateSupplierServiceTypeSchema = createSupplierServiceTypeSchema
+  .omit({ code: true })
+  .partial();
 
 export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {

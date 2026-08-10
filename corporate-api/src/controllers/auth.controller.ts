@@ -67,6 +67,11 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
     }
 
     const role = await getRoleByIdOrThrow(user.roleId);
+    // Mismo mensaje generico que el resto de este bloque: un rol desactivado
+    // no debe distinguirse de credenciales invalidas ante el cliente.
+    if (!role.isActive) {
+      throw new UnauthorizedError("Credenciales invalidas");
+    }
     const authUser: AuthenticatedUser = {
       userId: user.id,
       personId: user.personId,

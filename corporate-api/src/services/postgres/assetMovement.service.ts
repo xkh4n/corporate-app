@@ -4,7 +4,7 @@ import { AssetMovementUserModel } from "../../models/postgres/assetMovementUser.
 import { getAssetByIdOrThrow, setAssetStatus } from "./asset.service";
 import { getAssetStatusByCodeOrThrow } from "./assetStatus.service";
 import { getUserByIdOrThrow } from "../mssql/user.service";
-import { BadRequestError, NotFoundError } from "../../library/errors";
+import { BadRequestError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder } from "../../library/sequelizeSearch";
@@ -23,6 +23,9 @@ const STATUS_CODE_BY_MOVEMENT_TYPE = {
 
 const MOVEMENT_TYPES_REQUIRING_USERS = new Set(["ASSIGNED", "REASSIGNED"]);
 
+// Incluye los usuarios asignados en cada movimiento (asset_movement_users,
+// escritos en createAssetMovement mas abajo) -antes quedaban invisibles via
+// API: se escribian pero ningun endpoint los devolvia.
 export async function listMovementsByAsset(
   assetId: number,
   params: PaginationParams,
@@ -32,12 +35,9 @@ export async function listMovementsByAsset(
     order: buildSequelizeOrder(params.sortBy, params.sortOrder),
     limit: params.limit,
     offset: getOffset(params),
+    include: [{ model: AssetMovementUserModel, as: "movementUsers" }],
   });
   return { items: rows, total: count };
-}
-
-export async function getMovementUsers(assetMovementId: number): Promise<AssetMovementUserModel[]> {
-  return AssetMovementUserModel.findAll({ where: { assetMovementId } });
 }
 
 // userId es una referencia cross-engine hacia users (MSSQL), sin FK real
@@ -83,11 +83,5 @@ export async function createAssetMovement(input: CreateAssetMovementInput): Prom
     return created;
   });
 
-  return movement;
-}
-
-export async function getMovementByIdOrThrow(id: number): Promise<AssetMovementModel> {
-  const movement = await AssetMovementModel.findByPk(id);
-  if (!movement) throw new NotFoundError(`El movimiento de activo ${id} no existe`);
   return movement;
 }

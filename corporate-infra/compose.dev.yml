@@ -39,6 +39,19 @@ secrets:
 networks:
     backend:
         name: ${PROJECT_NAME}_backend${SUFFIX}
+        # internal: true -hallazgo CRITICO de auditoria (PoC real: getent
+        # hosts google.com / wget a 1.1.1.1 desde betelgeuse01dev y
+        # centaury01dev resolvian/traian trafico real de internet). Ningun
+        # motor de BD necesita egreso real -solo necesitan hablarse entre
+        # ellos (replicacion) y con corporate-api/los exporters, todo DENTRO
+        # de esta misma red-. "internal: true" NO rompe esa comunicacion
+        # intra-red (Docker sigue enrutando entre contenedores de la misma
+        # red bridge normalmente); solo quita la ruta default + regla de
+        # MASQUERADE que le daban salida NAT hacia el host/internet.
+        # Verificado tras el rebuild: los engines siguen replicando
+        # (Postgres streaming, Mongo rs, MSSQL AG) y el PoC de la auditoria
+        # ahora falla (timeout de DNS).
+        internal: true
         # Motores de BD + sus exporters (los exporters necesitan alcanzar su
         # motor local para poder scrapearlo). corporate-monitoring (stack de
         # observabilidad, proyecto Compose separado) NO se conecta acá -ver
@@ -56,8 +69,24 @@ networks:
     # "backend" con todo, Prometheus podía intentar conectarse directo a esos
     # puertos (bloqueado únicamente por la autenticación de cada motor, no por
     # la red)-.
+    # internal: true -mismo motivo que "backend": Prometheus solo necesita
+    # alcanzar estos 8 exporters por nombre desde esta red, nunca egreso real
+    # a internet. Dual-homed en "backend" (también internal), asi que la
+    # comunicación exporter<->motor local sigue intacta.
     exporters:
         name: ${PROJECT_NAME}_exporters${SUFFIX}
+        internal: true
+    # Red exclusiva de nginxdev, DELIBERADAMENTE SIN "internal: true" -unica
+    # forma de que Docker publique sus 4 puertos (Postgres/Mongo/Redis/MSSQL)
+    # al host en este entorno (Docker Desktop/WSL2, Windows): confirmado en
+    # la practica (no asumido) que una red "internal" bloquea el port-publish
+    # por completo, no solo el egreso a internet -ver el comentario en
+    # "backend" mas arriba-. Ningun motor de BD ni exporter se conecta acá,
+    # solo nginxdev (dual-homed con "backend"): el radio de explosión de que
+    # el proxy L4 puro tenga egreso real es minimo comparado con los motores
+    # de BD, que es lo que de verdad importaba aislar.
+    public:
+        name: ${PROJECT_NAME}_public${SUFFIX}
 
 volumes:
     pg_primary_data:
@@ -1120,8 +1149,18 @@ services:
             - "${ALLOCATED_IP}:${MONGO_PORT}:${MONGO_PORT}"
             - "${ALLOCATED_IP}:${REDIS_PORT}:${REDIS_PORT}"
             - "${ALLOCATED_IP}:${MSSQL_PORT}:${MSSQL_PORT}"
+        # Dual-homed: "backend" (internal, para reenviar hacia el nodo
+        # primario de cada motor) + "public" (NO internal, solo para que
+        # Docker pueda publicar los 4 puertos de arriba al host -ver la
+        # definición de "public" más arriba: en este host, una red
+        # "internal: true" bloquea por completo el port-publish, confirmado
+        # en la práctica-). nginxdev es el ÚNICO servicio de este archivo
+        # conectado a "public": todos los motores/exporters se quedan solo en
+        # "backend"/"exporters" (ambas internal), sin egreso real y sin
+        # siquiera ruta hacia "public".
         networks:
             - backend
+            - public
         depends_on:
             postgres01dev:
                 condition: service_healthy

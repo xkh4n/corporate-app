@@ -52,6 +52,15 @@ export async function listUsers(params: PaginationParams): Promise<{ items: Safe
   return { items: rows.map(toSafeUser), total: count };
 }
 
+// Usado al desactivar un rol (ver role.controller.ts) para invalidar de
+// inmediato la sesion/access-token de cada usuario que lo tenia asignado
+// -sin esto, "desactivar" un rol no cortaba ningun acceso ya emitido
+// (hallazgo de auditoria de seguridad 2026-08-07).
+export async function listUserIdsByRoleId(roleId: number): Promise<number[]> {
+  const users = await UserModel.findAll({ where: { roleId }, attributes: ["id"] });
+  return users.map((user) => user.id);
+}
+
 export async function createUser(input: CreateUserInput): Promise<SafeUser> {
   // Cross-DB: la persona vive en MSSQL, el rol en Postgres -sin FK real
   // posible entre motores, se valida a mano en la capa de servicio.

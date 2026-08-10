@@ -100,7 +100,7 @@ Write-Host "Levantando stack de monitoreo [$Ambiente] -> $composeFile" -Foregrou
 # --wait implica -d (detached) y espera a que los healthchecks pasen. Sin
 # --profile, este "up" NO levanta grafana-init<Ambiente> (profile "init",
 # ver más abajo).
-docker compose -f $composePath --env-file $envStackPath --env-file $environmentPath up --wait --wait-timeout 300
+docker compose -f $composePath --env-file $envStackPath --env-file $environmentPath up --wait --wait-timeout 300 --build
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "docker compose finalizó con código $LASTEXITCODE"
@@ -115,7 +115,7 @@ if ($LASTEXITCODE -ne 0) {
 # ambiente ya inicializado no hace nada.
 $grafanaInitService = "grafana-init$Ambiente"
 Write-Host "Creando usuario secundario de Grafana (rol Viewer)..." -ForegroundColor Cyan
-docker compose -f $composePath --env-file $envStackPath --env-file $environmentPath run --rm $grafanaInitService
+docker compose -f $composePath --env-file $envStackPath --env-file $environmentPath run --rm --build $grafanaInitService
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "$grafanaInitService finalizó con código $LASTEXITCODE"

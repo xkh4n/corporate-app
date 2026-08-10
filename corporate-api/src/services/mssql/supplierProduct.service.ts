@@ -1,7 +1,7 @@
 import { SupplierModel } from "../../models/mssql/supplier.model";
 import { SupplierProductModel } from "../../models/mssql/supplierProduct.model";
-import { getSupplierByIdOrThrow } from "./supplier.service";
-import { getProductByIdOrThrow } from "../mongo/product.service";
+import { getSupplierByIdOrThrow, getSuppliersByIds } from "./supplier.service";
+import { getProductByIdOrThrow, getProductsByIds } from "../mongo/product.service";
 import type { ProductDocument } from "../../models/mongo/product.model";
 import { ConflictError, NotFoundError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
@@ -36,20 +36,31 @@ export interface SupplierProductWithSupplier {
 // embebe a mano -a diferencia del resto de las referencias cross-engine de
 // este proyecto (que solo validan y devuelven el id crudo)- porque el unico
 // motivo de este endpoint es poblar un selector en el frontend: un listado de
-// ids sin nombre no serviria para eso.
-async function attachProduct(row: SupplierProductModel): Promise<SupplierProductWithProduct> {
-  const plain = row.get({ plain: true });
-  const product = await getProductByIdOrThrow(plain.productId).catch(() => null);
-  return { ...plain, product };
+// ids sin nombre no serviria para eso. Batch (una query para todas las filas,
+// no una por fila) via getProductsByIds/getSuppliersByIds -evita N+1.
+function attachProducts(
+  rows: SupplierProductModel[],
+  products: ProductDocument[],
+): SupplierProductWithProduct[] {
+  const productsById = new Map(products.map((product) => [String(product._id), product]));
+  return rows.map((row) => {
+    const plain = row.get({ plain: true });
+    return { ...plain, product: productsById.get(plain.productId) ?? null };
+  });
 }
 
 // getSupplierByIdOrThrow ya embebe businessPartner/serviceType/deliveryTerms
-// (mismo motor, include de Sequelize) -se reutiliza tal cual, sin duplicar
-// ese armado aca.
-async function attachSupplier(row: SupplierProductModel): Promise<SupplierProductWithSupplier> {
-  const plain = row.get({ plain: true });
-  const supplier = await getSupplierByIdOrThrow(plain.supplierId).catch(() => null);
-  return { ...plain, supplier };
+// (mismo motor, include de Sequelize) -getSuppliersByIds reusa el mismo
+// INCLUDE, sin duplicar ese armado aca.
+function attachSuppliers(
+  rows: SupplierProductModel[],
+  suppliers: SupplierModel[],
+): SupplierProductWithSupplier[] {
+  const suppliersById = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
+  return rows.map((row) => {
+    const plain = row.get({ plain: true });
+    return { ...plain, supplier: suppliersById.get(plain.supplierId) ?? null };
+  });
 }
 
 export async function listProductsBySupplier(
@@ -64,8 +75,8 @@ export async function listProductsBySupplier(
     limit: params.limit,
     offset: getOffset(params),
   });
-  const items = await Promise.all(rows.map(attachProduct));
-  return { items, total: count };
+  const products = await getProductsByIds(rows.map((row) => row.productId));
+  return { items: attachProducts(rows, products), total: count };
 }
 
 // Direccion inversa: dado un producto (ya elegido en la linea de solicitud),
@@ -83,8 +94,8 @@ export async function listSuppliersByProduct(
     limit: params.limit,
     offset: getOffset(params),
   });
-  const items = await Promise.all(rows.map(attachSupplier));
-  return { items, total: count };
+  const suppliers = await getSuppliersByIds(rows.map((row) => row.supplierId));
+  return { items: attachSuppliers(rows, suppliers), total: count };
 }
 
 export async function getSupplierProductByIdOrThrow(id: number): Promise<SupplierProductModel> {
@@ -97,7 +108,7 @@ export async function linkSupplierProduct(
   data: SupplierProductCreationAttributes,
 ): Promise<SupplierProductWithProduct> {
   await getSupplierByIdOrThrow(data.supplierId);
-  await getProductByIdOrThrow(data.productId);
+  const product = await getProductByIdOrThrow(data.productId);
 
   const existing = await SupplierProductModel.findOne({
     where: { supplierId: data.supplierId, productId: data.productId },
@@ -105,7 +116,7 @@ export async function linkSupplierProduct(
   if (existing) throw new ConflictError("Ese proveedor ya tiene vinculado ese producto");
 
   const link = await SupplierProductModel.create(data);
-  return attachProduct(link);
+  return attachProducts([link], [product])[0]!;
 }
 
 export async function unlinkSupplierProduct(id: number): Promise<void> {

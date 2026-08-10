@@ -34,6 +34,16 @@ purchaseRequestRouter.get(
   authorize("purchase-requests", "read"),
   purchaseRequestController.downloadQuoteDocumentFile,
 );
+// Mismo permiso que crear una cotizacion (quotes:create): quien puede
+// solicitarle una cotizacion a un proveedor tambien puede pedirle que se le
+// mande por correo el mismo documento -no se agrega una accion nueva al
+// catalogo para esto.
+purchaseRequestRouter.post(
+  "/:id/send-quote-email",
+  authorize("quotes", "create"),
+  validateBody(purchaseRequestController.sendQuoteEmailSchema),
+  purchaseRequestController.sendQuoteEmail,
+);
 purchaseRequestRouter.post(
   "/",
   authorize("purchase-requests", "create"),

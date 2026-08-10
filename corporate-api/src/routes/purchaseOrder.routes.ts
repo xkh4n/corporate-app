@@ -7,8 +7,12 @@ import { validateBody } from "../middlewares/validate";
 export const purchaseOrderRouter = Router();
 
 purchaseOrderRouter.use(authenticate);
-purchaseOrderRouter.get("/", purchaseOrderController.list);
-purchaseOrderRouter.get("/:id", purchaseOrderController.getById);
+purchaseOrderRouter.get("/", authorize("purchase-orders", "read"), purchaseOrderController.list);
+purchaseOrderRouter.get(
+  "/:id",
+  authorize("purchase-orders", "read"),
+  purchaseOrderController.getById,
+);
 purchaseOrderRouter.post(
   "/",
   authorize("purchase-orders", "create"),

@@ -7,8 +7,8 @@ import { validateBody } from "../middlewares/validate";
 export const supplierRouter = Router();
 
 supplierRouter.use(authenticate);
-supplierRouter.get("/", supplierController.list);
-supplierRouter.get("/:id", supplierController.getById);
+supplierRouter.get("/", authorize("suppliers", "read"), supplierController.list);
+supplierRouter.get("/:id", authorize("suppliers", "read"), supplierController.getById);
 supplierRouter.post(
   "/",
   authorize("suppliers", "create"),

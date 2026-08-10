@@ -7,8 +7,16 @@ import { validateBody } from "../middlewares/validate";
 export const businessPartnerRouter = Router();
 
 businessPartnerRouter.use(authenticate);
-businessPartnerRouter.get("/", businessPartnerController.list);
-businessPartnerRouter.get("/:id", businessPartnerController.getById);
+businessPartnerRouter.get(
+  "/",
+  authorize("business-partners", "read"),
+  businessPartnerController.list,
+);
+businessPartnerRouter.get(
+  "/:id",
+  authorize("business-partners", "read"),
+  businessPartnerController.getById,
+);
 businessPartnerRouter.post(
   "/",
   authorize("business-partners", "create"),

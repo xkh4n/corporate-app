@@ -10,7 +10,11 @@ supplierProductRouter.use(authenticate);
 // GET requiere ?supplierId=X (productos de ese proveedor) o ?productId=X
 // (proveedores de ese producto) -sin uno de los dos no tiene sentido (no hay
 // listado "todos los vinculos de todos los proveedores").
-supplierProductRouter.get("/", supplierProductController.list);
+supplierProductRouter.get(
+  "/",
+  authorize("supplier-products", "read"),
+  supplierProductController.list,
+);
 supplierProductRouter.post(
   "/",
   authorize("supplier-products", "create"),

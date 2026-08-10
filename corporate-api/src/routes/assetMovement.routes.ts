@@ -7,7 +7,7 @@ import { validateBody } from "../middlewares/validate";
 export const assetMovementRouter = Router();
 
 assetMovementRouter.use(authenticate);
-assetMovementRouter.get("/", assetMovementController.list);
+assetMovementRouter.get("/", authorize("asset-movements", "read"), assetMovementController.list);
 assetMovementRouter.post(
   "/",
   authorize("asset-movements", "create"),

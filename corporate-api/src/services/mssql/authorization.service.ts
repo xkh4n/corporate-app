@@ -1,4 +1,3 @@
-import path from "node:path";
 import { mssql } from "../../databases/mssql/connection";
 import { AuthorizationModel } from "../../models/mssql/authorization.model";
 import { getLineByIdOrThrow } from "./purchaseRequestLine.service";
@@ -8,6 +7,7 @@ import { getUserByIdOrThrow } from "./user.service";
 import { getSupplierByIdOrThrow } from "./supplier.service";
 import { getBusinessPartnerByIdOrThrow } from "./businessPartner.service";
 import { copyIfExists, findFileByPrefix, getAcquisitionFolder, getQuoteRequestFolder, saveBuffer } from "../../library/documentStorage";
+import { getSafeExtension } from "../../middlewares/upload";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../../library/errors";
 import { logger } from "../../library/logger";
 import type { PaginationParams } from "../../library/pagination";
@@ -128,7 +128,7 @@ export async function attachAuthorizationDocument(
   const supplier = await getSupplierByIdOrThrow(authorization.supplierId);
   const businessPartner = await getBusinessPartnerByIdOrThrow(supplier.businessPartnerId);
 
-  const extension = path.extname(file.originalname) || ".pdf";
+  const extension = getSafeExtension(file);
   const filename = `AUTORIZACION-${businessPartner.nationalId}${extension}`;
   saveBuffer(getAcquisitionFolder(request.requestNumber), filename, file.buffer);
   return filename;

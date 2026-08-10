@@ -1,4 +1,3 @@
-import path from "node:path";
 import { Op } from "sequelize";
 import { GoodsReceiptModel } from "../../models/mssql/goodsReceipt.model";
 import { getPurchaseOrderByIdOrThrow } from "./purchaseOrder.service";
@@ -6,6 +5,7 @@ import { getQuoteByIdOrThrow } from "./quote.service";
 import { getPurchaseRequestByIdOrThrow } from "./purchaseRequest.service";
 import { createAssetFromReceipt } from "../postgres/asset.service";
 import { getAcquisitionFolder, saveBuffer, sanitizeFilenameSegment } from "../../library/documentStorage";
+import { getSafeExtension } from "../../middlewares/upload";
 import { NotFoundError } from "../../library/errors";
 import { logger } from "../../library/logger";
 import type { PaginationParams } from "../../library/pagination";
@@ -98,7 +98,7 @@ export async function attachGoodsReceiptDocument(
   const receipt = await getGoodsReceiptByIdOrThrow(receiptId);
   const request = await getPurchaseRequestByIdOrThrow(receipt.requestId);
 
-  const extension = path.extname(file.originalname) || ".pdf";
+  const extension = getSafeExtension(file);
   const documentNumber = sanitizeFilenameSegment(receipt.documentNumber);
   const filename = `${receipt.documentType}-${documentNumber}${extension}`;
   saveBuffer(getAcquisitionFolder(request.requestNumber), filename, file.buffer);

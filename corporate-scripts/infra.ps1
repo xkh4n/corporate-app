@@ -33,6 +33,18 @@ foreach ($path in @($composePath, $environmentPath, $envStackPath)) {
     }
 }
 
+# mongodb_keyfile es el UNICO secreto de este stack que no tiene un
+# "ensure-*.ps1" propio (es interactivo/manual a proposito, ver
+# mongo-keyfile.ps1) y que este script tampoco validaba antes de levantar el
+# compose -sin este check, un checkout limpio que se olvide de
+# "run.ps1 mongokey <ambiente>" fallaba con el error generico de Docker
+# "secret file not found" en vez de un mensaje claro como el resto.
+$mongoKeyfilePath = Join-Path $repoRoot "corporate-secrets\$envFolder\MongoKeyfile\mongodb_keyfile.txt"
+if (-not (Test-Path $mongoKeyfilePath)) {
+    Write-Error "No se encontró el keyfile de MongoDB: $mongoKeyfilePath. Corré '.\run.ps1 mongokey $Ambiente' primero."
+    exit 1
+}
+
 # Genera (solo si faltan) los secretos de los usuarios de metricas/exporters
 # de Prometheus antes de levantar el stack -no interactivo e idempotente, ver
 # ensure-monitoring-secrets.ps1-, para que "run.ps1 bdd <ambiente>" deje el
@@ -47,7 +59,7 @@ Write-Host "Levantando stack de bases de datos [$Ambiente] -> $composeFile" -For
 # --profile, este "up" NO levanta servicios con profile propio: ni
 # mssql-init<Ambiente> (profile "init") ni mssql-exporter0N<Ambiente>
 # (profile "mssql-monitoring", ver más abajo por qué).
-docker compose -f $composePath --env-file $envStackPath --env-file $environmentPath up --wait --wait-timeout 300
+docker compose -f $composePath --env-file $envStackPath --env-file $environmentPath up --wait --wait-timeout 300 --build
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "docker compose finalizó con código $LASTEXITCODE"
@@ -62,7 +74,7 @@ if ($LASTEXITCODE -ne 0) {
 # corrida en un ambiente ya inicializado no hace nada.
 $mssqlInitService = "mssql-init$Ambiente"
 Write-Host "Ejecutando bootstrap del Availability Group de MSSQL..." -ForegroundColor Cyan
-docker compose -f $composePath --env-file $envStackPath --env-file $environmentPath run --rm $mssqlInitService
+docker compose -f $composePath --env-file $envStackPath --env-file $environmentPath run --rm --build $mssqlInitService
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "$mssqlInitService finalizó con código $LASTEXITCODE"
@@ -84,7 +96,7 @@ if ($LASTEXITCODE -ne 0) {
 $mssqlExporter1Service = "mssql-exporter01$Ambiente"
 $mssqlExporter2Service = "mssql-exporter02$Ambiente"
 Write-Host "Levantando exporters de métricas de MSSQL..." -ForegroundColor Cyan
-docker compose -f $composePath --env-file $envStackPath --env-file $environmentPath --profile mssql-monitoring up --wait --wait-timeout 60 $mssqlExporter1Service $mssqlExporter2Service
+docker compose -f $composePath --env-file $envStackPath --env-file $environmentPath --profile mssql-monitoring up --wait --wait-timeout 60 --build $mssqlExporter1Service $mssqlExporter2Service
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Exporters de MSSQL finalizaron con código $LASTEXITCODE"

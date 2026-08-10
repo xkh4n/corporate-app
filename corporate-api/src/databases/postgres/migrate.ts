@@ -189,6 +189,14 @@ async function migrateAssets(): Promise<void> {
       UNIQUE (asset_movement_id, user_id)
     );
   `);
+
+  // asset_movements.asset_id: FK sin indice propio, filtrada directo en
+  // listMovementsByAsset. asset_movement_users NO necesita uno equivalente:
+  // el UNIQUE(asset_movement_id, user_id) de arriba ya es, en si mismo, un
+  // indice compuesto con asset_movement_id como columna líder.
+  await postgres.query(`
+    CREATE INDEX IF NOT EXISTS ix_asset_movements_asset_id ON asset_movements(asset_id);
+  `);
 }
 
 // Contador atomico para el tag de activo (ARR/SRV/ACT segun

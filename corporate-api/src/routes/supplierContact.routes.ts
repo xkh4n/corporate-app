@@ -9,8 +9,16 @@ export const supplierContactRouter = Router();
 supplierContactRouter.use(authenticate);
 // GET requiere ?supplierId=X -sin ese filtro no tiene sentido (no hay
 // listado "todos los contactos de todos los proveedores").
-supplierContactRouter.get("/", supplierContactController.list);
-supplierContactRouter.get("/:id", supplierContactController.getById);
+supplierContactRouter.get(
+  "/",
+  authorize("supplier-contacts", "read"),
+  supplierContactController.list,
+);
+supplierContactRouter.get(
+  "/:id",
+  authorize("supplier-contacts", "read"),
+  supplierContactController.getById,
+);
 supplierContactRouter.post(
   "/",
   authorize("supplier-contacts", "create"),

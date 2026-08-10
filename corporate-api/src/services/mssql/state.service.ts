@@ -8,7 +8,7 @@ import { logger } from "../../library/logger";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
-import type { StateCreationAttributes, StateUpdateAttributes } from "../../types/mssql/state.types";
+import type { StateCreationAttributes } from "../../types/mssql/state.types";
 
 // "ciudad" en states.json es el iata_code de cities (ej. "ARI" para Arica),
 // no un FK numerico. Ver memoria project-erp-scope-and-data-classification
@@ -41,16 +41,6 @@ export async function getStateById(id: number): Promise<StateModel | null> {
 export async function getStateByIdOrThrow(id: number): Promise<StateModel> {
   const state = await getStateById(id);
   if (!state) throw new NotFoundError(`El estado/comuna ${id} no existe`);
-  return state;
-}
-
-export async function createState(data: StateCreationAttributes): Promise<StateModel> {
-  return StateModel.create(data);
-}
-
-export async function updateState(id: number, data: StateUpdateAttributes): Promise<StateModel> {
-  const state = await getStateByIdOrThrow(id);
-  await state.update(data);
   return state;
 }
 

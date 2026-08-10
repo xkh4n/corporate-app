@@ -1,19 +1,15 @@
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as quoteService from "../services/mssql/quote.service";
+import { makeAttachmentHandler } from "../middlewares/upload";
 import { BadRequestError } from "../library/errors";
 import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
 import { sendList, sendOk } from "../library/response";
 
-export async function uploadAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try {
-    if (!req.file) throw new BadRequestError("Debe adjuntar un archivo (campo 'file')");
-    const filename = await quoteService.attachQuoteDocument(Number(req.params.id), req.file);
-    sendOk(res, { filename }, "Comprobante de cotizacion adjuntado exitosamente", 201);
-  } catch (err) {
-    next(err);
-  }
-}
+export const uploadAttachment = makeAttachmentHandler(
+  quoteService.attachQuoteDocument,
+  "Comprobante de cotizacion adjuntado exitosamente",
+);
 
 export const createQuoteSchema = z.object({
   requestId: z.number().int().positive(),

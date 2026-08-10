@@ -1,4 +1,3 @@
-import path from "node:path";
 import { Op } from "sequelize";
 import { mssql } from "../../databases/mssql/connection";
 import { QuoteModel } from "../../models/mssql/quote.model";
@@ -8,6 +7,7 @@ import { getBusinessPartnerByIdOrThrow } from "./businessPartner.service";
 import { getProductByIdOrThrow } from "../mongo/product.service";
 import { archiveQuoteRequestPdf, renderQuoteRequestPdf } from "../../library/pdf/quoteRequestPdf";
 import { getQuoteRequestFolder, saveBuffer } from "../../library/documentStorage";
+import { getSafeExtension } from "../../middlewares/upload";
 import { generateDocumentNumber } from "../../library/documentNumbering";
 import { NotFoundError } from "../../library/errors";
 import { logger } from "../../library/logger";
@@ -85,7 +85,7 @@ export async function attachQuoteDocument(quoteId: number, file: Express.Multer.
   const supplier = await getSupplierByIdOrThrow(quote.supplierId);
   const businessPartner = await getBusinessPartnerByIdOrThrow(supplier.businessPartnerId);
 
-  const extension = path.extname(file.originalname) || ".pdf";
+  const extension = getSafeExtension(file);
   const filename = `COT-${businessPartner.nationalId}${extension}`;
   saveBuffer(getQuoteRequestFolder(request.requestNumber), filename, file.buffer);
   return filename;

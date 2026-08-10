@@ -1,19 +1,15 @@
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as authorizationService from "../services/mssql/authorization.service";
+import { makeAttachmentHandler } from "../middlewares/upload";
 import { BadRequestError, UnauthorizedError } from "../library/errors";
 import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
 import { sendList, sendOk } from "../library/response";
 
-export async function uploadAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try {
-    if (!req.file) throw new BadRequestError("Debe adjuntar un archivo (campo 'file')");
-    const filename = await authorizationService.attachAuthorizationDocument(Number(req.params.id), req.file);
-    sendOk(res, { filename }, "Documento de autorizacion adjuntado exitosamente", 201);
-  } catch (err) {
-    next(err);
-  }
-}
+export const uploadAttachment = makeAttachmentHandler(
+  authorizationService.attachAuthorizationDocument,
+  "Documento de autorizacion adjuntado exitosamente",
+);
 
 export const createAuthorizationSchema = z.object({
   requestLineId: z.number().int().positive(),

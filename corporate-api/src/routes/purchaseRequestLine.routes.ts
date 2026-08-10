@@ -7,8 +7,16 @@ import { validateBody } from "../middlewares/validate";
 export const purchaseRequestLineRouter = Router();
 
 purchaseRequestLineRouter.use(authenticate);
-purchaseRequestLineRouter.get("/", lineController.list);
-purchaseRequestLineRouter.get("/:id", lineController.getById);
+purchaseRequestLineRouter.get(
+  "/",
+  authorize("purchase-request-lines", "read"),
+  lineController.list,
+);
+purchaseRequestLineRouter.get(
+  "/:id",
+  authorize("purchase-request-lines", "read"),
+  lineController.getById,
+);
 purchaseRequestLineRouter.post(
   "/",
   authorize("purchase-request-lines", "create"),

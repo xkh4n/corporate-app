@@ -1,0 +1,88 @@
+name: ${PROJECT_NAME_MAILER}${SUFFIX}
+
+secrets:
+    smtp_password:
+        file: ../corporate-secrets/Development/smtp_password.txt
+    mailer_shared_secret:
+        file: ../corporate-secrets/Development/mailer_shared_secret.txt
+
+networks:
+    # Red compartida con corporate-api (creada por "run.ps1 mailer/backend
+    # <ambiente>", igual patron que backend-net-${SUFFIX}/frontend-net-
+    # ${SUFFIX} en el root run.ps1): es el UNICO camino de ENTRADA a este
+    # servicio (las 3 réplicas de corporate-api le hablan acá por nombre).
+    #
+    # Hallazgo CRITICO de auditoria + fix: esta red pasó a ser "internal:
+    # true" en su creación real (root run.ps1, "docker network create
+    # --internal") -antes, compartir "mailer-net" con corporate-api también
+    # le daba a las 3 réplicas de la API egreso NAT real "gratis" a internet,
+    # exactamente el mismo hallazgo que en el resto del monorepo, solo que acá
+    # ni siquiera hacía falta un contenedor comprometido: bastaba con estar en
+    # la misma red bridge que mailerdev-. Por eso mailerdev ya NO saca su
+    # salida real a internet por esta red: ver "mailer-egress" más abajo, una
+    # segunda red exclusiva de mailerdev, no compartida con nadie.
+    mailer-net:
+        external: true
+        name: mailer-net-${SUFFIX}
+    # Única red de TODO el monorepo con egreso NAT real habilitado (sin
+    # "internal: true") y, a propósito, con un solo miembro posible:
+    # mailerdev es el único servicio de este compose que se conecta acá.
+    # Al no ser compartida con corporate-api (que vive solo en "mailer-net",
+    # ahora internal), ninguna réplica de la API puede alcanzar esta red ni
+    # heredar su salida a internet "gratis" por estar dual-homed -mailerdev
+    # es, otra vez, el ÚNICO contenedor de todo el proyecto con salida real a
+    # internet, pero ahora eso es cierto también a nivel de topología Docker,
+    # no solo de intención documentada-.
+    mailer-egress:
+        name: ${PROJECT_NAME_MAILER}_egress${SUFFIX}
+
+services:
+    # Una sola replica a proposito: relay de correo de bajo trafico, no el
+    # servicio cara-al-negocio (a diferencia de las 3 replicas de
+    # corporate-api). Sin NGINX/TLS propio: nadie fuera de Docker lo llama,
+    # solo corporate-api server-to-server dentro de "mailer-net" -no hay
+    # trafico de navegador que proteger con HTTPS-. Sin puerto publicado al
+    # host por el mismo motivo.
+    mailerdev:
+        image: ${PROJECT_NAME_MAILER}:${SUFFIX}
+        build:
+            context: ./
+            dockerfile: Dockerfile.dev
+        container_name: ${MAILER_HOST}${SUFFIX}
+        hostname: ${MAILER_HOST}${SUFFIX}
+        restart: ${RESTART_POLICY}
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        deploy:
+            resources:
+                limits:
+                    memory: 256M
+                    cpus: "0.5"
+        environment:
+            NODE_ENV: ${NODE_ENV}
+            PORT: ${MAILER_INTERNAL_PORT}
+            CHOKIDAR_USEPOLLING: "true"
+            CHOKIDAR_INTERVAL: "300"
+            SMTP_HOST: ${SMTP_HOST}
+            SMTP_PORT: ${SMTP_PORT}
+            SMTP_USER: ${SMTP_USER}
+            SMTP_FROM: ${SMTP_FROM}
+            SMTP_PASSWORD_FILE: /run/secrets/smtp_password
+            MAILER_SHARED_SECRET_FILE: /run/secrets/mailer_shared_secret
+        secrets:
+            - smtp_password
+            - mailer_shared_secret
+        volumes:
+            - ./:/app
+            - /app/node_modules
+        networks:
+            - mailer-net
+            - mailer-egress
+        healthcheck:
+            test: ["CMD-SHELL", "wget -qO- http://localhost:${MAILER_INTERNAL_PORT}/health >/dev/null 2>&1 || exit 1"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+            start_period: 20s

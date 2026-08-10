@@ -135,3 +135,27 @@ export async function downloadQuoteDocumentFile(req: Request, res: Response, nex
     next(err);
   }
 }
+
+export const sendQuoteEmailSchema = z.object({
+  supplierId: z.number().int().positive(),
+});
+
+// Nunca responde 500/crash por un fallo de correo: sendQuoteRequestEmail ya
+// devuelve {sent:false, message} en vez de lanzar cuando el mailer no
+// responde -acá solo se traduce a 502 para que el frontend distinga "no se
+// pudo enviar" de un 201/200 real. El PDF sigue disponible por descarga
+// manual (downloadQuoteDocument) sin importar si el correo falló.
+export async function sendQuoteEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { supplierId } = req.body as z.infer<typeof sendQuoteEmailSchema>;
+    const result = await purchaseRequestService.sendQuoteRequestEmail(Number(req.params.id), supplierId);
+
+    if (!result.sent) {
+      res.status(502).json({ codigo: 502, message: result.message });
+      return;
+    }
+    sendOk(res, { sent: true }, result.message);
+  } catch (err) {
+    next(err);
+  }
+}

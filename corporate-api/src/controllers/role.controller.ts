@@ -2,6 +2,8 @@ import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as roleService from "../services/postgres/role.service";
 import * as permissionService from "../services/postgres/permission.service";
+import { listUserIdsByRoleId } from "../services/mssql/user.service";
+import { invalidateUserSessions } from "../services/redis/session.service";
 import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
 import { sendList, sendOk, sendNoContent } from "../library/response";
 
@@ -60,9 +62,19 @@ export async function update(req: Request, res: Response, next: NextFunction): P
   }
 }
 
+// Ademas de marcar isActive=false (hasPermission ya lo exige, ver
+// permission.service.ts), invalida de inmediato la sesion/access-token de
+// cada usuario que tenia este rol -sin esto, alguien con una sesion ya
+// activa conservaba acceso completo hasta que su JWT expirara solo (hasta
+// 12h), pese a que el rol ya estuviera "desactivado".
 export async function deactivate(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    await roleService.deactivateRole(Number(req.params.id));
+    const roleId = Number(req.params.id);
+    await roleService.deactivateRole(roleId);
+
+    const userIds = await listUserIdsByRoleId(roleId);
+    await Promise.all(userIds.map((userId) => invalidateUserSessions(userId, "role_deactivated")));
+
     sendNoContent(res);
   } catch (err) {
     next(err);

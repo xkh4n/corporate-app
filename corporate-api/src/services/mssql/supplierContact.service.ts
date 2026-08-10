@@ -28,6 +28,13 @@ export async function listContactsBySupplier(
   return { items: rows, total: count };
 }
 
+// Todos los contactos de un proveedor, sin paginar -usado para armar la
+// lista de destinatarios al enviar la "solicitud de cotizacion" por correo
+// (no hay campo "principal" en el modelo, se manda a todos).
+export async function listAllContactsBySupplier(supplierId: number): Promise<SupplierContactModel[]> {
+  return SupplierContactModel.findAll({ where: { supplierId }, order: [["id", "ASC"]] });
+}
+
 export async function getSupplierContactById(id: number): Promise<SupplierContactModel | null> {
   return SupplierContactModel.findByPk(id);
 }

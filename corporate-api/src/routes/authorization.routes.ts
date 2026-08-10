@@ -8,8 +8,12 @@ import { validateBody } from "../middlewares/validate";
 export const authorizationRouter = Router();
 
 authorizationRouter.use(authenticate);
-authorizationRouter.get("/", authorizationController.list);
-authorizationRouter.get("/:id", authorizationController.getById);
+authorizationRouter.get("/", authorize("authorizations", "read"), authorizationController.list);
+authorizationRouter.get(
+  "/:id",
+  authorize("authorizations", "read"),
+  authorizationController.getById,
+);
 authorizationRouter.post(
   "/",
   authorize("authorizations", "create"),

@@ -9,8 +9,17 @@ secrets:
 networks:
     # Red propia de este stack (equivalente a "backend" en corporate-infra):
     # Loki, Alloy, Grafana y el proxy NGINX viven acá.
+    # internal: true -hallazgo CRITICO de auditoria: sin esto, cualquiera de
+    # estos contenedores (Grafana, Alloy, Loki, Prometheus) tenia egreso NAT
+    # real a internet. Ninguno lo necesita: Grafana/Loki/Alloy solo se hablan
+    # entre si por esta red. nginxmondev YA NO se queda solo acá -ver la red
+    # "public" más abajo-: se probó en la práctica (no se asumió) que en este
+    # host una red "internal: true" bloquea por completo el port-publish al
+    # host, no solo el egreso a internet, así que nginxmondev necesita una
+    # segunda red sin "internal" solo para eso.
     monitoring:
         name: ${PROJECT_NAME_MONITORING}_monitoring${SUFFIX}
+        internal: true
     # Red del OTRO proyecto Compose (corporate-infra), declarada "external"
     # porque ya existe (la crea "corpinfra dev" al levantar ese stack) y este
     # proyecto no es dueño de ella. Apunta a "exporters", NO a "backend"
@@ -50,8 +59,19 @@ networks:
     # dockerproxydev solo es alcanzable a través de dockerproxyfilterdev
     # (dual-homed en "monitoring" + "proxy-internal"); todo lo demás
     # (Alloy incluido) se queda solo en "monitoring".
+    # internal: true -mismo motivo que "monitoring": esta red solo conecta
+    # dockerproxyfilterdev con dockerproxydev (socket de Docker), nunca
+    # necesitó ni necesita salida a internet.
     proxy-internal:
         name: ${PROJECT_NAME_MONITORING}_proxy-internal${SUFFIX}
+        internal: true
+    # Red exclusiva de nginxmondev, DELIBERADAMENTE SIN "internal: true" -
+    # única forma de que Docker publique sus 2 puertos (3333/3334) al host en
+    # este entorno (Docker Desktop/WSL2, Windows): confirmado en la práctica.
+    # Ni Grafana ni Loki/Alloy/Prometheus/dockerproxyfilterdev se conectan
+    # acá, solo nginxmondev (dual-homed con "monitoring").
+    public:
+        name: ${PROJECT_NAME_MONITORING}_public${SUFFIX}
 
 volumes:
     prometheus_data:
@@ -487,8 +507,16 @@ services:
         ports:
             - "${ALLOCATED_IP}:${MONITORING_PROXY_PORT}:3333"
             - "${ALLOCATED_IP}:${MONITORING_SSL_PORT}:3334"
+        # Dual-homed: "monitoring" (internal, para reenviar a Grafana) +
+        # "public" (NO internal, exclusiva de este servicio, solo para que
+        # Docker publique estos 2 puertos al host -en este host, "internal:
+        # true" bloquea el port-publish por completo, confirmado en la
+        # práctica, ver el comentario en "monitoring" más arriba-). Ni
+        # Grafana ni Loki/Alloy/Prometheus/dockerproxyfilterdev se conectan
+        # acá: solo nginxmondev.
         networks:
             - monitoring
+            - public
         depends_on:
             grafanadev:
                 condition: service_healthy

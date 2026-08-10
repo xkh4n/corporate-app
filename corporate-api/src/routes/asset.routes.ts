@@ -7,8 +7,8 @@ import { validateBody } from "../middlewares/validate";
 export const assetRouter = Router();
 
 assetRouter.use(authenticate);
-assetRouter.get("/", assetController.list);
-assetRouter.get("/:id", assetController.getById);
+assetRouter.get("/", authorize("assets", "read"), assetController.list);
+assetRouter.get("/:id", authorize("assets", "read"), assetController.getById);
 assetRouter.put(
   "/:id",
   authorize("assets", "update"),

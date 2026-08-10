@@ -35,6 +35,14 @@ export async function getProductByIdOrThrow(id: string): Promise<ProductDocument
   return product;
 }
 
+// Batch por ids -evita N+1 al listar productos de varias filas a la vez
+// (ej. getQuoteRequestDocumentData, attachProduct en supplierProduct.service.ts).
+export async function getProductsByIds(ids: string[]): Promise<ProductDocument[]> {
+  const validIds = ids.filter((id) => isValidObjectId(id));
+  if (validIds.length === 0) return [];
+  return ProductModel.find({ _id: { $in: validIds } });
+}
+
 export async function createProduct(data: ProductCreationAttributes): Promise<ProductDocument> {
   if (data.categoryId) await getProductCategoryByIdOrThrow(data.categoryId);
   return ProductModel.create(data);

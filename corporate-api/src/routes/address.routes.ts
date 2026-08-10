@@ -7,8 +7,8 @@ import { validateBody } from "../middlewares/validate";
 export const addressRouter = Router();
 
 addressRouter.use(authenticate);
-addressRouter.get("/", addressController.list);
-addressRouter.get("/:id", addressController.getById);
+addressRouter.get("/", authorize("addresses", "read"), addressController.list);
+addressRouter.get("/:id", authorize("addresses", "read"), addressController.getById);
 addressRouter.post(
   "/",
   authorize("addresses", "create"),

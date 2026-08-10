@@ -100,4 +100,13 @@ export const env = {
   bootstrap: {
     adminPasswordFileVar: "ADMIN_BOOTSTRAP_PASSWORD_FILE",
   },
+
+  // corporate-mailer (unico contenedor del proyecto con salida a internet,
+  // ver library/mailerClient.ts): sin "requireEnv" a proposito -si falta,
+  // sendMailViaMailer devuelve {ok:false} en vez de tumbar el arranque de
+  // corporate-api por un servicio que es best-effort.
+  mailer: {
+    url: optionalEnv("MAILER_URL", ""),
+    sharedSecretFileVar: "MAILER_SHARED_SECRET_FILE",
+  },
 } as const;

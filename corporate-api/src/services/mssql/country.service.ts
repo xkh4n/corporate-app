@@ -2,12 +2,12 @@ import { Op } from "sequelize";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CountryModel } from "../../models/mssql/country.model";
-import { ConflictError, NotFoundError, isUniqueConstraintError, isDuplicateMssqlObjectError } from "../../library/errors";
+import { NotFoundError, isUniqueConstraintError, isDuplicateMssqlObjectError } from "../../library/errors";
 import { logger } from "../../library/logger";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
-import type { CountryCreationAttributes, CountryUpdateAttributes } from "../../types/mssql/country.types";
+import type { CountryCreationAttributes } from "../../types/mssql/country.types";
 
 interface CountrySeedRow {
   iso_code: string;
@@ -39,26 +39,6 @@ export async function getCountryByIdOrThrow(id: number): Promise<CountryModel> {
 
 export async function getCountryByIsoCode(isoCode: string): Promise<CountryModel | null> {
   return CountryModel.findOne({ where: { isoCode } });
-}
-
-export async function getCountryByIataCode(iataCode: string): Promise<CountryModel | null> {
-  return CountryModel.findOne({ where: { iataCode } });
-}
-
-export async function createCountry(data: CountryCreationAttributes): Promise<CountryModel> {
-  const existing = await getCountryByIsoCode(data.isoCode);
-  if (existing) throw new ConflictError(`Ya existe el pais con iso_code '${data.isoCode}'`);
-  return CountryModel.create(data);
-}
-
-export async function updateCountry(id: number, data: CountryUpdateAttributes): Promise<CountryModel> {
-  const country = await getCountryByIdOrThrow(id);
-  if (data.isoCode && data.isoCode !== country.isoCode) {
-    const existing = await getCountryByIsoCode(data.isoCode);
-    if (existing) throw new ConflictError(`Ya existe el pais con iso_code '${data.isoCode}'`);
-  }
-  await country.update(data);
-  return country;
 }
 
 // Datos de referencia (initial-data/countries.json, ver memoria

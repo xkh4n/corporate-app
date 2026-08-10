@@ -22,6 +22,7 @@ export interface PermissionCatalogEntry {
 // de datos manual.
 export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   // Roles y permisos: gestion de acceso, admin-only por definicion.
+  { resource: "roles", action: "read", description: "Consultar roles" },
   { resource: "roles", action: "create", description: "Crear roles" },
   { resource: "roles", action: "update", description: "Editar roles y sus permisos" },
   { resource: "roles", action: "delete", description: "Desactivar roles" },
@@ -37,10 +38,17 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "users", action: "delete", description: "Desactivar usuarios" },
 
   // Maestros/config: admin-only por defecto (create/update).
+  {
+    resource: "business-partners",
+    action: "read",
+    description: "Consultar terceros",
+    grantToUser: true,
+  },
   { resource: "business-partners", action: "create", description: "Crear terceros" },
   { resource: "business-partners", action: "update", description: "Editar terceros" },
   { resource: "cost-centers", action: "create", description: "Crear centros de costo" },
   { resource: "cost-centers", action: "update", description: "Editar centros de costo" },
+  { resource: "suppliers", action: "read", description: "Consultar proveedores", grantToUser: true },
   { resource: "suppliers", action: "create", description: "Crear proveedores" },
   { resource: "suppliers", action: "update", description: "Editar proveedores" },
   {
@@ -65,6 +73,12 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   },
   {
     resource: "supplier-products",
+    action: "read",
+    description: "Consultar vinculos producto-proveedor",
+    grantToUser: true,
+  },
+  {
+    resource: "supplier-products",
     action: "create",
     description: "Vincular productos a un proveedor",
   },
@@ -73,9 +87,16 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     action: "delete",
     description: "Desvincular productos de un proveedor",
   },
+  {
+    resource: "supplier-contacts",
+    action: "read",
+    description: "Consultar contactos de proveedor",
+    grantToUser: true,
+  },
   { resource: "supplier-contacts", action: "create", description: "Crear contactos de proveedor" },
   { resource: "supplier-contacts", action: "update", description: "Editar contactos de proveedor" },
   { resource: "supplier-contacts", action: "delete", description: "Eliminar contactos de proveedor" },
+  { resource: "customers", action: "read", description: "Consultar clientes", grantToUser: true },
   { resource: "customers", action: "create", description: "Crear clientes" },
   { resource: "employees", action: "create", description: "Crear colaboradores" },
   // PII (via la persona asociada): admin-only por defecto, mismo criterio
@@ -93,6 +114,7 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
 
   // Flujo operativo de compras/activos: hoy abierto a cualquier autenticado
   // -se preserva para "user", pero ahora se puede restringir por rol nuevo.
+  { resource: "addresses", action: "read", description: "Consultar direcciones", grantToUser: true },
   { resource: "addresses", action: "create", description: "Crear direcciones", grantToUser: true },
   { resource: "addresses", action: "update", description: "Editar direcciones", grantToUser: true },
   {
@@ -133,6 +155,12 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   },
   {
     resource: "purchase-request-lines",
+    action: "read",
+    description: "Consultar lineas de solicitud",
+    grantToUser: true,
+  },
+  {
+    resource: "purchase-request-lines",
     action: "create",
     description: "Crear lineas de solicitud",
     grantToUser: true,
@@ -143,8 +171,21 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     description: "Editar lineas de solicitud",
     grantToUser: true,
   },
+  { resource: "quotes", action: "read", description: "Consultar cotizaciones", grantToUser: true },
   { resource: "quotes", action: "create", description: "Crear cotizaciones", grantToUser: true },
+  {
+    resource: "authorizations",
+    action: "read",
+    description: "Consultar autorizaciones",
+    grantToUser: true,
+  },
   { resource: "authorizations", action: "create", description: "Autorizar compras", grantToUser: true },
+  {
+    resource: "purchase-orders",
+    action: "read",
+    description: "Consultar ordenes de compra",
+    grantToUser: true,
+  },
   {
     resource: "purchase-orders",
     action: "create",
@@ -153,11 +194,24 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   },
   {
     resource: "goods-receipts",
+    action: "read",
+    description: "Consultar recepciones de mercaderia",
+    grantToUser: true,
+  },
+  {
+    resource: "goods-receipts",
     action: "create",
     description: "Registrar recepciones de mercaderia",
     grantToUser: true,
   },
+  { resource: "assets", action: "read", description: "Consultar activos", grantToUser: true },
   { resource: "assets", action: "update", description: "Editar activos", grantToUser: true },
+  {
+    resource: "asset-movements",
+    action: "read",
+    description: "Consultar movimientos de activos",
+    grantToUser: true,
+  },
   {
     resource: "asset-movements",
     action: "create",

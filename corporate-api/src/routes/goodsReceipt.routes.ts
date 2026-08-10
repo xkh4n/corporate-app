@@ -8,8 +8,12 @@ import { validateBody } from "../middlewares/validate";
 export const goodsReceiptRouter = Router();
 
 goodsReceiptRouter.use(authenticate);
-goodsReceiptRouter.get("/", goodsReceiptController.list);
-goodsReceiptRouter.get("/:id", goodsReceiptController.getById);
+goodsReceiptRouter.get("/", authorize("goods-receipts", "read"), goodsReceiptController.list);
+goodsReceiptRouter.get(
+  "/:id",
+  authorize("goods-receipts", "read"),
+  goodsReceiptController.getById,
+);
 goodsReceiptRouter.post(
   "/",
   authorize("goods-receipts", "create"),
