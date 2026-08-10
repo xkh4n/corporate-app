@@ -18,6 +18,16 @@ export interface PaginationMeta {
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 10000;
 
+// Aunque Sequelize/Mongoose ya escapan el nombre de columna en la posicion
+// de "order" (no es vector de inyeccion -verificado revisando el query
+// generator de ambos dialectos-), un sortBy con caracteres arbitrarios
+// puede ser una columna inexistente y tumbar la query con un 500 evitable.
+// Restringir a la forma de un identificador (letras/numeros/guion bajo) es
+// defensa en profundidad barata (hallazgo de auditoria de seguridad
+// 2026-08-07); no reemplaza un allowlist por recurso, que no se justifica
+// hoy dado que no hay una via de explotacion real.
+const SAFE_SORT_BY = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
 function toInt(value: unknown, fallback: number): number {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -35,7 +45,8 @@ export function parsePaginationParams(
   const limit = Math.max(1, Math.min(MAX_LIMIT, toInt(source.limit, DEFAULT_LIMIT)));
   const rawSearch = typeof source.search === "string" ? source.search.trim() : "";
   const search = rawSearch.length > 0 ? rawSearch : undefined;
-  const sortBy = typeof source.sortBy === "string" && source.sortBy.length > 0 ? source.sortBy : defaultSortBy;
+  const rawSortBy = typeof source.sortBy === "string" ? source.sortBy : "";
+  const sortBy = SAFE_SORT_BY.test(rawSortBy) ? rawSortBy : defaultSortBy;
   const sortOrder = source.sortOrder === "asc" || source.sortOrder === "desc" ? source.sortOrder : defaultSortOrder;
   return { page, limit, search, sortBy, sortOrder };
 }

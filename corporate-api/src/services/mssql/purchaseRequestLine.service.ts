@@ -1,9 +1,10 @@
 import { Op } from "sequelize";
 import { PurchaseRequestLineModel } from "../../models/mssql/purchaseRequestLine.model";
+import { AuthorizationModel } from "../../models/mssql/authorization.model";
 import { getPurchaseRequestByIdOrThrow } from "./purchaseRequest.service";
 import { getSupplierByIdOrThrow } from "./supplier.service";
 import { getProductByIdOrThrow } from "../mongo/product.service";
-import { NotFoundError } from "../../library/errors";
+import { ConflictError, NotFoundError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
@@ -68,6 +69,25 @@ export async function updateLine(
   if (data.supplierId !== undefined && data.supplierId !== null) {
     await getSupplierByIdOrThrow(data.supplierId);
   }
+
+  // createAuthorization (authorization.service.ts) exige approvedQuantity <=
+  // line.quantity AL MOMENTO de autorizar, pero nada revalidaba eso si la
+  // linea se editaba DESPUES -se podia terminar con una autorizacion ya
+  // aprobando mas cantidad que la que la linea permite hoy (hallazgo de
+  // auditoria de seguridad 2026-08-07, integridad de negocio, no control de
+  // acceso: el permiso "purchase-request-lines:update" sigue siendo el
+  // correcto y suficiente para editar).
+  if (data.quantity !== undefined && data.quantity < line.quantity) {
+    const maxApproved = (await AuthorizationModel.max("approvedQuantity", {
+      where: { requestLineId: id },
+    })) as number | null;
+    if (maxApproved !== null && data.quantity < maxApproved) {
+      throw new ConflictError(
+        `No se puede reducir la cantidad a ${data.quantity}: ya existe una autorizacion por ${maxApproved} unidades para esta linea`,
+      );
+    }
+  }
+
   await line.update(data);
   return line;
 }

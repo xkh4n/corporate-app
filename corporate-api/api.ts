@@ -31,7 +31,17 @@ export async function createApp(): Promise<Express> {
 
   app.set("trust proxy", 1);
   app.use(helmet());
-  app.use(cors({ origin: env.corsOrigin, credentials: true }));
+  // CORS_ORIGIN="*" (default de dev, sin frontend todavia) es intencionalmente
+  // incompatible con credentials:true -la spec Fetch prohibe esa combinacion,
+  // y navegadores modernos ya la bloquean del lado del cliente, pero es un
+  // footgun real: el dia que exista corporate-front, "arreglarlo" reflejando
+  // cualquier origen (origin:true) sin querer abriria acceso cross-origin
+  // credencial a cualquier sitio (hallazgo de auditoria de seguridad
+  // 2026-08-07). Con "*" se desactivan las credenciales (no hay cliente
+  // browser real todavia que las necesite); un CORS_ORIGIN real debe ser una
+  // lista separada por comas de origenes exactos, nunca "*".
+  const allowedOrigins = env.corsOrigin === "*" ? "*" : env.corsOrigin.split(",").map((origin) => origin.trim());
+  app.use(cors({ origin: allowedOrigins, credentials: env.corsOrigin !== "*" }));
   app.use(express.json());
   app.use(cookieParser());
   app.use(pinoHttp({ logger }));
@@ -50,7 +60,12 @@ export async function createApp(): Promise<Express> {
       saveUninitialized: false,
       cookie: {
         httpOnly: true,
-        secure: env.nodeEnv === "production",
+        // Fijo en true, no derivado de NODE_ENV: en este proyecto NGINX
+        // SIEMPRE termina TLS (autofirmado en dev, real en prod), incluido
+        // el ambiente "development" -atarlo a NODE_ENV dejaba la cookie de
+        // sesion viajando sin el flag Secure en dev pese a que el canal real
+        // ya es HTTPS (hallazgo de auditoria de seguridad 2026-08-07).
+        secure: true,
         sameSite: "lax",
         maxAge: env.session.ttlHours * 60 * 60 * 1000,
       },

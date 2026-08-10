@@ -125,9 +125,17 @@ export async function downloadQuoteDocumentFile(req: Request, res: Response, nex
   try {
     const request = await purchaseRequestService.getPurchaseRequestByIdOrThrow(Number(req.params.id));
     const filename = String(req.params.filename ?? "");
-    if (!filename || path.basename(filename) !== filename) throw new NotFoundError("Archivo no encontrado");
+    if (!filename) throw new NotFoundError("Archivo no encontrado");
 
-    const filePath = path.join(getQuoteRequestFolder(request.requestNumber), filename);
+    // Contencion por ruta RESUELTA, no por comparacion de string: el guard
+    // anterior (path.basename(filename) !== filename) dejaba pasar ".."
+    // -path.basename("..") devuelve "..", la comparacion no detectaba nada-.
+    // Hoy el parametro de ruta de Express ya excluye "/", asi que no se podia
+    // bajar mas de un nivel, pero era un defecto real del guard (CWE-22), no
+    // un falso positivo (hallazgo de auditoria de seguridad 2026-08-07).
+    const folder = path.resolve(getQuoteRequestFolder(request.requestNumber));
+    const filePath = path.resolve(folder, filename);
+    if (!filePath.startsWith(folder + path.sep)) throw new NotFoundError("Archivo no encontrado");
     if (!fs.existsSync(filePath)) throw new NotFoundError("Archivo no encontrado");
 
     res.download(filePath, filename);

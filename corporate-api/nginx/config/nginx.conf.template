@@ -11,6 +11,14 @@ http {
     sendfile on;
     keepalive_timeout 65;
 
+    # Default de nginx es 1m: los adjuntos de cotizacion/autorizacion/recepcion
+    # (multer, ver middlewares/upload.ts) permiten hasta 15MB, asi que sin esto
+    # cualquier adjunto real (PDF/foto) mayor a 1MB se rechazaba en el proxy
+    # antes de llegar a la app (413), aunque la app lo hubiera aceptado
+    # (hallazgo de auditoria de seguridad 2026-08-07 -inconsistencia funcional,
+    # no vulnerabilidad: fallaba de forma segura).
+    client_max_body_size 16m;
+
     # Balanceo entre las 3 réplicas (round-robin, algoritmo default de
     # nginx). max_fails/fail_timeout = health check PASIVO: tras 3 fallos en
     # 10s, nginx marca esa réplica "down" y deja de mandarle tráfico durante
