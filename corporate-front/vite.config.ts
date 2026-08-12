@@ -61,12 +61,16 @@ export default defineConfig({
           // Mismo problema de inotify sobre bind mounts en Docker Desktop/
           // Windows que ya afecta a tsx watch (ver corporate-api/compose.dev.yml).
           watch: { usePolling: true, interval: 300 },
-          // Vite valida el header Host por defecto (proteccion anti DNS-
-          // rebinding); nginx-frontdev reenvia el Host original del
-          // navegador, que no esta en el allowlist por defecto. El proxy ya
-          // es el limite de confianza de este stack (unico punto de
-          // entrada), asi que relajar esto aca es seguro.
-          allowedHosts: true,
+          // NO se setea allowedHosts aca (hallazgo de auditoria de seguridad
+          // 2026-08-12: "allowedHosts: true" desactivaba por completo la
+          // proteccion anti DNS-rebinding de Vite). No hace falta: nginx-
+          // frontdev publica el puerto SOLO en ALLOCATED_IP (ver
+          // compose.dev.yml, "ports"), asi que el Host que reenvia siempre
+          // es un literal de IP -y Vite permite literales de IP sin
+          // necesidad de allowlist (ver isHostAllowedInternal en
+          // node_modules/vite/dist/node/chunks/node.js: retorna true de
+          // inmediato para IPv4/IPv6, sin mirar la config). El default
+          // (allowedHosts: []) ya cubre este caso sin abrir nada de mas.
         }
       : (() => {
           // Solo aplica al flujo pnpm dev en host: nginx-frontdev ya

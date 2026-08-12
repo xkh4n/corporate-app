@@ -1,4 +1,12 @@
+# esbuild: dependencia transitiva confiable (usada por tsx para transpilar
+# en el watcher de dev) que necesita correr su postinstall para bajar el
+# binario precompilado de esta plataforma -pnpm 11 bloquea scripts de
+# instalacion por defecto (proteccion supply-chain), hay que permitirlo
+# explicitamente o "pnpm dev" queda roto.
 allowBuilds:
   esbuild: true
-minimumReleaseAgeExclude:
-  - express-rate-limit@8.6.2
+# Proyecto standalone (no monorepo pnpm) -este archivo existe solo porque
+# pnpm 10+ movio "overrides" (y otros settings que antes vivian en el campo
+# "pnpm" de package.json) aca. No define "packages": no hay workspace real.
+overrides:
+  "uuid@<11.1.1": ">=11.1.1"

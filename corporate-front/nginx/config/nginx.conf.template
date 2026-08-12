@@ -11,6 +11,10 @@ http {
     sendfile on;
     keepalive_timeout 65;
 
+    # No revelar la version de nginx en el header "Server" ni en paginas de
+    # error (hallazgo de auditoria de seguridad 2026-08-12).
+    server_tokens off;
+
     # Una sola instancia de "vite dev" (seraphinedev): a diferencia de
     # api_backend en corporate-api (3 replicas, round-robin), acá no hay
     # balanceo -el websocket de HMR tiene estado por conexion, repartirlo
@@ -86,6 +90,26 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Cabeceras de seguridad del documento/JS (hallazgo de auditoria
+            # de seguridad 2026-08-12): helmet() en corporate-api SOLO cubre
+            # las respuestas JSON de "/api/" -este es el unico lugar que
+            # sirve el HTML/JS que el navegador ejecuta, asi que van aca, no
+            # en "/api/" (evita duplicar/chocar con los headers que ya pone
+            # el backend en esa ruta).
+            add_header X-Frame-Options "DENY" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+            add_header Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=()" always;
+            # unsafe-eval/unsafe-inline: los necesita el propio Vite dev
+            # server para el cliente de HMR y la inyeccion de <style> en
+            # caliente -no aplica al futuro build de produccion servido
+            # como estatico, que puede (y deberia) usar una CSP mas
+            # estricta con nonces. connect-src 'self' ya cubre el websocket
+            # de HMR (mismo origen). frame-ancestors 'none' es la proteccion
+            # real anti-clickjacking (mas fuerte que X-Frame-Options, que se
+            # deja igual por compatibilidad con navegadores viejos).
+            add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' wss:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
         }
     }
 }

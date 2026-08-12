@@ -11,6 +11,10 @@ http {
     sendfile on;
     keepalive_timeout 65;
 
+    # No revelar la version de nginx en el header "Server" ni en paginas de
+    # error (hallazgo de auditoria de seguridad 2026-08-12).
+    server_tokens off;
+
     # Default de nginx es 1m: los adjuntos de cotizacion/autorizacion/recepcion
     # (multer, ver middlewares/upload.ts) permiten hasta 15MB, asi que sin esto
     # cualquier adjunto real (PDF/foto) mayor a 1MB se rechazaba en el proxy

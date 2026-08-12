@@ -27,6 +27,15 @@ import type { AuthenticatedUser } from "../types/auth.types";
 export const loginSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
+  // Opt-in, default false: el SPA (corporate-front) solo usa la cookie de
+  // sesion y descarta accessToken/refreshToken si llegan (ver
+  // AuthContext.tsx), asi que emitirlos siempre era exponer mas material
+  // sensible del necesario en cada login (hallazgo de auditoria de
+  // seguridad 2026-08-12, ligado al hallazgo de logging: mientras mas se
+  // emite, mas puede terminar filtrado si algo como esa fuga vuelve a
+  // pasar). Reservado para un futuro cliente no-browser (mobile/integracion)
+  // que si necesite el par de tokens.
+  issueTokens: z.boolean().optional(),
 });
 
 export const refreshSchema = z.object({
@@ -55,7 +64,7 @@ async function issueTokenPair(user: AuthenticatedUser) {
 
 export async function login(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { username, password } = req.body as z.infer<typeof loginSchema>;
+    const { username, password, issueTokens } = req.body as z.infer<typeof loginSchema>;
 
     // Mensaje generico en ambos casos (usuario inexistente vs password
     // incorrecta): no darle a un atacante una forma de enumerar usuarios.
@@ -97,7 +106,7 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
       loginAt: new Date().toISOString(),
     };
 
-    const tokens = await issueTokenPair(authUser);
+    const tokens = issueTokens ? await issueTokenPair(authUser) : undefined;
     await touchLastLogin(authUser.userId);
 
     sendOk(res, { user: authUser, ...tokens }, "Login exitoso");

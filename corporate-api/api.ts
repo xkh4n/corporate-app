@@ -44,7 +44,22 @@ export async function createApp(): Promise<Express> {
   app.use(cors({ origin: allowedOrigins, credentials: env.corsOrigin !== "*" }));
   app.use(express.json());
   app.use(cookieParser());
-  app.use(pinoHttp({ logger }));
+  // redact: sin esto, el serializer default de pino-http vuelca req.headers
+  // completo -incluidos Cookie (la sesion httpOnly "sid") y Authorization
+  // (JWT bearer)- en texto plano a stdout, que corporate-monitoring/Alloy
+  // scrapea hacia Loki/Grafana. Eso permite secuestrar la sesion de
+  // cualquier usuario con solo leer los logs, sin pasar por XSS -bypassea
+  // el flag httpOnly por un camino server-side (hallazgo de auditoria de
+  // seguridad 2026-08-12, confirmado en vivo con curl + docker logs).
+  app.use(
+    pinoHttp({
+      logger,
+      redact: {
+        paths: ["req.headers.cookie", "req.headers.authorization", "res.headers['set-cookie']"],
+        censor: "[Redacted]",
+      },
+    }),
+  );
   app.use(metricsMiddleware);
   app.use((_req, res, next) => {
     res.set("X-Api-Instance", instanceId);

@@ -23,8 +23,11 @@ export interface MeResponse {
   permissions: PermissionKey[];
 }
 
+// accessToken/refreshToken solo vienen si se manda issueTokens:true (ver
+// auth.controller.ts) -el SPA nunca lo hace, la sesion viaja por cookie
+// httpOnly (ver AuthContext.tsx). Quedan opcionales para no mentir el tipo.
 export interface LoginResponse {
   user: AuthUser;
-  accessToken: string;
-  refreshToken: string;
+  accessToken?: string;
+  refreshToken?: string;
 }

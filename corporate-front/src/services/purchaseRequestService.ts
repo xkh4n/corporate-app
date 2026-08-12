@@ -31,7 +31,7 @@ export const purchaseRequestService = {
 
   // Descarga un archivo puntual ya subido (stream binario, no JSON envelope).
   downloadQuoteDocumentFile: (id: number, filename: string) =>
-    apiFetchBlob(`/purchase-requests/${id}/quote-documents/${filename}`),
+    apiFetchBlob(`/purchase-requests/${id}/quote-documents/${encodeURIComponent(filename)}`),
 
   sendQuoteEmail: (id: number, supplierId: number) =>
     apiFetch<{ sent: true }>(`/purchase-requests/${id}/send-quote-email`, {
