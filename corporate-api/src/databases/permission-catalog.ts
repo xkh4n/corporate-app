@@ -58,6 +58,7 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "business-partners", action: "update", description: "Editar terceros" },
   { resource: "cost-centers", action: "create", description: "Crear centros de costo" },
   { resource: "cost-centers", action: "update", description: "Editar centros de costo" },
+  { resource: "cost-centers", action: "read", description: "Listar centros de costo" },
   { resource: "suppliers", action: "read", description: "Consultar proveedores", grantToUser: true },
   { resource: "suppliers", action: "create", description: "Crear proveedores" },
   { resource: "suppliers", action: "update", description: "Editar proveedores" },
@@ -72,9 +73,19 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     description: "Editar tipos de servicio de proveedor",
   },
   {
+    resource: "supplier-service-types",
+    action: "read",
+    description: "Listar tipos de servicio de proveedor",
+  },
+  {
     resource: "supplier-delivery-terms",
     action: "create",
     description: "Crear condiciones de entrega de proveedor",
+  },
+  {
+    resource: "supplier-delivery-terms",
+    action: "read",
+    description: "Listar condiciones de entrega de proveedor",
   },
   {
     resource: "supplier-delivery-terms",
@@ -115,12 +126,15 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "employees", action: "read", description: "Consultar colaboradores" },
   { resource: "employees", action: "update", description: "Editar colaboradores" },
   { resource: "products", action: "create", description: "Crear productos" },
+  { resource: "products", action: "read", description: "Listar productos" },
   { resource: "products", action: "update", description: "Editar productos" },
   { resource: "products", action: "delete", description: "Desactivar productos" },
   { resource: "product-categories", action: "create", description: "Crear categorias de producto" },
   { resource: "product-categories", action: "update", description: "Editar categorias de producto" },
+  { resource: "product-categories", action: "read", description: "Listar categorias de producto" },
   { resource: "asset-statuses", action: "create", description: "Crear estados de activo" },
   { resource: "asset-statuses", action: "update", description: "Editar estados de activo" },
+  { resource: "asset-statuses", action: "read", description: "Listar estados de activo" },
 
   // Flujo operativo de compras/activos: hoy abierto a cualquier autenticado
   // -se preserva para "user", pero ahora se puede restringir por rol nuevo.
@@ -183,6 +197,7 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   },
   { resource: "quotes", action: "read", description: "Consultar cotizaciones", grantToUser: true },
   { resource: "quotes", action: "create", description: "Crear cotizaciones", grantToUser: true },
+  { resource: "quotes", action: "approve", description: "Validar cotizaciones", grantToUser: true },
   {
     resource: "authorizations",
     action: "read",

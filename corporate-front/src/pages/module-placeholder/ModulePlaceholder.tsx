@@ -1,4 +1,4 @@
-import { EmptyState } from "../components/ui/EmptyState";
+import { EmptyState } from "../../components/ui/EmptyState";
 
 export function ModulePlaceholder({ title }: { title: string }) {
   return (

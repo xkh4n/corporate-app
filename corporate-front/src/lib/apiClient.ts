@@ -17,6 +17,10 @@ interface RequestOptions {
   body?: unknown;
 }
 
+function isFormData(body: unknown): body is FormData {
+  return body instanceof FormData;
+}
+
 // Notifica a AuthContext cuando una request YA AUTENTICADA vuelve 401 (rol
 // cambiado, password cambiada, sesion invalidada del lado del servidor -ver
 // middlewares/authenticate.ts en corporate-api) para que limpie el estado y
@@ -50,11 +54,15 @@ async function parseErrorBody(res: Response): Promise<{ message: string; details
 // vite.config.ts: el dev server proxea /api al backend para que el
 // navegador vea un solo origen y la cookie no quede bloqueada por CORS.
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  // Los adjuntos (POST .../attachment en quotes/authorizations/goods-receipts)
+  // mandan un FormData: no se serializa a JSON ni se fuerza el Content-Type,
+  // el browser arma el boundary del multipart solo.
+  const formBody = isFormData(options.body);
   const res = await fetch(`/api${path}`, {
     method: options.method ?? "GET",
     credentials: "include",
-    headers: options.body !== undefined ? { "Content-Type": "application/json" } : undefined,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    headers: options.body !== undefined && !formBody ? { "Content-Type": "application/json" } : undefined,
+    body: options.body === undefined ? undefined : isFormData(options.body) ? options.body : JSON.stringify(options.body),
   });
 
   if (res.status === 204) {
@@ -71,4 +79,21 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   const envelope = (await res.json()) as ApiEnvelope<T>;
   return envelope.data;
+}
+
+// Para los endpoints que devuelven el archivo directo (PDF de cotizacion,
+// adjuntos descargados) en vez del sobre {codigo,message,data}: no hay JSON
+// que desenvolver.
+export async function apiFetchBlob(path: string): Promise<Blob> {
+  const res = await fetch(`/api${path}`, { credentials: "include" });
+
+  if (!res.ok) {
+    const { message, details } = await parseErrorBody(res);
+    if (res.status === 401) {
+      unauthorizedHandler?.(details);
+    }
+    throw new ApiError(res.status, message, details);
+  }
+
+  return res.blob();
 }

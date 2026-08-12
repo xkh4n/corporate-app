@@ -1,12 +1,12 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "../auth/useAuth";
-import { ApiError } from "../lib/apiClient";
-import { Button } from "../components/ui/Button";
-import { Input } from "../components/ui/Input";
-import { Field } from "../components/ui/Field";
-import { Alert } from "../components/ui/Alert";
-import logo from "../assets/imperial-logo.png";
+import { useAuth } from "../../auth/useAuth";
+import { ApiError } from "../../lib/apiClient";
+import { Button } from "../../components/ui/Button";
+import { Input } from "../../components/ui/Input";
+import { Field } from "../../components/ui/Field";
+import { Alert } from "../../components/ui/Alert";
+import logo from "../../assets/imperial-logo.png";
 
 interface LocationState {
   from?: { pathname: string };

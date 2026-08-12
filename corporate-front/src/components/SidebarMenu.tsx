@@ -8,7 +8,7 @@ const INDENT_PX_PER_DEPTH = 12;
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   `flex items-center gap-2 rounded-md py-2 pr-3 text-sm font-medium transition-colors ${
-    isActive ? "bg-brand-50 text-brand-800" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+    isActive ? "bg-brand-50 text-brand-800" : "text-slate-200 hover:bg-slate-100 hover:text-zinc-700"
   }`;
 
 // Nodo con hijos: grupo colapsable, abierto por defecto (mismo criterio
@@ -31,14 +31,14 @@ function MenuGroup({
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         style={{ paddingLeft: 12 + depth * INDENT_PX_PER_DEPTH }}
-        className="flex w-full items-center gap-2 rounded-md py-2 pr-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-100"
+        className="flex w-full items-center gap-2 rounded-md py-2 pr-3 text-left text-sm font-medium text-slate-200 hover:bg-red-500"
       >
-        <MenuIcon name={node.icon} className="h-4 w-4 shrink-0 text-slate-400" />
+        <MenuIcon name={node.icon} className="h-4 w-4 shrink-0 text-slate-100" />
         <span className="flex-1 truncate">{node.label}</span>
         {open ? (
-          <IoChevronDownOutline className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <IoChevronDownOutline className="h-3.5 w-3.5 shrink-0 text-slate-100" />
         ) : (
-          <IoChevronForwardOutline className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <IoChevronForwardOutline className="h-3.5 w-3.5 shrink-0 text-slate-100" />
         )}
       </button>
       {open && (
@@ -80,7 +80,7 @@ export function SidebarMenu({
               style={{ paddingLeft: 12 + depth * INDENT_PX_PER_DEPTH }}
               className={linkClass}
             >
-              <MenuIcon name={node.icon} className="h-4 w-4 shrink-0 text-slate-400" />
+              <MenuIcon name={node.icon} className="h-4 w-4 shrink-0 text-slate-100" />
               <span className="truncate">{node.label}</span>
             </NavLink>
           );
@@ -90,7 +90,7 @@ export function SidebarMenu({
           <div
             key={node.id}
             style={{ paddingLeft: 12 + depth * INDENT_PX_PER_DEPTH }}
-            className="flex items-center gap-2 py-2 pr-3 text-sm text-slate-400"
+            className="flex items-center gap-2 py-2 pr-3 text-sm text-slate-100"
           >
             <MenuIcon name={node.icon} className="h-4 w-4 shrink-0" />
             <span className="truncate">{node.label}</span>

@@ -19,6 +19,18 @@ export interface Paginated<T> {
   pagination: PaginationMeta;
 }
 
+// Query params comunes a los endpoints de listado (ver library/pagination.ts
+// en corporate-api). Los services que ademas exigen un filtro puntual
+// (ej. requestId en purchase-request-lines) lo agregan aparte, no aca
+// -ese filtro es obligatorio, no una opcion de paginado.
+export interface ListParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}
+
 // Forma estandar de error (errorHandler.ts). El rate limiter del login es la
 // unica excepcion: responde 429 con {error: string}, sin "codigo" ni
 // "message" -ver ApiError.fromResponse en lib/apiClient.ts, que normaliza

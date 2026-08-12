@@ -1,12 +1,22 @@
+import type { ReactElement } from "react";
 import { Route, Routes } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { AppLayout } from "../layouts/AppLayout";
-import { LoginPage } from "../pages/LoginPage";
-import { DashboardPage } from "../pages/DashboardPage";
-import { ModulePlaceholder } from "../pages/ModulePlaceholder";
-import { ForbiddenPage } from "../pages/ForbiddenPage";
+import { LoginPage } from "../pages/login/LoginPage";
+import { DashboardPage } from "../pages/dashboard/DashboardPage";
+import { ModulePlaceholder } from "../pages/module-placeholder/ModulePlaceholder";
+import { ForbiddenPage } from "../pages/forbidden/ForbiddenPage";
+import CreateBusinessPartnerPage from "../pages/adquisiciones/proveedores/createBusinessPartner";
 import { flattenMenuLinks } from "../lib/menu";
+
+// Vistas reales ya implementadas, mapeadas por el "link" exacto del
+// catalogo de menu_items (ver POST /menu-items). Todo lo que no este aca
+// sigue cayendo en ModulePlaceholder -asi que para que esta pantalla sea
+// alcanzable hace falta ademas un menu_item activo con link="/suppliers/create".
+const MODULE_PAGES: Record<string, () => ReactElement> = {
+  "/suppliers/create": () => <CreateBusinessPartnerPage />,
+};
 
 // Fuente unica de las rutas de modulo: el menu del usuario autenticado (ya
 // podado por permisos, ver getMenuTreeForRole en corporate-api), no un
@@ -27,9 +37,16 @@ export function AppRoutes() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/403" element={<ForbiddenPage />} />
 
-          {moduleLinks.map((item) => (
-            <Route key={item.link} path={item.link} element={<ModulePlaceholder title={item.label} />} />
-          ))}
+          {moduleLinks.map((item) => {
+            const Page = MODULE_PAGES[item.link];
+            return (
+              <Route
+                key={item.link}
+                path={item.link}
+                element={Page ? <Page /> : <ModulePlaceholder title={item.label} />}
+              />
+            );
+          })}
 
           <Route path="*" element={<ForbiddenPage />} />
         </Route>

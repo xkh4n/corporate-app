@@ -10,6 +10,7 @@ import {
 import { getRoleByIdOrThrow } from "../services/postgres/role.service";
 import { getPermissionsForRole } from "../services/postgres/permission.service";
 import { getMenuTreeForRole } from "../services/postgres/menuItem.service";
+import { getPersonByIdOrThrow } from "../services/mssql/person.service";
 import { comparePassword } from "../library/password";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../library/jwt";
 import {
@@ -180,9 +181,18 @@ export async function me(req: Request, res: Response, next: NextFunction): Promi
       return;
     }
 
-    const roleId = req.user.roleId;
-    const permissions = (await getPermissionsForRole(roleId)).map((p) => `${p.resource}:${p.action}`);
-    sendOk(res, { user: req.user, permissions }, "Usuario actual obtenido exitosamente");
+    // firstName/lastName solo para mostrar el nombre completo en el front
+    // (ver DashboardPage). Se busca aca, no en AuthenticatedUser/JWT/sesion:
+    // personId sale de la sesion ya autenticada, no de un input del cliente,
+    // asi que consultar su propia persona es autoservicio -no exige
+    // "persons:read" (RBAC, PII), igual que changePassword no exige
+    // "users:update" para la propia contraseña.
+    const [permissions, person] = await Promise.all([
+      getPermissionsForRole(req.user.roleId).then((rows) => rows.map((p) => `${p.resource}:${p.action}`)),
+      getPersonByIdOrThrow(req.user.personId),
+    ]);
+    const user = { ...req.user, firstName: person.firstName, lastName: person.lastName };
+    sendOk(res, { user, permissions }, "Usuario actual obtenido exitosamente");
   } catch (err) {
     next(err);
   }

@@ -1,18 +1,13 @@
 import { Link } from "react-router-dom";
-import { useAuth } from "../auth/useAuth";
-import { flattenMenuLinks } from "../lib/menu";
+import { useAuth } from "../../auth/useAuth";
+import { flattenMenuLinks } from "../../lib/menu";
 
 export function DashboardPage() {
-  const { user, menu } = useAuth();
+  const { menu } = useAuth();
   const shortcuts = flattenMenuLinks(menu);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Hola, {user?.username}</h1>
-        <p className="text-sm text-slate-500">Rol: {user?.roleName}</p>
-      </div>
-
       {shortcuts.length === 0 ? (
         <p className="text-sm text-slate-500">
           Su rol todavia no tiene modulos asignados. Contacte a un administrador.

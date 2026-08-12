@@ -2,7 +2,7 @@ import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
 import { SidebarMenu } from "../components/SidebarMenu";
-import logo from "../assets/imperial-logo.png";
+import logo from "../assets/imperial_white.png";
 
 function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }) {
   const { menu } = useAuth();
@@ -14,12 +14,9 @@ function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }
 
   return (
     <aside
-      className={`fixed inset-y-0 left-0 z-30 w-64 shrink-0 border-r border-slate-200 bg-white
-        transition-transform lg:static lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}
+      className={`fixed left-0 top-16 bottom-0 z-30 w-64 shrink-0 border-r border-slate-200 bg-blue-950
+        transition-transform lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}
     >
-      <div className="flex h-16 items-center border-b border-slate-200 px-4">
-        <img src={logo} alt="Imperial" className="h-7 w-auto" />
-      </div>
       <nav className="space-y-0.5 overflow-y-auto px-3 py-4">
         <NavLink to="/" end onClick={onNavigate} className={linkClass}>
           Panel principal
@@ -34,7 +31,7 @@ function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const { user, logout } = useAuth();
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4">
+    <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center gap-3 border-b border-slate-200 bg-blue-950 px-4">
       <button
         type="button"
         onClick={onMenuClick}
@@ -45,15 +42,15 @@ function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
           <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
         </svg>
       </button>
+      <img src={logo} alt="Imperial" className="h-7 w-auto shrink-0" />
+      <p className="truncate text-2xl font-medium text-gray-00">
+        Hola: {user?.firstName} {user?.lastName}
+      </p>
       <div className="ml-auto flex items-center gap-3">
-        <div className="text-right">
-          <p className="text-sm font-medium text-slate-900">{user?.username}</p>
-          <p className="text-xs text-slate-500">{user?.roleName}</p>
-        </div>
         <button
           type="button"
           onClick={() => void logout()}
-          className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
+          className="rounded-md px-3 py-1.5 text-sm font-medium text-zinc-100 hover:text-gray-700 hover:bg-red-500"
         >
           Cerrar sesion
         </button>
@@ -66,7 +63,8 @@ export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-50 lg:pl-64">
+    <div className="min-h-screen bg-stone-100">
+      <Topbar onMenuClick={() => setSidebarOpen(true)} />
       <Sidebar open={sidebarOpen} onNavigate={() => setSidebarOpen(false)} />
       {sidebarOpen && (
         <div
@@ -75,12 +73,9 @@ export function AppLayout() {
           aria-hidden
         />
       )}
-      <div className="flex min-h-screen flex-col">
-        <Topbar onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 p-6">
-          <Outlet />
-        </main>
-      </div>
+      <main className="mt-2 ml-4 p-6 pt-16 lg:pl-64">
+        <Outlet />
+      </main>
     </div>
   );
 }

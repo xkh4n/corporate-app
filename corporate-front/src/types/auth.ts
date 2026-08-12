@@ -4,13 +4,18 @@ export type PermissionAction = "create" | "read" | "update" | "delete" | "approv
 // "resource:action", tal como los aplana GET /auth/me (auth.controller.ts).
 export type PermissionKey = `${string}:${PermissionAction}`;
 
-// Espejo de corporate-api/src/types/auth.types.ts (AuthenticatedUser).
+// Espejo de corporate-api/src/types/auth.types.ts (AuthenticatedUser), mas
+// firstName/lastName que auth.controller.ts agrega solo en la respuesta de
+// GET /auth/me (autoservicio, no viven en el JWT/sesion -ver el comentario
+// en me()).
 export interface AuthUser {
   userId: number;
   personId: number;
   username: string;
   roleId: number;
   roleName: string;
+  firstName: string;
+  lastName: string;
 }
 
 export interface MeResponse {
