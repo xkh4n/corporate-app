@@ -8,6 +8,7 @@ import { getRoleByIdOrThrow } from "../postgres/role.service";
 import { hashPassword, comparePassword, assertPasswordPolicy } from "../../library/password";
 import { ConflictError, NotFoundError } from "../../library/errors";
 import { env } from "../../library/env";
+import { readSecretFromEnv } from "../../library/secrets";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
@@ -17,7 +18,10 @@ export interface CreateUserInput {
   personId: number;
   roleId: number;
   username: string;
-  password: string;
+  // Opcional: si quien crea el User no manda password (caso tipico, alta de
+  // colaborador desde el front), se aplica el valor fijo de
+  // env.users.defaultPasswordFileVar -nunca viaja por la red, se lee server-side.
+  password?: string;
 }
 
 function toSafeUser(user: UserModel): SafeUser {
@@ -70,14 +74,22 @@ export async function createUser(input: CreateUserInput): Promise<SafeUser> {
   const existing = await UserModel.findOne({ where: { username: input.username } });
   if (existing) throw new ConflictError(`Ya existe el usuario '${input.username}'`);
 
-  assertPasswordPolicy(input.password);
-  const passwordHash = await hashPassword(input.password);
+  // Sin password explicita: se usa el valor fijo del secret (ver env.ts,
+  // users.defaultPasswordFileVar) -nunca pasa por el body/red, se lee y
+  // hashea directo aca.
+  const password = input.password ?? readSecretFromEnv(env.users.defaultPasswordFileVar);
+  assertPasswordPolicy(password);
+  const passwordHash = await hashPassword(password);
 
   const user = await UserModel.create({
     personId: input.personId,
     roleId: input.roleId,
     username: input.username,
     passwordHash,
+    // Toda cuenta nueva arranca con una password que el usuario no eligio
+    // (la mando quien lo creo, o es el valor por defecto): se fuerza el
+    // cambio en el primer login (ver /auth/me y PATCH /auth/change-password).
+    mustChangePassword: true,
   });
 
   return toSafeUser(await getUserByIdOrThrow(user.id));
@@ -104,7 +116,17 @@ export async function updateUser(id: number, data: UserUpdateAttributes): Promis
 // hash VIEJO en el historial, poda lo que sobre de las ultimas N, y recien
 // ahi pisa users.password_hash -si algo falla a mitad de camino, no queda
 // la contraseña cambiada con el historial a medio actualizar.
-export async function changePassword(id: number, newPassword: string): Promise<void> {
+// mustChangePassword es obligatorio (sin default) para que cada caller sea
+// explicito sobre su intencion, en vez de heredar un default que le queda
+// mal a la mitad de los casos: true para el reset administrativo (PATCH
+// /users/:id/password, ver user.controller.ts -alguien mas eligio la
+// password nueva), false para el auto-servicio (PATCH /auth/change-password,
+// ver auth.controller.ts -el propio dueño de la cuenta la eligio).
+export async function changePassword(
+  id: number,
+  newPassword: string,
+  options: { mustChangePassword: boolean },
+): Promise<void> {
   const user = await getUserByIdOrThrow(id);
   assertPasswordPolicy(newPassword);
 
@@ -152,7 +174,7 @@ export async function changePassword(id: number, newPassword: string): Promise<v
       }
     }
 
-    await user.update({ passwordHash }, { transaction });
+    await user.update({ passwordHash, mustChangePassword: options.mustChangePassword }, { transaction });
   });
 }
 

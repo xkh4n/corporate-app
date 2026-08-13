@@ -15,6 +15,8 @@ secrets:
         file: ../corporate-secrets/Development/session_secret.txt
     bootstrap_admin_password:
         file: ../corporate-secrets/Development/bootstrap_admin_password.txt
+    default_user_password:
+        file: ../corporate-secrets/Development/default_user_password.txt
     mongo_user_password:
         file: ../corporate-secrets/Development/db_mongo_user_password.txt
     mailer_shared_secret:
@@ -177,6 +179,7 @@ x-api-common: &api-common
         JWT_ACCESS_SECRET_FILE: /run/secrets/jwt_access_secret
         JWT_REFRESH_SECRET_FILE: /run/secrets/jwt_refresh_secret
         ADMIN_BOOTSTRAP_PASSWORD_FILE: /run/secrets/bootstrap_admin_password
+        DEFAULT_USER_PASSWORD_FILE: /run/secrets/default_user_password
         PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH}
         PASSWORD_HISTORY_LIMIT: ${PASSWORD_HISTORY_LIMIT}
         DISABLE_AUTH: ${DISABLE_AUTH}
@@ -196,6 +199,7 @@ x-api-common: &api-common
         - jwt_refresh_secret
         - session_secret
         - bootstrap_admin_password
+        - default_user_password
         - mongo_user_password
         - mailer_shared_secret
     # Bind mount del código + volumen anónimo sobre node_modules (evita que

@@ -152,10 +152,26 @@ async function migrateAuth(): Promise<void> {
         password_hash NVARCHAR(255) NOT NULL,
         is_active BIT NOT NULL DEFAULT 1,
         last_login_at DATETIME2 NULL,
+        must_change_password BIT NOT NULL DEFAULT 0,
         created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         CONSTRAINT fk_users_person FOREIGN KEY (person_id) REFERENCES persons(id)
       );
+    END
+  `);
+
+  // MSSQL no soporta "ADD COLUMN IF NOT EXISTS" (a diferencia de Postgres,
+  // ver postgres/migrate.ts): guard manual contra sys.columns para que una
+  // base que ya tenia "users" de antes de este cambio tambien termine con la
+  // columna, sin chocar contra el CREATE TABLE de arriba (que ya la incluye
+  // para instalaciones nuevas).
+  await runDdl(`
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.columns
+      WHERE object_id = OBJECT_ID('users') AND name = 'must_change_password'
+    )
+    BEGIN
+      ALTER TABLE users ADD must_change_password BIT NOT NULL DEFAULT 0;
     END
   `);
 

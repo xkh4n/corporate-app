@@ -101,6 +101,14 @@ export const env = {
     adminPasswordFileVar: "ADMIN_BOOTSTRAP_PASSWORD_FILE",
   },
 
+  // Password fija que createUser() aplica cuando quien crea el User no manda
+  // una (ver services/mssql/user.service.ts) -flujo tipico: alta de
+  // colaborador desde el front, que no le pide password a quien lo crea.
+  // Siempre viene acompañada de mustChangePassword:true en ese caso.
+  users: {
+    defaultPasswordFileVar: "DEFAULT_USER_PASSWORD_FILE",
+  },
+
   // corporate-mailer (unico contenedor del proyecto con salida a internet,
   // ver library/mailerClient.ts): sin "requireEnv" a proposito -si falta,
   // sendMailViaMailer devuelve {ok:false} en vez de tumbar el arranque de

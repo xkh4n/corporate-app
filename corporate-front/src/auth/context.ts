@@ -12,6 +12,7 @@ export interface AuthContextValue {
   sessionNotice: string | null;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   can: (key: PermissionKey) => boolean;
 }
 

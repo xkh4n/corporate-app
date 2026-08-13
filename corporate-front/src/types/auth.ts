@@ -16,6 +16,9 @@ export interface AuthUser {
   roleName: string;
   firstName: string;
   lastName: string;
+  // true tras crear el User o resetear su password via admin; se limpia con
+  // un PATCH /auth/change-password exitoso (ver auth.controller.ts me()).
+  mustChangePassword: boolean;
 }
 
 export interface MeResponse {

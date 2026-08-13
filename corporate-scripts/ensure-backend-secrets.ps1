@@ -85,7 +85,12 @@ $backendSecrets = @(
     @{ File = 'jwt_access_secret.txt';  Length = 64 },
     @{ File = 'jwt_refresh_secret.txt'; Length = 64 },
     @{ File = 'session_secret.txt';     Length = 64 },
-    @{ File = 'bootstrap_admin_password.txt'; Length = 20 }
+    @{ File = 'bootstrap_admin_password.txt'; Length = 20 },
+    # Contraseña inicial de cualquier User nuevo (ver createUser en
+    # user.service.ts): un solo valor fijo para todo el ambiente, no por
+    # usuario -el forced-change-password de mustChangePassword es lo que
+    # acota el riesgo de que sea un valor conocido/adivinable.
+    @{ File = 'default_user_password.txt'; Length = 20 }
 )
 
 Write-Host "Verificando secretos de backend para el ambiente [$Environment]..." -ForegroundColor Cyan

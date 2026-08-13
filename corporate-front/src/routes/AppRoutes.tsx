@@ -1,13 +1,15 @@
 import type { ReactElement } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { AppLayout } from "../layouts/AppLayout";
 import { LoginPage } from "../pages/login/LoginPage";
+import { ChangePasswordPage } from "../pages/login/ChangePasswordPage";
 import { DashboardPage } from "../pages/dashboard/DashboardPage";
 import { ModulePlaceholder } from "../pages/module-placeholder/ModulePlaceholder";
 import { ForbiddenPage } from "../pages/forbidden/ForbiddenPage";
 import CreateBusinessPartnerPage from "../pages/adquisiciones/proveedores/createBusinessPartner";
+import CreatePersonPage from "../pages/personas/CrearPersona";
 import { flattenMenuLinks } from "../lib/menu";
 
 // Vistas reales ya implementadas, mapeadas por el "link" exacto del
@@ -16,7 +18,22 @@ import { flattenMenuLinks } from "../lib/menu";
 // alcanzable hace falta ademas un menu_item activo con link="/suppliers/create".
 const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/suppliers/create": () => <CreateBusinessPartnerPage />,
+  "/employees/create": () => <CreatePersonPage />,
 };
+
+// Fuerza /change-password antes de cualquier otra ruta protegida mientras
+// user.mustChangePassword sea true (primer login con password por defecto,
+// o despues de un reset administrativo -ver /auth/me en auth.controller.ts).
+// Va DESPUES de ProtectedRoute (ya exige sesion) y ANTES de AppLayout: nunca
+// se llega a montar el sidebar/menu con una cuenta que todavia debe cambiar
+// su password.
+function MustChangePasswordGate() {
+  const { user } = useAuth();
+  if (user?.mustChangePassword) {
+    return <Navigate to="/change-password" replace />;
+  }
+  return <Outlet />;
+}
 
 // Fuente unica de las rutas de modulo: el menu del usuario autenticado (ya
 // podado por permisos, ver getMenuTreeForRole en corporate-api), no un
@@ -33,22 +50,28 @@ export function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
 
       <Route element={<ProtectedRoute />}>
-        <Route element={<AppLayout />}>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/403" element={<ForbiddenPage />} />
+        {/* Fuera del gate a proposito: si no fuera alcanzable durante
+            mustChangePassword:true, nadie podria completar el cambio. */}
+        <Route path="/change-password" element={<ChangePasswordPage />} />
 
-          {moduleLinks.map((item) => {
-            const Page = MODULE_PAGES[item.link];
-            return (
-              <Route
-                key={item.link}
-                path={item.link}
-                element={Page ? <Page /> : <ModulePlaceholder title={item.label} />}
-              />
-            );
-          })}
+        <Route element={<MustChangePasswordGate />}>
+          <Route element={<AppLayout />}>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/403" element={<ForbiddenPage />} />
 
-          <Route path="*" element={<ForbiddenPage />} />
+            {moduleLinks.map((item) => {
+              const Page = MODULE_PAGES[item.link];
+              return (
+                <Route
+                  key={item.link}
+                  path={item.link}
+                  element={Page ? <Page /> : <ModulePlaceholder title={item.label} />}
+                />
+              );
+            })}
+
+            <Route path="*" element={<ForbiddenPage />} />
+          </Route>
         </Route>
       </Route>
     </Routes>

@@ -73,6 +73,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    await apiFetch<void>("/auth/change-password", { method: "PATCH", body: { currentPassword, newPassword } });
+    // El backend invalida TODAS las sesiones del usuario al cambiar su
+    // propia password (mismo watermark que un cambio de rol, ver
+    // authenticate.ts) -incluida esta misma, asi que no tiene sentido
+    // intentar seguir autenticado: se corta el estado local ya mismo y el
+    // usuario vuelve a /login a entrar con la password nueva.
+    setUser(null);
+    setPermissions([]);
+    setMenu([]);
+    setSessionNotice(null);
+    setStatus("anonymous");
+  }, []);
+
   // Se dispara cuando CUALQUIER request autenticada (fuera de /auth/me y
   // /auth/login) vuelve 401 -por ejemplo, a alguien le cambian el rol
   // mientras tiene la app abierta. authenticate.ts distingue "role_changed" y
@@ -99,6 +113,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user, permissions],
   );
 
-  const value: AuthContextValue = { status, user, permissions, menu, sessionNotice, login, logout, can };
+  const value: AuthContextValue = {
+    status,
+    user,
+    permissions,
+    menu,
+    sessionNotice,
+    login,
+    logout,
+    changePassword,
+    can,
+  };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

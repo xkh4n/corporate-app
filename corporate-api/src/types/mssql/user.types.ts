@@ -8,6 +8,7 @@ export interface UserAttributes {
   passwordHash: string;
   isActive: boolean;
   lastLoginAt: Date | null;
+  mustChangePassword: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -16,7 +17,7 @@ export type UserCreationAttributes = Pick<
   UserAttributes,
   "personId" | "roleId" | "username" | "passwordHash"
 > &
-  Partial<Pick<UserAttributes, "isActive">>;
+  Partial<Pick<UserAttributes, "isActive" | "mustChangePassword">>;
 
 export type UserUpdateAttributes = Partial<
   Pick<UserAttributes, "roleId" | "username" | "isActive">

@@ -43,7 +43,7 @@ function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
         </svg>
       </button>
       <img src={logo} alt="Imperial" className="h-7 w-auto shrink-0" />
-      <p className="truncate text-2xl font-medium text-gray-00">
+      <p className="truncate text-2xl font-medium text-gray-00 text-zinc-200">
         Hola: {user?.firstName} {user?.lastName}
       </p>
       <div className="ml-auto flex items-center gap-3">
@@ -63,7 +63,7 @@ export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-stone-100">
+    <div className="min-h-screen bg-sky-100">
       <Topbar onMenuClick={() => setSidebarOpen(true)} />
       <Sidebar open={sidebarOpen} onNavigate={() => setSidebarOpen(false)} />
       {sidebarOpen && (

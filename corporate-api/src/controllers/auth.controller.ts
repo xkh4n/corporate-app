@@ -196,11 +196,21 @@ export async function me(req: Request, res: Response, next: NextFunction): Promi
     // asi que consultar su propia persona es autoservicio -no exige
     // "persons:read" (RBAC, PII), igual que changePassword no exige
     // "users:update" para la propia contraseña.
-    const [permissions, person] = await Promise.all([
+    const [permissions, person, fullUser] = await Promise.all([
       getPermissionsForRole(req.user.roleId).then((rows) => rows.map((p) => `${p.resource}:${p.action}`)),
       getPersonByIdOrThrow(req.user.personId),
+      getUserByIdOrThrow(req.user.userId),
     ]);
-    const user = { ...req.user, firstName: person.firstName, lastName: person.lastName };
+    // mustChangePassword sale de una lectura fresca de la BD (no de la
+    // sesion/JWT, que solo tienen lo que habia al momento del login) -asi
+    // que un PATCH /auth/change-password exitoso se refleja de inmediato en
+    // la siguiente llamada a /auth/me sin depender de reinicio de sesion.
+    const user = {
+      ...req.user,
+      firstName: person.firstName,
+      lastName: person.lastName,
+      mustChangePassword: fullUser.mustChangePassword,
+    };
     sendOk(res, { user, permissions }, "Usuario actual obtenido exitosamente");
   } catch (err) {
     next(err);
@@ -241,7 +251,10 @@ export async function changePassword(req: Request, res: Response, next: NextFunc
       throw new UnauthorizedError("Contraseña actual incorrecta");
     }
 
-    await changeUserPassword(userId, newPassword);
+    // Auto-servicio: el propio dueño de la cuenta eligio la password nueva
+    // -a diferencia del reset administrativo, esto SI cierra el ciclo de
+    // mustChangePassword (ver createUser/reset admin en user.service.ts).
+    await changeUserPassword(userId, newPassword, { mustChangePassword: false });
 
     // Mismo criterio que el cambio administrativo (ver user.controller.ts):
     // invalida todas las sesiones/refresh tokens, incluida la que hizo este

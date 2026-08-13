@@ -12,6 +12,12 @@ export class UserModel extends Model<InferAttributes<UserModel>, InferCreationAt
   declare passwordHash: string;
   declare isActive: CreationOptional<boolean>;
   declare lastLoginAt: Date | null;
+  // true al crear el User o al resetear la password via admin (PATCH
+  // /users/:id/password); se limpia a false tras un PATCH /auth/change-password
+  // exitoso (auto-servicio). El frontend usa esto para forzar la vista de
+  // cambio obligatorio antes de dejar entrar a cualquier otra pantalla (ver
+  // /auth/me en auth.controller.ts).
+  declare mustChangePassword: CreationOptional<boolean>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 }
@@ -25,6 +31,12 @@ UserModel.init(
     passwordHash: { type: DataTypes.STRING(255), allowNull: false, field: "password_hash" },
     isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true, field: "is_active" },
     lastLoginAt: { type: DataTypes.DATE, allowNull: true, field: "last_login_at" },
+    mustChangePassword: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      field: "must_change_password",
+    },
     createdAt: { type: DataTypes.DATE, field: "created_at" },
     updatedAt: { type: DataTypes.DATE, field: "updated_at" },
   },

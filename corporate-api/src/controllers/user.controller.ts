@@ -11,7 +11,9 @@ export const createUserSchema = z.object({
   personId: z.number().int().positive(),
   roleId: z.number().int().positive(),
   username: z.string().min(3).max(50),
-  password: z.string().min(1),
+  // Opcional: sin ella, createUser() aplica la password fija por defecto
+  // (ver env.users.defaultPasswordFileVar) y marca mustChangePassword.
+  password: z.string().min(1).optional(),
 });
 
 export const updateUserSchema = z.object({
@@ -103,7 +105,9 @@ export async function changePassword(
   try {
     const { password } = req.body as z.infer<typeof changePasswordSchema>;
     const id = Number(req.params.id);
-    await userService.changePassword(id, password);
+    // Reset administrativo: quien elige la password nueva es el admin, no el
+    // dueño de la cuenta -se fuerza el cambio en el proximo login.
+    await userService.changePassword(id, password, { mustChangePassword: true });
     // Un cambio de password invalida todas las sesiones activas: refresh
     // tokens (no puede renovar) y el access token/sesion ya emitido
     // (watermark, rechazado de inmediato en authenticate.ts).
