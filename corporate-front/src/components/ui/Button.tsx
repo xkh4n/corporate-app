@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes } from "react";
 import { Spinner } from "./Spinner";
 
-type Variant = "primary" | "secondary" | "ghost";
+type Variant = "primary" | "secondary" | "ghost" | "success";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
@@ -12,6 +12,7 @@ const VARIANT_CLASSES: Record<Variant, string> = {
   primary: "bg-brand-600 text-white hover:bg-brand-700 focus-visible:outline-brand-600",
   secondary: "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 focus-visible:outline-brand-600",
   ghost: "text-slate-600 hover:bg-slate-100 focus-visible:outline-brand-600",
+  success: "bg-emerald-600 text-white hover:bg-emerald-700 focus-visible:outline-emerald-600",
 };
 
 export function Button({ variant = "primary", loading = false, disabled, className = "", children, ...rest }: ButtonProps) {

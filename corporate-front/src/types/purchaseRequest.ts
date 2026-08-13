@@ -19,6 +19,10 @@ export interface PurchaseRequest {
   notes: string | null;
   status: PurchaseRequestStatus;
   priority: string;
+  // Usuario asignado para revisar/aprobar la solicitud, elegido al crearla.
+  // Nullable solo por compatibilidad con filas creadas antes de este campo
+  // -toda solicitud nueva lo exige (ver PurchaseRequestCreateInput).
+  approverId: number | null;
   createdBy: number | null;
   updatedBy: number | null;
   createdAt: string;
@@ -26,12 +30,14 @@ export interface PurchaseRequest {
   requester: Person;
   beneficiary: Person;
   beneficiaryUser: SafeUser | null;
+  approver: SafeUser | null;
 }
 
 export interface PurchaseRequestCreateInput {
   requesterId: number;
   beneficiaryId: number;
   costCenterId: number;
+  approverId: number;
   requesterPosition?: string;
   requesterEmail?: string;
   requesterPhone?: string;

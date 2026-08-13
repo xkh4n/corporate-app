@@ -6,8 +6,9 @@ import { PurchaseRequestModel } from "../../models/mssql/purchaseRequest.model";
 import { PersonModel } from "../../models/mssql/person.model";
 import { UserModel } from "../../models/mssql/user.model";
 import { getPersonByIdOrThrow } from "./person.service";
-import { getUserByIdOrThrow } from "./user.service";
+import { getUserByIdOrThrow, listUsersByRoleIds } from "./user.service";
 import { getCostCenterByIdOrThrow } from "../postgres/costCenter.service";
+import { getRoleIdsWithPermission, roleGrantsPermission } from "../postgres/permission.service";
 import { getSupplierByIdOrThrow } from "./supplier.service";
 import { getBusinessPartnerByIdOrThrow } from "./businessPartner.service";
 import { listAllLinesByRequest } from "./purchaseRequestLine.service";
@@ -26,11 +27,13 @@ import type {
   PurchaseRequestCreationAttributes,
   PurchaseRequestUpdateAttributes,
 } from "../../types/mssql/purchaseRequest.types";
+import type { SafeUser } from "../../types/mssql/user.types";
 
 const includeParties = [
   { model: PersonModel, as: "requester" },
   { model: PersonModel, as: "beneficiary" },
   { model: UserModel, as: "beneficiaryUser" },
+  { model: UserModel, as: "approver" },
 ];
 
 const SEARCH_FIELDS = ["requestNumber", "notes", "status", "priority"];
@@ -52,6 +55,32 @@ export async function getPurchaseRequestById(id: number): Promise<PurchaseReques
   return PurchaseRequestModel.findByPk(id, { include: includeParties });
 }
 
+// Solo lo que le corresponde revisar a ESTE usuario (ver decision de
+// alcance: "solo las asignadas a mi", no todo el listado general -ese ya
+// existe en listPurchaseRequests, detras de purchase-requests:read).
+export async function listPurchaseRequestsForApprover(
+  approverId: number,
+  params: PaginationParams,
+): Promise<{ items: PurchaseRequestModel[]; total: number }> {
+  const { rows, count } = await PurchaseRequestModel.findAndCountAll({
+    where: { ...buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like), approverId },
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+    include: includeParties,
+  });
+  return { items: rows, total: count };
+}
+
+// Personas elegibles para ser elegidas como aprobador al crear una
+// solicitud (select en CreateRequest.tsx): cualquier usuario activo cuyo rol
+// tenga purchase-requests:approve, resuelto cross-DB (roles/permisos en
+// Postgres, usuarios en MSSQL -ver permission.service.ts).
+export async function listApprovers(): Promise<SafeUser[]> {
+  const roleIds = await getRoleIdsWithPermission("purchase-requests", "approve");
+  return listUsersByRoleIds(roleIds);
+}
+
 export async function getPurchaseRequestByIdOrThrow(id: number): Promise<PurchaseRequestModel> {
   const request = await getPurchaseRequestById(id);
   if (!request) throw new NotFoundError(`La solicitud ${id} no existe`);
@@ -71,6 +100,19 @@ export async function createPurchaseRequest(
     await getUserByIdOrThrow(data.beneficiaryUserId);
   }
   await getCostCenterByIdOrThrow(data.costCenterId);
+
+  // El aprobador no es un dato de contacto libre (a diferencia de
+  // beneficiaryUserId): tiene que ser realmente alguien cuyo rol tenga el
+  // permiso purchase-requests:approve, o la solicitud quedaria asignada a
+  // alguien que nunca va a poder actuar sobre ella (ver roleGrantsPermission,
+  // mismo bypass de "admin" que el middleware authorize()).
+  const approver = await getUserByIdOrThrow(data.approverId);
+  const canApprove = await roleGrantsPermission(approver.roleId, "purchase-requests", "approve");
+  if (!canApprove) {
+    throw new BadRequestError(
+      `El usuario ${data.approverId} no tiene permiso para aprobar solicitudes de compra`,
+    );
+  }
 
   const request = await mssql.transaction(async (transaction) => {
     const requestNumber = await generateDocumentNumber("SOL", transaction);

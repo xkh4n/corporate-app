@@ -27,6 +27,10 @@ export class PurchaseRequestModel extends Model<
   declare notes: string | null;
   declare status: CreationOptional<string>;
   declare priority: CreationOptional<string>;
+  // Usuario asignado para revisar/aprobar la solicitud, elegido al crearla
+  // -distinto de authorizations.approver_id, que registra la aprobacion de
+  // una linea/cotizacion puntual en una etapa posterior del flujo.
+  declare approverId: number | null;
   declare createdBy: number | null;
   declare updatedBy: number | null;
   declare createdAt: CreationOptional<Date>;
@@ -48,6 +52,7 @@ PurchaseRequestModel.init(
     notes: { type: DataTypes.STRING(500), allowNull: true },
     status: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "DRAFT" },
     priority: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "MEDIUM" },
+    approverId: { type: DataTypes.INTEGER, allowNull: true, field: "approver_id" },
     createdBy: { type: DataTypes.INTEGER, allowNull: true, field: "created_by" },
     updatedBy: { type: DataTypes.INTEGER, allowNull: true, field: "updated_by" },
     createdAt: { type: DataTypes.DATE, field: "created_at" },
@@ -63,3 +68,4 @@ PurchaseRequestModel.init(
 PurchaseRequestModel.belongsTo(PersonModel, { foreignKey: "requesterId", as: "requester" });
 PurchaseRequestModel.belongsTo(PersonModel, { foreignKey: "beneficiaryId", as: "beneficiary" });
 PurchaseRequestModel.belongsTo(UserModel, { foreignKey: "beneficiaryUserId", as: "beneficiaryUser" });
+PurchaseRequestModel.belongsTo(UserModel, { foreignKey: "approverId", as: "approver" });

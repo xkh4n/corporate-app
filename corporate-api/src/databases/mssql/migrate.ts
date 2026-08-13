@@ -461,6 +461,14 @@ async function migratePurchasingFlow(): Promise<void> {
         notes NVARCHAR(500) NULL,
         status NVARCHAR(20) NOT NULL DEFAULT 'DRAFT',
         priority NVARCHAR(20) NOT NULL DEFAULT 'MEDIUM',
+        -- Quien debe revisar/aprobar la solicitud, elegido al crearla (ver
+        -- purchaseRequest.service.ts createPurchaseRequest: solo se acepta un
+        -- usuario cuyo rol tenga el permiso purchase-requests:approve).
+        -- Distinto de authorizations.approver_id (mas abajo): ese registra
+        -- quien aprobo una linea/cotizacion puntual ya con precio, en una
+        -- etapa posterior del flujo -esto es el aprobador ASIGNADO desde el
+        -- inicio, antes de que exista ninguna cotizacion.
+        approver_id INT NULL,
         created_by INT NULL,
         updated_by INT NULL,
         created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
@@ -468,9 +476,35 @@ async function migratePurchasingFlow(): Promise<void> {
         CONSTRAINT fk_purchase_requests_requester FOREIGN KEY (requester_id) REFERENCES persons(id),
         CONSTRAINT fk_purchase_requests_beneficiary FOREIGN KEY (beneficiary_id) REFERENCES persons(id),
         CONSTRAINT fk_purchase_requests_beneficiary_user FOREIGN KEY (beneficiary_user_id) REFERENCES users(id),
+        CONSTRAINT fk_purchase_requests_approver FOREIGN KEY (approver_id) REFERENCES users(id),
         CONSTRAINT fk_purchase_requests_created_by FOREIGN KEY (created_by) REFERENCES users(id),
         CONSTRAINT fk_purchase_requests_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
       );
+    END
+  `);
+
+  // MSSQL no soporta "ADD COLUMN IF NOT EXISTS": guard manual para que una
+  // base creada antes de este cambio tambien termine con la columna (y su
+  // FK), sin chocar contra el CREATE TABLE de arriba en instalaciones nuevas.
+  await runDdl(`
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.columns
+      WHERE object_id = OBJECT_ID('purchase_requests') AND name = 'approver_id'
+    )
+    BEGIN
+      ALTER TABLE purchase_requests ADD approver_id INT NULL;
+      ALTER TABLE purchase_requests ADD CONSTRAINT fk_purchase_requests_approver
+        FOREIGN KEY (approver_id) REFERENCES users(id);
+    END
+  `);
+
+  // Filtrada directo en listPurchaseRequestsForApprover (purchaseRequest.
+  // service.ts, "mis solicitudes por aprobar") -sin indice propio en MSSQL
+  // para una FK, mismo criterio que ix_quotes_request_id mas abajo.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_purchase_requests_approver_id' AND object_id = OBJECT_ID('purchase_requests'))
+    BEGIN
+      CREATE INDEX ix_purchase_requests_approver_id ON purchase_requests(approver_id);
     END
   `);
 

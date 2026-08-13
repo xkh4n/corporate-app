@@ -14,6 +14,18 @@ export const purchaseRequestRouter = Router();
 // permission-catalog.ts.
 purchaseRequestRouter.use(authenticate);
 purchaseRequestRouter.get("/", authorize("purchase-requests", "read"), purchaseRequestController.list);
+// Declaradas ANTES de "/:id" para que Express no las matchee como
+// req.params.id = "approvers"/"my-approvals".
+purchaseRequestRouter.get(
+  "/approvers",
+  authorize("purchase-requests", "create"),
+  purchaseRequestController.listApprovers,
+);
+purchaseRequestRouter.get(
+  "/my-approvals",
+  authorize("purchase-requests", "approve"),
+  purchaseRequestController.listMyApprovals,
+);
 purchaseRequestRouter.get(
   "/:id",
   authorize("purchase-requests", "read"),

@@ -65,6 +65,20 @@ export async function listUserIdsByRoleId(roleId: number): Promise<number[]> {
   return users.map((user) => user.id);
 }
 
+// Usado para armar listas de "usuarios elegibles para X" a partir de un set
+// de roleId ya resuelto en Postgres (ver permission.service.ts
+// getRoleIdsWithPermission) -cross-DB, por eso recibe los roleId ya
+// calculados en vez de resolver el permiso aca mismo.
+export async function listUsersByRoleIds(roleIds: number[]): Promise<SafeUser[]> {
+  if (roleIds.length === 0) return [];
+  const users = await UserModel.findAll({
+    where: { roleId: { [Op.in]: roleIds }, isActive: true },
+    include: [{ model: PersonModel, as: "person" }],
+    order: [["username", "ASC"]],
+  });
+  return users.map(toSafeUser);
+}
+
 export async function createUser(input: CreateUserInput): Promise<SafeUser> {
   // Cross-DB: la persona vive en MSSQL, el rol en Postgres -sin FK real
   // posible entre motores, se valida a mano en la capa de servicio.

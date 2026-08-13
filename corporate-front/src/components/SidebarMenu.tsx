@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { NavLink } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { NavLink, useLocation } from "react-router-dom";
 import { IoChevronDownOutline, IoChevronForwardOutline } from "react-icons/io5";
 import type { MenuNode } from "../types/menu";
 import { MenuIcon } from "./MenuIcon";
@@ -11,9 +11,26 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? "bg-brand-50 text-brand-800" : "text-slate-200 hover:bg-slate-100 hover:text-zinc-700"
   }`;
 
-// Nodo con hijos: grupo colapsable, abierto por defecto (mismo criterio
-// visual que tenian las secciones estaticas de navigation.ts, donde todos
-// los items se veian sin interaccion previa).
+// True si pathname es el link del nodo o el de algun descendiente. Un grupo
+// se considera "en la rama activa" cuando esto da true para el; se usa tanto
+// para decidir el estado inicial de open como para resincronizar en cada
+// navegacion.
+function containsPath(node: MenuNode, pathname: string): boolean {
+  if (node.link === pathname) return true;
+  return node.children.some((child) => containsPath(child, pathname));
+}
+
+// Nodo con hijos: grupo colapsable tipo "acordeon de ruta activa" (patron
+// estandar en dashboards admin: AdminLTE, Ant Design Pro, etc). Abierto solo
+// si la ruta activa cuelga de el; el resto arranca cerrado. El usuario puede
+// togglear cualquier grupo a mano para explorar, pero al navegar (cambia
+// location.pathname) se resincroniza SIEMPRE con la rama activa -incluyendo
+// forzar el cierre de grupos que el usuario haya abierto manualmente y hayan
+// quedado fuera de la nueva ruta. Se eligio "resync duro" en vez de "dejar lo
+// que el usuario abrio" porque es el comportamiento menos sorpresivo: evita
+// que el sidebar acumule ramas abiertas sin relacion con donde estas parado
+// (justo el bug reportado: Productos y System Admin expandidos mientras se
+// edita una Categoria).
 function MenuGroup({
   node,
   depth,
@@ -23,7 +40,12 @@ function MenuGroup({
   depth: number;
   onNavigate: () => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const location = useLocation();
+  const [open, setOpen] = useState(() => containsPath(node, location.pathname));
+
+  useEffect(() => {
+    setOpen(containsPath(node, location.pathname));
+  }, [node, location.pathname]);
 
   return (
     <div>

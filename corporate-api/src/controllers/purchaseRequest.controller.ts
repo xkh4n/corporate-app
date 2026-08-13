@@ -13,6 +13,10 @@ export const createPurchaseRequestSchema = z.object({
   requesterId: z.number().int().positive(),
   beneficiaryId: z.number().int().positive(),
   costCenterId: z.number().int().positive(),
+  // Debe ser un usuario cuyo rol tenga purchase-requests:approve -validado
+  // en createPurchaseRequest (service), no solo aca (un id numerico valido
+  // no garantiza que ese usuario pueda aprobar).
+  approverId: z.number().int().positive(),
   requesterPosition: z.string().max(100).optional(),
   requesterEmail: z.string().email().max(150).optional(),
   requesterPhone: z.string().max(30).optional(),
@@ -22,8 +26,12 @@ export const createPurchaseRequestSchema = z.object({
   priority: z.string().max(20).optional(),
 });
 
+// approverId queda fuera de este update a proposito (no solo requesterId/
+// beneficiaryId/costCenterId): reasignar aprobador no fue pedido todavia y
+// createPurchaseRequest es el unico lugar que hoy valida que el usuario
+// elegido realmente pueda aprobar (ver roleGrantsPermission).
 export const updatePurchaseRequestSchema = createPurchaseRequestSchema
-  .omit({ requesterId: true, beneficiaryId: true, costCenterId: true })
+  .omit({ requesterId: true, beneficiaryId: true, costCenterId: true, approverId: true })
   .partial();
 
 export const updateStatusSchema = z.object({
@@ -35,6 +43,36 @@ export async function list(req: Request, res: Response, next: NextFunction): Pro
     const params = parsePaginationParams({ ...req.query, ...req.body }, "id", "desc");
     const { items, total } = await purchaseRequestService.listPurchaseRequests(params);
     sendList(res, items, buildPaginationMeta(params, total), "Solicitudes obtenidas exitosamente");
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Alimenta el select de aprobador en CreateRequest.tsx: cualquier usuario
+// activo cuyo rol tenga purchase-requests:approve. Gateada por
+// purchase-requests:create (es quien crea la solicitud el que necesita
+// ver esta lista, no un permiso nuevo solo para esto).
+export async function listApprovers(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const approvers = await purchaseRequestService.listApprovers();
+    sendOk(res, approvers, "Aprobadores obtenidos exitosamente");
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Solo lo que le corresponde revisar al usuario logeado (AproveRequest.tsx)
+// -distinto de GET / (list), que exige purchase-requests:read y devuelve
+// todo. req.user siempre esta seteado aca: authenticate + authorize ya
+// corrieron antes de llegar a este handler (ver purchaseRequest.routes.ts).
+export async function listMyApprovals(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const params = parsePaginationParams({ ...req.query, ...req.body }, "id", "desc");
+    const { items, total } = await purchaseRequestService.listPurchaseRequestsForApprover(
+      req.user!.userId,
+      params,
+    );
+    sendList(res, items, buildPaginationMeta(params, total), "Solicitudes por aprobar obtenidas exitosamente");
   } catch (err) {
     next(err);
   }

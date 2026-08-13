@@ -7,9 +7,19 @@ import type {
   PurchaseRequestStatus,
   PurchaseRequestUpdateInput,
 } from "../types/purchaseRequest";
+import type { SafeUser } from "../types/user";
 
 export const purchaseRequestService = {
   list: (params?: ListParams) => apiFetch<Paginated<PurchaseRequest>>(`/purchase-requests${toQuery(params)}`),
+
+  // Usuarios activos cuyo rol tiene purchase-requests:approve -para el
+  // select de aprobador en CreateRequest.tsx.
+  listApprovers: () => apiFetch<SafeUser[]>("/purchase-requests/approvers"),
+
+  // Solo lo que le corresponde revisar al usuario logeado (AproveRequest.tsx)
+  // -exige purchase-requests:approve, no purchase-requests:read.
+  listMyApprovals: (params?: ListParams) =>
+    apiFetch<Paginated<PurchaseRequest>>(`/purchase-requests/my-approvals${toQuery(params)}`),
 
   getById: (id: number) => apiFetch<PurchaseRequest>(`/purchase-requests/${id}`),
 

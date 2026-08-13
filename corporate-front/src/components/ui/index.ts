@@ -6,6 +6,7 @@ import { ImagePreviewThumbnail } from "./ImagePreviewThumbnail";
 import { Input } from "./Input";
 import { Select } from "./Select";
 import { Spinner } from "./Spinner";
+import { Textarea } from "./Textarea";
 
 export{
     Alert,
@@ -16,4 +17,5 @@ export{
     Input,
     Select,
     Spinner,
+    Textarea,
 }

@@ -12,6 +12,12 @@ export interface PurchaseRequestAttributes {
   notes: string | null;
   status: string;
   priority: string;
+  // Usuario asignado para revisar/aprobar la solicitud (debe tener el
+  // permiso purchase-requests:approve, validado en createPurchaseRequest).
+  // Nullable a nivel de columna solo por compatibilidad con filas creadas
+  // antes de este campo -toda solicitud nueva lo exige (ver
+  // PurchaseRequestCreationAttributes).
+  approverId: number | null;
   createdBy: number | null;
   updatedBy: number | null;
   createdAt: Date;
@@ -25,8 +31,12 @@ export interface PurchaseRequestAttributes {
 export type PurchaseRequestCreationAttributes = Pick<
   PurchaseRequestAttributes,
   "requesterId" | "beneficiaryId" | "costCenterId"
-> &
-  Partial<
+> & {
+  // A diferencia de PurchaseRequestAttributes.approverId (nullable, por
+  // compatibilidad con filas viejas), toda solicitud NUEVA exige un
+  // aprobador -no se acepta null aca.
+  approverId: number;
+} & Partial<
     Pick<
       PurchaseRequestAttributes,
       | "requesterPosition"

@@ -108,3 +108,41 @@ export async function hasPermission(
   });
   return count > 0;
 }
+
+// A diferencia de hasPermission (usada por el middleware authorize() para
+// roles NO-admin), esta variante replica tambien el bypass de "admin"
+// (hardcodeado en authorize.ts, no depende de filas en role_permissions).
+// Para casos donde el codigo de servicio -no un middleware con req.user ya
+// resuelto- necesita responder "¿este rol puede hacer X?" de forma completa
+// (ej. validar que el aprobador elegido en una solicitud realmente pueda
+// aprobar, ver purchaseRequest.service.ts).
+export async function roleGrantsPermission(
+  roleId: number,
+  resource: string,
+  action: PermissionAction,
+): Promise<boolean> {
+  const role = await getRoleByIdOrThrow(roleId);
+  if (!role.isActive) return false;
+  if (role.name === "admin") return true;
+  return hasPermission(roleId, resource, action);
+}
+
+// Todos los roleId (activos) que otorgan un permiso dado -incluyendo
+// "admin" aunque no tenga filas propias en role_permissions (mismo bypass
+// que roleGrantsPermission/authorize()). Usado para armar listas de
+// "personas elegibles para X" (ej. aprobadores de solicitudes de compra, ver
+// purchaseRequest.service.ts listApprovers) sin tener que iterar rol por rol.
+export async function getRoleIdsWithPermission(resource: string, action: PermissionAction): Promise<number[]> {
+  const rolePermissions = await RolePermissionModel.findAll({
+    include: [
+      { model: PermissionModel, as: "permission", where: { resource, action }, attributes: [] },
+      { model: RoleModel, as: "role", where: { isActive: true }, attributes: [] },
+    ],
+  });
+  const roleIds = new Set(rolePermissions.map((rolePermission) => rolePermission.roleId));
+
+  const adminRole = await RoleModel.findOne({ where: { name: "admin", isActive: true }, attributes: ["id"] });
+  if (adminRole) roleIds.add(adminRole.id);
+
+  return [...roleIds];
+}

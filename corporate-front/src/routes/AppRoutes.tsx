@@ -10,8 +10,13 @@ import { ModulePlaceholder } from "../pages/module-placeholder/ModulePlaceholder
 import { ForbiddenPage } from "../pages/forbidden/ForbiddenPage";
 import CreateBusinessPartnerPage from "../pages/adquisiciones/proveedores/createBusinessPartner";
 import CreatePersonPage from "../pages/personas/CrearPersona";
+import CreateRequest from "../pages/solicitudes/CreateRequest";
+import AproveRequest from "../pages/solicitudes/AproveRequest";
 import CreateProducts from "../pages/adquisiciones/productos/CreateProducts";
 import ListProducts from "../pages/adquisiciones/productos/ListProducts";
+import CreateProductCategory from "../pages/adquisiciones/category/CreateProductCategory";
+import ViewProductCategory from "../pages/adquisiciones/category/ViewProductCategory";
+import UpdateProductCategory from "../pages/adquisiciones/category/UpdateProductCategory";
 import { flattenMenuLinks } from "../lib/menu";
 
 // Vistas reales ya implementadas, mapeadas por el "link" exacto del
@@ -21,8 +26,13 @@ import { flattenMenuLinks } from "../lib/menu";
 const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/suppliers/create": () => <CreateBusinessPartnerPage />,
   "/employees/create": () => <CreatePersonPage />,
+  "/tickets/create": () => <CreateRequest />,
   "/products/create": () => <CreateProducts />,
   "/products/list": () => <ListProducts />,
+  "/category/create": () => <CreateProductCategory />,
+  "/category/view": () => <ViewProductCategory />,
+  "/category/update": () => <UpdateProductCategory />,
+  "/tickets/validate": () => <AproveRequest />
 };
 
 // Fuerza /change-password antes de cualquier otra ruta protegida mientras
