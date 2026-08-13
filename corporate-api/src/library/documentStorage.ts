@@ -18,11 +18,27 @@ export function getAcquisitionFolder(requestNumber: string): string {
   return path.join(UPLOADS_ROOT, "adquisiciones", requestNumber);
 }
 
+// Una sola imagen por producto (Mongo _id como nombre de archivo, ver
+// attachProductImage en services/mongo/product.service.ts) -carpeta plana
+// compartida, no una subcarpeta por producto: el propio nombre de archivo ya
+// es unico.
+export function getProductImagesFolder(): string {
+  return path.join(UPLOADS_ROOT, "images", "products");
+}
+
 export function saveBuffer(folder: string, filename: string, buffer: Buffer): string {
   fs.mkdirSync(folder, { recursive: true });
   const filePath = path.join(folder, filename);
   fs.writeFileSync(filePath, buffer);
   return filePath;
+}
+
+// Best-effort (igual criterio que copyIfExists): usado al re-subir una
+// imagen con una extension distinta a la ya guardada, para no dejar el
+// archivo viejo huerfano en disco.
+export function deleteIfExists(folder: string, filename: string): void {
+  const filePath = path.join(folder, filename);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 }
 
 // Best-effort: si el archivo de origen no existe (ej. nunca se subio el

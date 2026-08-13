@@ -1,4 +1,5 @@
 import { Schema, model, Document } from "mongoose";
+import { idJsonTransform } from "../../library/mongoSchema";
 
 // Lista abierta (el usuario dio ejemplos y dijo "etc") -coleccion lookup, no
 // un enum hardcodeado, para poder agregar categorias nuevas via API sin
@@ -16,7 +17,7 @@ const productCategorySchema = new Schema<ProductCategoryDocument>(
     name: { type: String, required: true, trim: true, unique: true },
     description: { type: String, default: null },
   },
-  { timestamps: true, collection: "product_categories" },
+  { timestamps: true, collection: "product_categories", toJSON: idJsonTransform },
 );
 
 export const ProductCategoryModel = model<ProductCategoryDocument>("ProductCategory", productCategorySchema);

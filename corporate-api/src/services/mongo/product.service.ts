@@ -1,8 +1,11 @@
+import path from "node:path";
 import { isValidObjectId } from "mongoose";
 import { ProductModel, ProductDocument } from "../../models/mongo/product.model";
 import { getProductCategoryByIdOrThrow } from "./productCategory.service";
 import { NotFoundError } from "../../library/errors";
 import { logger } from "../../library/logger";
+import { getSafeExtension } from "../../middlewares/upload";
+import { getProductImagesFolder, saveBuffer, deleteIfExists } from "../../library/documentStorage";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildMongoSearchFilter, buildMongoSort } from "../../library/mongoSearch";
@@ -54,6 +57,30 @@ export async function updateProduct(id: string, data: ProductUpdateAttributes): 
   product.set(data);
   await product.save();
   return product;
+}
+
+// El propio _id del producto es el nombre de archivo (ver
+// getProductImagesFolder en documentStorage.ts: carpeta plana compartida,
+// no hace falta una subcarpeta por producto porque el nombre ya es unico).
+// Una imagen por producto: una re-subida pisa la anterior, borrando el
+// archivo viejo si la extension cambio (ej. re-subir en .png habiendo
+// estado en .jpg) para no dejarlo huerfano en disco.
+export async function attachProductImage(id: string, file: Express.Multer.File): Promise<string> {
+  const product = await getProductByIdOrThrow(id);
+
+  const extension = getSafeExtension(file);
+  const filename = `${id}${extension}`;
+  const folder = getProductImagesFolder();
+
+  if (product.image) {
+    const previousFilename = path.basename(product.image);
+    if (previousFilename !== filename) deleteIfExists(folder, previousFilename);
+  }
+
+  saveBuffer(folder, filename, file.buffer);
+  product.image = `uploads/images/products/${filename}`;
+  await product.save();
+  return filename;
 }
 
 export async function deactivateProduct(id: string): Promise<void> {

@@ -161,6 +161,20 @@ const IsName = (name: string) => {
     return true;
 };
 
+
+
+const IsId = (id:string) => {
+    // Verificar si el valor no es una cadena
+    const regex = /^[a-z0-9]{10,30}$/;
+    if (typeof id!=='string') {
+        return false;
+    }
+    if (!regex.test(id)) {
+      return false;
+    }
+    return true;
+}
+
 export {
     IsUsername,
     IsPassword,
@@ -172,4 +186,5 @@ export {
     IsRut,
     IsBoolean,
     IsName,
+    IsId,
 };

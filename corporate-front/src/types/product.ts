@@ -8,6 +8,10 @@ export interface Product {
   description: string | null;
   productType: ProductType;
   categoryId: string | null;
+  // Path relativo ("uploads/images/products/<id>.jpg") o null hasta la
+  // primera subida -ver productService.uploadImage/imageUrl. Nunca se manda
+  // en create/update, solo lo setea el backend via POST /products/:id/image.
+  image: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

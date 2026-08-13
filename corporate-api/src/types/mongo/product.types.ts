@@ -6,6 +6,7 @@ export interface ProductAttributes {
   description: string | null;
   productType: ProductType;
   categoryId: string | null;
+  image: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;

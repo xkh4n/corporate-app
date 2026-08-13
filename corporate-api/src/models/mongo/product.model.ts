@@ -1,5 +1,6 @@
 import { Schema, model, Document } from "mongoose";
 import type { ProductType } from "../../types/mongo/product.types";
+import { idJsonTransform } from "../../library/mongoSchema";
 
 // Catalogo de producto/inventario: vive en Mongo por decision explicita del
 // usuario (datos menos sensibles/no siempre estructurados, ver memoria
@@ -17,6 +18,12 @@ export interface ProductDocument extends Document {
   // fuerza un backfill. Sin FK real (misma coleccion, pero Mongoose no valida
   // referencias) -si se necesita, validar contra productCategory.service.ts.
   categoryId: string | null;
+  // Path relativo servido por GET /products/:id/image (ej.
+  // "uploads/images/products/<id>.jpg") -null hasta la primera subida via
+  // POST /products/:id/image. Nunca se setea en el create/update generico,
+  // solo desde attachProductImage (product.service.ts): el nombre de archivo
+  // depende del propio _id, que recien existe despues de crear el producto.
+  image: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -28,9 +35,10 @@ const productSchema = new Schema<ProductDocument>(
     description: { type: String, default: null },
     productType: { type: String, required: true, enum: ["ARRIENDO", "SERVICIO", "COMPRA"] },
     categoryId: { type: Schema.Types.ObjectId, ref: "ProductCategory", default: null },
+    image: { type: String, default: null },
     isActive: { type: Boolean, required: true, default: true },
   },
-  { timestamps: true, collection: "products" },
+  { timestamps: true, collection: "products", toJSON: idJsonTransform },
 );
 
 export const ProductModel = model<ProductDocument>("Product", productSchema);

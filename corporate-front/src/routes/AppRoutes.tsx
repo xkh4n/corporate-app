@@ -10,6 +10,8 @@ import { ModulePlaceholder } from "../pages/module-placeholder/ModulePlaceholder
 import { ForbiddenPage } from "../pages/forbidden/ForbiddenPage";
 import CreateBusinessPartnerPage from "../pages/adquisiciones/proveedores/createBusinessPartner";
 import CreatePersonPage from "../pages/personas/CrearPersona";
+import CreateProducts from "../pages/adquisiciones/productos/CreateProducts";
+import ListProducts from "../pages/adquisiciones/productos/ListProducts";
 import { flattenMenuLinks } from "../lib/menu";
 
 // Vistas reales ya implementadas, mapeadas por el "link" exacto del
@@ -19,6 +21,8 @@ import { flattenMenuLinks } from "../lib/menu";
 const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/suppliers/create": () => <CreateBusinessPartnerPage />,
   "/employees/create": () => <CreatePersonPage />,
+  "/products/create": () => <CreateProducts />,
+  "/products/list": () => <ListProducts />,
 };
 
 // Fuerza /change-password antes de cualquier otra ruta protegida mientras
