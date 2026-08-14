@@ -4,12 +4,22 @@ import * as menuItemService from "../services/postgres/menuItem.service";
 import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
 import { sendList, sendOk, sendNoContent } from "../library/response";
 
+// "recurso:accion" tal como los expone GET /auth/me (permissions, ver
+// auth.controller.ts) y como los usa el frontend (PermissionKey) -el cliente
+// (front o Insomnia) nunca necesita conocer el permissionId numerico,
+// createMenuItem/updateMenuItem lo resuelven contra permissions
+// (resource+action) antes de guardar.
+const PERMISSION_KEY_REGEX = /^[a-z-]+:[a-z-]+$/;
+
 export const createMenuItemSchema = z.object({
   label: z.string().min(1).max(100),
   icon: z.string().max(50).optional(),
   link: z.string().max(255).optional(),
   parentId: z.number().int().positive().optional(),
-  permissionId: z.number().int().positive().optional(),
+  permissionKey: z
+    .string()
+    .regex(PERMISSION_KEY_REGEX, "Formato esperado: recurso:accion (minusculas, guiones, sin espacios)")
+    .optional(),
   sortOrder: z.number().int().optional(),
 });
 

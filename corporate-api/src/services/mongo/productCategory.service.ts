@@ -73,17 +73,17 @@ export async function updateProductCategory(
 // Categorias reales del negocio (dadas por el usuario), sembradas una sola
 // vez en el primer arranque -mismo criterio que seedProducts.
 const INITIAL_CATEGORIES = [
-  "IMPRESORAS LASER",
-  "IMPRESORAS TERMALES 80MM",
-  "IMPRESORAS TERMALES 104MM",
-  "IMPRESORAS TERMAL MULTIFUNCIONAL",
-  "NOTEBOOKS",
-  "DESKTOPS",
-  "IMPRESORAS ZEBRA",
-  "SMARTPHONE",
-  "TECLADOS",
-  "MOUSE",
-  "SWITCH",
+  { name: "IMPRESORAS LASER", description: "Impresoras laser de oficina" },
+  { name: "IMPRESORAS TERMALES 80MM", description: "Impresoras termicas de rollo 80mm (boletas/tickets)" },
+  { name: "IMPRESORAS TERMALES 104MM", description: "Impresoras termicas de rollo 104mm (boletas/tickets)" },
+  { name: "IMPRESORAS TERMAL MULTIFUNCIONAL", description: "Impresoras termicas multifuncionales" },
+  { name: "NOTEBOOKS", description: "Computadores portatiles" },
+  { name: "DESKTOPS", description: "Computadores de escritorio" },
+  { name: "IMPRESORAS ZEBRA", description: "Impresoras de etiquetas Zebra" },
+  { name: "SMARTPHONE", description: "Telefonos moviles inteligentes" },
+  { name: "TECLADOS", description: "Teclados" },
+  { name: "MOUSE", description: "Mouse/raton" },
+  { name: "SWITCH", description: "Switches de red" },
 ];
 
 export async function seedProductCategories(): Promise<void> {
@@ -91,7 +91,7 @@ export async function seedProductCategories(): Promise<void> {
   if (existing > 0) return;
 
   try {
-    await ProductCategoryModel.create(INITIAL_CATEGORIES.map((name) => ({ name })));
+    await ProductCategoryModel.create(INITIAL_CATEGORIES);
     logger.info("Seed de product_categories aplicado");
   } catch (err) {
     if (!isMongoDuplicateKeyError(err)) throw err;

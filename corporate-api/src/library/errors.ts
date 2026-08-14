@@ -57,16 +57,21 @@ export function isUniqueConstraintError(err: unknown): boolean {
 
 // Mismo problema que isUniqueConstraintError pero para DDL: Postgres no
 // tiene "ADD CONSTRAINT IF NOT EXISTS", asi que con las 3 replicas
-// corriendo "DROP CONSTRAINT IF EXISTS" + "ADD CONSTRAINT" en paralelo
-// (ver migratePermissions en databases/postgres/migrate.ts), una replica
-// puede dropear-y-agregar antes de que otra llegue a agregar la suya,
-// que entonces choca con SQLSTATE 42710 (duplicate_object) -no es un error
-// real, es "otra replica ya la dejo en el estado correcto".
+// corriendo DROP+ADD (o, en un restart normal, el mismo ADD reintentado
+// porque no hay guard previo -ver migrateMenuItems) en paralelo, una
+// replica puede dejar el objeto ya creado antes de que otra llegue al suyo.
+// Dos SQLSTATE distintos cubren "esto ya existe" segun el tipo de objeto:
+// 42710 (duplicate_object) para constraints sin indice propio (ej. el CHECK
+// de permissions_action_allowed), 42P07 (duplicate_table) para lo que crea
+// una relacion fisica -un UNIQUE/PK agrega un indice implicito con ese
+// nombre, y ESE es el que choca (ver uq_menu_items_label mas abajo). Ninguno
+// de los dos es un error real, es "otra corrida ya lo dejo en el estado
+// correcto".
 export function isDuplicateObjectError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const code = (err as { parent?: { code?: string }; original?: { code?: string } }).parent?.code
     ?? (err as { original?: { code?: string } }).original?.code;
-  return code === "42710";
+  return code === "42710" || code === "42P07";
 }
 
 // Mismo problema que isDuplicateObjectError pero para MSSQL: el patron

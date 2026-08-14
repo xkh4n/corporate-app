@@ -115,6 +115,19 @@ async function migrateMenuItems(): Promise<void> {
   await postgres.query(`
     CREATE INDEX IF NOT EXISTS ix_menu_items_parent_id ON menu_items(parent_id);
   `);
+
+  // Postgres no tiene "ADD CONSTRAINT IF NOT EXISTS": intentar agregarla y
+  // tragarse el 42710 (duplicate_object) si otra replica ya la dejo en el
+  // estado correcto -mismo criterio que permissions_action_allowed arriba,
+  // pero sin el DROP previo (esta constraint no necesita "ensancharse" con
+  // el tiempo como el CHECK de action). label es la clave estable del
+  // catalogo (seedMenuItems, menu-catalog.ts): sin este UNIQUE, el upsert
+  // por label no tiene sobre que hacer ON CONFLICT.
+  try {
+    await postgres.query(`ALTER TABLE menu_items ADD CONSTRAINT uq_menu_items_label UNIQUE (label);`);
+  } catch (err) {
+    if (!isDuplicateObjectError(err)) throw err;
+  }
 }
 
 // cost_centers y asset_statuses son catalogos/lookup, igual criterio que

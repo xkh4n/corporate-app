@@ -39,9 +39,15 @@ async function assertParentIsValid(parentId: number): Promise<void> {
   }
 }
 
-async function assertPermissionExists(permissionId: number): Promise<void> {
-  const permission = await PermissionModel.findByPk(permissionId);
-  if (!permission) throw new BadRequestError(`El permiso ${permissionId} no existe en el catalogo`);
+// "recurso:accion" -> id real en permissions. El regex del controller
+// (PERMISSION_KEY_REGEX) ya garantiza un solo ":", separar por split(":")
+// es seguro incluso con resource/action que traen guiones propios
+// (ej. "purchase-request-lines:update").
+async function resolvePermissionId(permissionKey: string): Promise<number> {
+  const [resource, action] = permissionKey.split(":");
+  const permission = await PermissionModel.findOne({ where: { resource, action } });
+  if (!permission) throw new BadRequestError(`El permiso '${permissionKey}' no existe en el catalogo`);
+  return permission.id;
 }
 
 // Camina la cadena de padres de "candidateParentId" hacia la raiz: si en el
@@ -63,10 +69,11 @@ export async function createMenuItem(data: MenuItemCreationAttributes): Promise<
   if (data.parentId !== undefined && data.parentId !== null) {
     await assertParentIsValid(data.parentId);
   }
-  if (data.permissionId !== undefined && data.permissionId !== null) {
-    await assertPermissionExists(data.permissionId);
-  }
-  return MenuItemModel.create(data);
+
+  const { permissionKey, ...rest } = data;
+  const permissionId = permissionKey ? await resolvePermissionId(permissionKey) : undefined;
+
+  return MenuItemModel.create({ ...rest, permissionId });
 }
 
 export async function updateMenuItem(id: number, data: MenuItemUpdateAttributes): Promise<MenuItemModel> {
@@ -76,11 +83,11 @@ export async function updateMenuItem(id: number, data: MenuItemUpdateAttributes)
     await assertParentIsValid(data.parentId);
     await assertNoCycle(id, data.parentId);
   }
-  if (data.permissionId !== undefined && data.permissionId !== null) {
-    await assertPermissionExists(data.permissionId);
-  }
 
-  await menuItem.update(data);
+  const { permissionKey, ...rest } = data;
+  const permissionId = permissionKey ? await resolvePermissionId(permissionKey) : undefined;
+
+  await menuItem.update({ ...rest, ...(permissionId !== undefined ? { permissionId } : {}) });
   return menuItem;
 }
 
