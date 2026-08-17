@@ -27,6 +27,11 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "roles", action: "update", description: "Editar roles y sus permisos" },
   { resource: "roles", action: "delete", description: "Desactivar roles" },
 
+  { resource: "permissions", action: "create", description: "Crear Permiso" },
+  { resource: "permissions", action: "read", description: "Ver Permiso" },
+  { resource: "permissions", action: "update", description: "Actualizar Permiso" },
+  { resource: "permissions", action: "delete", description: "Eliminar Permiso" },
+
   // Catalogo de menu de navegacion: admin-only por el mismo motivo que
   // roles -expone labels/estructura real de funcionalidades del sistema,
   // no es metadata inocua como el catalogo de permissions. El arbol PODADO
@@ -48,75 +53,35 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "users", action: "delete", description: "Desactivar usuarios" },
 
   // Maestros/config: admin-only por defecto (create/update).
-  {
-    resource: "business-partners",
-    action: "read",
-    description: "Consultar terceros",
-    grantToUser: true,
-  },
+  { resource: "business-partners",action: "read",description: "Consultar terceros",grantToUser: true,},
   { resource: "business-partners", action: "create", description: "Crear terceros" },
   { resource: "business-partners", action: "update", description: "Editar terceros" },
+  
   { resource: "cost-centers", action: "create", description: "Crear centros de costo" },
   { resource: "cost-centers", action: "update", description: "Editar centros de costo" },
   { resource: "cost-centers", action: "read", description: "Listar centros de costo" },
+  
   { resource: "suppliers", action: "read", description: "Consultar proveedores", grantToUser: true },
   { resource: "suppliers", action: "create", description: "Crear proveedores" },
   { resource: "suppliers", action: "update", description: "Editar proveedores" },
-  {
-    resource: "supplier-service-types",
-    action: "create",
-    description: "Crear tipos de servicio de proveedor",
-  },
-  {
-    resource: "supplier-service-types",
-    action: "update",
-    description: "Editar tipos de servicio de proveedor",
-  },
-  {
-    resource: "supplier-service-types",
-    action: "read",
-    description: "Listar tipos de servicio de proveedor",
-  },
-  {
-    resource: "supplier-delivery-terms",
-    action: "create",
-    description: "Crear condiciones de entrega de proveedor",
-  },
-  {
-    resource: "supplier-delivery-terms",
-    action: "read",
-    description: "Listar condiciones de entrega de proveedor",
-  },
-  {
-    resource: "supplier-delivery-terms",
-    action: "update",
-    description: "Editar condiciones de entrega de proveedor",
-  },
-  {
-    resource: "supplier-products",
-    action: "read",
-    description: "Consultar vinculos producto-proveedor",
-    grantToUser: true,
-  },
-  {
-    resource: "supplier-products",
-    action: "create",
-    description: "Vincular productos a un proveedor",
-  },
-  {
-    resource: "supplier-products",
-    action: "delete",
-    description: "Desvincular productos de un proveedor",
-  },
-  {
-    resource: "supplier-contacts",
-    action: "read",
-    description: "Consultar contactos de proveedor",
-    grantToUser: true,
-  },
+  
+  { resource: "supplier-service-types",action: "create",description: "Crear tipos de servicio de proveedor",},
+  { resource: "supplier-service-types",action: "update",description: "Editar tipos de servicio de proveedor",},
+  { resource: "supplier-service-types",action: "read",description: "Listar tipos de servicio de proveedor",},
+  
+  { resource: "supplier-delivery-terms",action: "create",description: "Crear condiciones de entrega de proveedor",},
+  { resource: "supplier-delivery-terms",action: "read",description: "Listar condiciones de entrega de proveedor",},
+  { resource: "supplier-delivery-terms",action: "update",description: "Editar condiciones de entrega de proveedor",},
+  
+  { resource: "supplier-products",action: "read",description: "Consultar vinculos producto-proveedor",grantToUser: true,},
+  { resource: "supplier-products",action: "create",description: "Vincular productos a un proveedor",},
+  { resource: "supplier-products",action: "delete",description: "Desvincular productos de un proveedor",},
+  
+  { resource: "supplier-contacts",action: "read",description: "Consultar contactos de proveedor",grantToUser: true,},
   { resource: "supplier-contacts", action: "create", description: "Crear contactos de proveedor" },
   { resource: "supplier-contacts", action: "update", description: "Editar contactos de proveedor" },
   { resource: "supplier-contacts", action: "delete", description: "Eliminar contactos de proveedor" },
+  
   { resource: "customers", action: "read", description: "Consultar clientes", grantToUser: true },
   { resource: "customers", action: "create", description: "Crear clientes" },
   { resource: "employees", action: "create", description: "Crear colaboradores" },
@@ -125,13 +90,16 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   // auditoria donde /employees quedaba abierto a cualquier autenticado.
   { resource: "employees", action: "read", description: "Consultar colaboradores" },
   { resource: "employees", action: "update", description: "Editar colaboradores" },
+
   { resource: "products", action: "create", description: "Crear productos" },
   { resource: "products", action: "read", description: "Listar productos" },
   { resource: "products", action: "update", description: "Editar productos" },
   { resource: "products", action: "delete", description: "Desactivar productos" },
+  
   { resource: "product-categories", action: "create", description: "Crear categorias de producto" },
   { resource: "product-categories", action: "update", description: "Editar categorias de producto" },
   { resource: "product-categories", action: "read", description: "Listar categorias de producto" },
+  
   { resource: "asset-statuses", action: "create", description: "Crear estados de activo" },
   { resource: "asset-statuses", action: "update", description: "Editar estados de activo" },
   { resource: "asset-statuses", action: "read", description: "Listar estados de activo" },
@@ -141,106 +109,41 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "addresses", action: "read", description: "Consultar direcciones", grantToUser: true },
   { resource: "addresses", action: "create", description: "Crear direcciones", grantToUser: true },
   { resource: "addresses", action: "update", description: "Editar direcciones", grantToUser: true },
-  {
-    resource: "purchase-requests",
-    action: "create",
-    description: "Crear solicitudes de compra",
-    grantToUser: true,
-  },
-  {
-    resource: "purchase-requests",
-    action: "read",
-    description: "Consultar solicitudes de compra",
-    grantToUser: true,
-  },
-  {
-    resource: "purchase-requests",
-    action: "update",
-    description: "Editar solicitudes de compra (datos, no el estado)",
-    grantToUser: true,
-  },
+
+  { resource: "purchase-requests",action: "create",description: "Crear solicitudes de compra",grantToUser: true,},
+  { resource: "purchase-requests",action: "read",description: "Consultar solicitudes de compra",grantToUser: true,},
+  { resource: "purchase-requests",action: "update",description: "Editar solicitudes de compra (datos, no el estado)",grantToUser: true,},
   // Separado de "update" a proposito: aprobar/rechazar el estado de una
   // solicitud es una accion mas sensible que editar sus datos -mismo
   // criterio de segregacion de funciones que la regla de negocio en
   // authorization.service.ts (el solicitante no puede autorizar su propia
   // compra). No se otorga a "user" por defecto: solo admin, hasta que se
   // asigne explicitamente a un rol "aprobador".
-  {
-    resource: "purchase-requests",
-    action: "approve",
-    description: "Aprobar o rechazar el estado de una solicitud de compra",
-  },
+  { resource: "purchase-requests",action: "approve",description: "Aprobar o rechazar el estado de una solicitud de compra",},
   // Sin endpoint todavia (no existe DELETE /purchase-requests) -reservado
   // para cuando se agregue cancelar/eliminar una solicitud.
-  {
-    resource: "purchase-requests",
-    action: "delete",
-    description: "Eliminar solicitudes de compra",
-  },
-  {
-    resource: "purchase-request-lines",
-    action: "read",
-    description: "Consultar lineas de solicitud",
-    grantToUser: true,
-  },
-  {
-    resource: "purchase-request-lines",
-    action: "create",
-    description: "Crear lineas de solicitud",
-    grantToUser: true,
-  },
-  {
-    resource: "purchase-request-lines",
-    action: "update",
-    description: "Editar lineas de solicitud",
-    grantToUser: true,
-  },
+  { resource: "purchase-requests",action: "delete",description: "Eliminar solicitudes de compra",},
+
+  { resource: "purchase-request-lines",action: "read",description: "Consultar lineas de solicitud",grantToUser: true,},
+  { resource: "purchase-request-lines",action: "create",description: "Crear lineas de solicitud",grantToUser: true,},
+  { resource: "purchase-request-lines",action: "update",description: "Editar lineas de solicitud",grantToUser: true,},
+
   { resource: "quotes", action: "read", description: "Consultar cotizaciones", grantToUser: true },
   { resource: "quotes", action: "create", description: "Crear cotizaciones", grantToUser: true },
   { resource: "quotes", action: "approve", description: "Validar cotizaciones", grantToUser: true },
-  {
-    resource: "authorizations",
-    action: "read",
-    description: "Consultar autorizaciones",
-    grantToUser: true,
-  },
+
+  { resource: "authorizations",action: "read",description: "Consultar autorizaciones",grantToUser: true,},
   { resource: "authorizations", action: "create", description: "Autorizar compras", grantToUser: true },
-  {
-    resource: "purchase-orders",
-    action: "read",
-    description: "Consultar ordenes de compra",
-    grantToUser: true,
-  },
-  {
-    resource: "purchase-orders",
-    action: "create",
-    description: "Crear ordenes de compra",
-    grantToUser: true,
-  },
-  {
-    resource: "goods-receipts",
-    action: "read",
-    description: "Consultar recepciones de mercaderia",
-    grantToUser: true,
-  },
-  {
-    resource: "goods-receipts",
-    action: "create",
-    description: "Registrar recepciones de mercaderia",
-    grantToUser: true,
-  },
+
+  { resource: "purchase-orders",action: "read",description: "Consultar ordenes de compra",grantToUser: true,},
+  { resource: "purchase-orders",action: "create",description: "Crear ordenes de compra",grantToUser: true,},
+
+  { resource: "goods-receipts",action: "read",description: "Consultar recepciones de mercaderia",grantToUser: true,},
+  { resource: "goods-receipts",action: "create",description: "Registrar recepciones de mercaderia",grantToUser: true,},
+
   { resource: "assets", action: "read", description: "Consultar activos", grantToUser: true },
   { resource: "assets", action: "update", description: "Editar activos", grantToUser: true },
-  {
-    resource: "asset-movements",
-    action: "read",
-    description: "Consultar movimientos de activos",
-    grantToUser: true,
-  },
-  {
-    resource: "asset-movements",
-    action: "create",
-    description: "Registrar movimientos de activos (asignar/mover)",
-    grantToUser: true,
-  },
+
+  { resource: "asset-movements",action: "read",description: "Consultar movimientos de activos",grantToUser: true,},
+  { resource: "asset-movements",action: "create",description: "Registrar movimientos de activos (asignar/mover)",grantToUser: true,},
 ];

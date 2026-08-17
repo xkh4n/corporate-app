@@ -17,6 +17,9 @@ import ListProducts from "../pages/adquisiciones/productos/ListProducts";
 import CreateProductCategory from "../pages/adquisiciones/category/CreateProductCategory";
 import ViewProductCategory from "../pages/adquisiciones/category/ViewProductCategory";
 import UpdateProductCategory from "../pages/adquisiciones/category/UpdateProductCategory";
+import NuevaPantalla from "../pages/pantallas/NuevaPantalla";
+import AsignarPermisos from "../pages/pantallas/AsignarPermisos";
+import { AsignarPermissionToRole, ListarRole, NuevoRole } from "../pages/personas/Roles";
 import { flattenMenuLinks } from "../lib/menu";
 
 // Vistas reales ya implementadas, mapeadas por el "link" exacto del
@@ -32,7 +35,12 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/category/create": () => <CreateProductCategory />,
   "/category/view": () => <ViewProductCategory />,
   "/category/update": () => <UpdateProductCategory />,
-  "/tickets/validate": () => <AproveRequest />
+  "/menu-items/create": () => <NuevaPantalla />,
+  "/menu-items/update": () => <AsignarPermisos />,
+  "/tickets/validate": () => <AproveRequest />,
+  "/roles/create": () => <NuevoRole />,
+  "/roles/update": () => <AsignarPermissionToRole />,
+  "/roles/read": () => <ListarRole />,
 };
 
 // Fuerza /change-password antes de cualquier otra ruta protegida mientras
