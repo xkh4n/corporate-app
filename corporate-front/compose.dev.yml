@@ -8,6 +8,9 @@ networks:
     internal:
         name: ${PROJECT_NAME_FRONTEND}_internal${SUFFIX}
         internal: true
+        ipam:
+            config:
+                - subnet: 172.16.7.0/24
     # Red pre-creada por "run.ps1 frontend <ambiente>" (ver root run.ps1),
     # externa a este stack. Solo el proxy NGINX se conecta acá -mismo patron
     # de "un solo punto de entrada" que el resto del proyecto-, nunca el
@@ -126,6 +129,9 @@ services:
             # contenedor de nginx-apidev, alcanzable via Docker DNS en
             # "frontapi-net" (mismo host resuelto que su container_name).
             API_PROXY_HOST: ${API_PROXY_HOST}
+            # Selecciona la plantilla de nginx (dev con HMR/vite-proxy vs
+            # produccion con bundle estatico) -ver entrypoint-wrapper.sh.
+            NODE_ENV: ${NODE_ENV}
         # Bindeado a ALLOCATED_IP, no a 0.0.0.0 -mismo criterio que el resto
         # del proyecto, ver comentario en corporate-infra/compose.dev.yml.
         ports:
@@ -136,7 +142,7 @@ services:
             # corporate-scripts/ensure-front-tls-cert.ps1), reemplazables
             # por los de una CA real con el mismo nombre de archivo sin
             # tocar este compose ni nginx.conf.template. Solo lectura.
-            - ../corporate-secrets/Development/certs/front:/etc/nginx/certs:ro
+            - ../corporate-secrets/${SECRETS_ENV}/certs/front:/etc/nginx/certs:ro
         networks:
             - internal
             - frontend-net

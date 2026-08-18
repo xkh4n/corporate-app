@@ -2,25 +2,25 @@ name: ${PROJECT_NAME_BACKEND}${SUFFIX}
 
 secrets:
     pg_user_password:
-        file: ../corporate-secrets/Development/pg_user_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/pg_user_password.txt
     mssql_app_password:
-        file: ../corporate-secrets/Development/mssql_app_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/mssql_app_password.txt
     redis_password:
-        file: ../corporate-secrets/Development/redis_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/redis_password.txt
     jwt_access_secret:
-        file: ../corporate-secrets/Development/jwt_access_secret.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/jwt_access_secret.txt
     jwt_refresh_secret:
-        file: ../corporate-secrets/Development/jwt_refresh_secret.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/jwt_refresh_secret.txt
     session_secret:
-        file: ../corporate-secrets/Development/session_secret.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/session_secret.txt
     bootstrap_admin_password:
-        file: ../corporate-secrets/Development/bootstrap_admin_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/bootstrap_admin_password.txt
     default_user_password:
-        file: ../corporate-secrets/Development/default_user_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/default_user_password.txt
     mongo_user_password:
-        file: ../corporate-secrets/Development/db_mongo_user_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/db_mongo_user_password.txt
     mailer_shared_secret:
-        file: ../corporate-secrets/Development/mailer_shared_secret.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/mailer_shared_secret.txt
 
 networks:
     # Red del OTRO proyecto Compose (corporate-infra), declarada "external"
@@ -42,6 +42,9 @@ networks:
     internal:
         name: ${PROJECT_NAME_BACKEND}_internal${SUFFIX}
         internal: true
+        ipam:
+            config:
+                - subnet: 172.16.4.0/24
     # Red pre-creada por "run.ps1 backend <ambiente>" (ver root run.ps1),
     # externa a este stack. Solo el proxy NGINX se conecta acá -mismo patrón
     # de "un solo punto de entrada" que el resto del proyecto-, nunca las
@@ -81,6 +84,9 @@ networks:
     api-exporters:
         name: ${PROJECT_NAME_BACKEND}_exporters${SUFFIX}
         internal: true
+        ipam:
+            config:
+                - subnet: 172.16.5.0/24
     # Red compartida con corporate-mailer (otro proyecto Compose, el UNICO
     # con salida a internet -ver corporate-mailer/compose.dev.yml). Creada
     # por root run.ps1 (mismo patron que "public"/backend-net-${SUFFIX}), no
@@ -291,7 +297,7 @@ services:
             # corporate-scripts/ensure-api-tls-cert.ps1), reemplazables por
             # los de una CA real con el mismo nombre de archivo sin tocar
             # este compose ni nginx.conf.template. Solo lectura.
-            - ../corporate-secrets/Development/certs/api:/etc/nginx/certs:ro
+            - ../corporate-secrets/${SECRETS_ENV}/certs/api:/etc/nginx/certs:ro
         networks:
             - internal
             - public

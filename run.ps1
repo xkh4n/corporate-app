@@ -42,6 +42,14 @@ if ($Ambiente -ne 'dev' -and $Ambiente -ne 'prod' -and $Ambiente -ne 'test') {
     exit 1
 }
 
+# Base /16 por ambiente para las redes creadas imperativamente acá abajo (las
+# que viven DENTRO de cada compose -infra/api/mailer/front/monitoring- usan
+# su propio "ipam.config.subnet" en el compose.<ambiente>.yml correspondiente,
+# ver esos archivos). Evita que dev/test/prod terminen compartiendo el mismo
+# rango de "default-address-pools" del daemon -ese pool es global, no
+# distingue por proyecto Compose-.
+$netBase = @{ dev = '172.16'; test = '10.10'; prod = '10.200' }[$Ambiente]
+
 switch ($Servicio) {
     'bdd' {
         & ./corporate-scripts/infra.ps1 $Ambiente
@@ -71,7 +79,7 @@ switch ($Servicio) {
         $backendNet = "backend-net-$Ambiente"
         if (-not (docker network ls --format '{{.Name}}' | Select-String -Pattern "^$backendNet$")) {
             Write-Host "  ✅ Creando $backendNet (internal: false -- requerido para el port-publish de nginx-apidev, ver comentario)" -ForegroundColor Green
-            docker network create --driver bridge $backendNet
+            docker network create --driver bridge --subnet "$netBase.11.0/24" $backendNet
         }
         # Crear mailer-net si todavia no existe (idempotente, igual que en el
         # case 'mailer' de abajo): la comparten corporate-api y
@@ -87,7 +95,7 @@ switch ($Servicio) {
         $mailerNet = "mailer-net-$Ambiente"
         if (-not (docker network ls --format '{{.Name}}' | Select-String -Pattern "^$mailerNet$")) {
             Write-Host "  ✅ Creando $mailerNet (internal: true)" -ForegroundColor Green
-            docker network create --driver bridge --internal $mailerNet
+            docker network create --driver bridge --internal --subnet "$netBase.12.0/24" $mailerNet
         }
         # Crear frontapi-net si todavia no existe (idempotente, mismo patron
         # que mailer-net): la comparten corporate-api y corporate-front, no
@@ -102,7 +110,7 @@ switch ($Servicio) {
         $frontApiNet = "frontapi-net-$Ambiente"
         if (-not (docker network ls --format '{{.Name}}' | Select-String -Pattern "^$frontApiNet$")) {
             Write-Host "  ✅ Creando $frontApiNet (internal: true)" -ForegroundColor Green
-            docker network create --driver bridge --internal $frontApiNet
+            docker network create --driver bridge --internal --subnet "$netBase.13.0/24" $frontApiNet
         }
         & ./corporate-scripts/backend.ps1 $Ambiente
     }
@@ -119,7 +127,7 @@ switch ($Servicio) {
         $mailerNet = "mailer-net-$Ambiente"
         if (-not (docker network ls --format '{{.Name}}' | Select-String -Pattern "^$mailerNet$")) {
             Write-Host "  ✅ Creando $mailerNet (internal: true)" -ForegroundColor Green
-            docker network create --driver bridge --internal $mailerNet
+            docker network create --driver bridge --internal --subnet "$netBase.12.0/24" $mailerNet
         }
         & ./corporate-scripts/mailer.ps1 $Ambiente
     }
@@ -137,7 +145,7 @@ switch ($Servicio) {
         $frontendNet = "frontend-net-$Ambiente"
         if (-not (docker network ls --format '{{.Name}}' | Select-String -Pattern "^$frontendNet$")) {
             Write-Host "  ✅ Creando $frontendNet (internal: false -- ver comentario, el port-publish del proxy del frontend lo requiere)" -ForegroundColor Green
-            docker network create --driver bridge $frontendNet
+            docker network create --driver bridge --subnet "$netBase.14.0/24" $frontendNet
         }
         # frontapi-net: mismo patron idempotente que en el case 'backend' -no
         # importa cual de los 2 stacks (backend/frontend) se levante primero,
@@ -145,7 +153,7 @@ switch ($Servicio) {
         $frontApiNet = "frontapi-net-$Ambiente"
         if (-not (docker network ls --format '{{.Name}}' | Select-String -Pattern "^$frontApiNet$")) {
             Write-Host "  ✅ Creando $frontApiNet (internal: true)" -ForegroundColor Green
-            docker network create --driver bridge --internal $frontApiNet
+            docker network create --driver bridge --internal --subnet "$netBase.13.0/24" $frontApiNet
         }
         & ./corporate-scripts/frontend.ps1 $Ambiente
     }

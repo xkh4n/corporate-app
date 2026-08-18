@@ -45,6 +45,13 @@ if (-not (Test-Path $mongoKeyfilePath)) {
     exit 1
 }
 
+# Genera (solo si faltan) los secretos "de motor" que consume directamente
+# este compose (admin/root de cada engine) -no interactivo e idempotente, ver
+# ensure-infra-secrets.ps1-, antes de que corran los guards de arriba, para
+# que un checkout limpio no falle a mitad del "docker compose up" con un
+# "secret file not found" sobre mssql_password/redis_password/etc.
+& (Join-Path $PSScriptRoot 'ensure-infra-secrets.ps1') -Environment $Ambiente
+
 # Genera (solo si faltan) los secretos de los usuarios de metricas/exporters
 # de Prometheus antes de levantar el stack -no interactivo e idempotente, ver
 # ensure-monitoring-secrets.ps1-, para que "run.ps1 bdd <ambiente>" deje el

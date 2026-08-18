@@ -2,9 +2,9 @@ name: ${PROJECT_NAME_MAILER}${SUFFIX}
 
 secrets:
     smtp_password:
-        file: ../corporate-secrets/Development/smtp_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/smtp_password.txt
     mailer_shared_secret:
-        file: ../corporate-secrets/Development/mailer_shared_secret.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/mailer_shared_secret.txt
 
 networks:
     # Red compartida con corporate-api (creada por "run.ps1 mailer/backend
@@ -35,6 +35,9 @@ networks:
     # no solo de intención documentada-.
     mailer-egress:
         name: ${PROJECT_NAME_MAILER}_egress${SUFFIX}
+        ipam:
+            config:
+                - subnet: 172.16.6.0/24
 
 services:
     # Una sola replica a proposito: relay de correo de bajo trafico, no el

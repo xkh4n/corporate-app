@@ -47,6 +47,12 @@ http {
         ssl_certificate_key /etc/nginx/certs/tls.key;
         ssl_protocols TLSv1.2 TLSv1.3;
 
+        # HSTS: hallazgo de auditoria de seguridad 2026-08-17 -faltaba en
+        # todo el stack (corporate-front y aca). corporate-api ya lo cubre
+        # via helmet() por defecto; corporate-infra no aplica, es TCP puro.
+        # Sin "preload" hasta confirmar el dominio real de produccion.
+        add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+
         location / {
             set $grafana_upstream ${GRAFANA_HOST}01${SUFFIX}:3000;
             proxy_pass http://$grafana_upstream;

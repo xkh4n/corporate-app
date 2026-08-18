@@ -2,9 +2,9 @@ name: ${PROJECT_NAME_MONITORING}${SUFFIX}
 
 secrets:
     gf_admin_password:
-        file: ../corporate-secrets/Development/gf_admin_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/gf_admin_password.txt
     gf_user_password:
-        file: ../corporate-secrets/Development/gf_user_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/gf_user_password.txt
 
 networks:
     # Red propia de este stack (equivalente a "backend" en corporate-infra):
@@ -20,6 +20,9 @@ networks:
     monitoring:
         name: ${PROJECT_NAME_MONITORING}_monitoring${SUFFIX}
         internal: true
+        ipam:
+            config:
+                - subnet: 172.16.8.0/24
     # Red del OTRO proyecto Compose (corporate-infra), declarada "external"
     # porque ya existe (la crea "corpinfra dev" al levantar ese stack) y este
     # proyecto no es dueño de ella. Apunta a "exporters", NO a "backend"
@@ -65,6 +68,9 @@ networks:
     proxy-internal:
         name: ${PROJECT_NAME_MONITORING}_proxy-internal${SUFFIX}
         internal: true
+        ipam:
+            config:
+                - subnet: 172.16.9.0/24
     # Red exclusiva de nginxmondev, DELIBERADAMENTE SIN "internal: true" -
     # única forma de que Docker publique sus 2 puertos (3333/3334) al host en
     # este entorno (Docker Desktop/WSL2, Windows): confirmado en la práctica.
@@ -72,6 +78,9 @@ networks:
     # acá, solo nginxmondev (dual-homed con "monitoring").
     public:
         name: ${PROJECT_NAME_MONITORING}_public${SUFFIX}
+        ipam:
+            config:
+                - subnet: 172.16.10.0/24
 
 volumes:
     prometheus_data:
@@ -500,7 +509,7 @@ services:
             # Development hardcodeado a proposito, mismo criterio que
             # corporate-api/compose.dev.yml: este archivo es dev-only (no
             # existe compose.test.yml/compose.prod.yml todavia).
-            - ../corporate-secrets/Development/certs/monitoring:/etc/nginx/certs:ro
+            - ../corporate-secrets/${SECRETS_ENV}/certs/monitoring:/etc/nginx/certs:ro
         # Bindeado a ALLOCATED_IP, no a 0.0.0.0 -mismo criterio que
         # corporate-infra/corporate-api. Puerto 3333 (interno) solo hace el
         # 301 a HTTPS (3334 interno) -mismo patron que corporate-api/nginx.

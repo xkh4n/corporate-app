@@ -118,3 +118,23 @@ export const env = {
     sharedSecretFileVar: "MAILER_SHARED_SECRET_FILE",
   },
 } as const;
+
+// Hallazgo de auditoria de seguridad 2026-08-17: hasta aca, los 3
+// kill-switches de arriba solo estaban protegidos por CONVENCION -viven
+// unicamente en corporate-secrets/Development/.env, nunca en Testing/
+// Production/.env (ver el comentario en Environment/.env)-, pero nada en el
+// codigo impedia que alguien los pusiera en "true" directamente en
+// Testing/.env o Production/.env (ej. para destrabar a un desarrollador
+// durante un incidente) y se olvidara de revertirlo. Failing closed aca: si
+// alguno de los 3 esta activo fuera de "development", el arranque aborta en
+// vez de quedar silenciosamente sin auth/permisos/validacion en un ambiente
+// alcanzable por trafico real.
+if (
+  env.nodeEnv !== "development" &&
+  (env.flags.disableAuth || env.flags.disablePermissions || env.flags.disableValidation)
+) {
+  throw new Error(
+    "DISABLE_AUTH/DISABLE_PERMISSIONS/DISABLE_VALIDATION solo pueden estar en true con NODE_ENV=development. " +
+      `NODE_ENV actual: "${env.nodeEnv}".`,
+  );
+}

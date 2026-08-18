@@ -6,6 +6,7 @@ import * as permissionService from "../services/postgres/permission.service";
 import { revokeAllRefreshTokens, invalidateUserSessions } from "../services/redis/session.service";
 import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
 import { sendList, sendOk, sendNoContent } from "../library/response";
+import { ForbiddenError } from "../library/errors";
 
 export const createUserSchema = z.object({
   personId: z.number().int().positive(),
@@ -79,6 +80,19 @@ export async function update(req: Request, res: Response, next: NextFunction): P
   try {
     const body = req.body as z.infer<typeof updateUserSchema>;
     const id = Number(req.params.id);
+
+    // Hallazgo de auditoria de seguridad 2026-08-17: sin este check,
+    // cualquier rol con "users:update" podia auto-asignarse el rol "admin"
+    // (PATCH /users/<su propio id> {roleId: <id de admin>}) y heredar el
+    // bypass total de authorize.ts -no explotable hoy porque solo "admin"
+    // (que ya tiene ese bypass) tiene ese permiso en el catalogo sembrado,
+    // pero queda activo apenas un segundo rol lo reciba. Mismo criterio de
+    // segregacion de funciones que ya se aplica en el flujo de aprobacion de
+    // solicitudes de compra (requester != approver, ver authorization.service.ts).
+    if (body.roleId !== undefined && req.user?.userId === id) {
+      throw new ForbiddenError("No podes cambiar tu propio rol. Pedile a otro administrador que lo haga.");
+    }
+
     const user = await userService.updateUser(id, body);
 
     // Si cambia el rol: revoca los refresh tokens (para que no pueda

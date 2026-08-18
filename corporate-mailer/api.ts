@@ -17,7 +17,23 @@ export function createApp(): Express {
 
   app.use(helmet());
   app.use(express.json({ limit: "20mb" })); // adjunto PDF viaja en base64 dentro del body
-  app.use(pinoHttp({ logger }));
+  // redact: mismo hallazgo/fix que corporate-api/api.ts (auditoria de
+  // seguridad 2026-08-12), nunca aplicado aca hasta la auditoria 2026-08-17
+  // -sin esto, el serializer default de pino-http vuelca req.headers
+  // completo, incluido "X-Mailer-Token" (la unica credencial de este
+  // servicio, ver verifySharedSecret.ts) en texto plano a stdout, scrapeado
+  // por corporate-monitoring/Alloy hacia Loki/Grafana. Cualquiera con
+  // acceso de lectura a Grafana podia extraer el secreto y mandar correo
+  // como el dominio corporativo directo, sin pasar por corporate-api.
+  app.use(
+    pinoHttp({
+      logger,
+      redact: {
+        paths: ["req.headers['x-mailer-token']"],
+        censor: "[Redacted]",
+      },
+    }),
+  );
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });

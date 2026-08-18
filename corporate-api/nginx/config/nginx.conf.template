@@ -60,8 +60,8 @@ http {
 
         # tls.crt/tls.key: autofirmados por defecto (ver
         # corporate-scripts/ensure-api-tls-cert.ps1), montados read-only
-        # desde corporate-secrets/Development/certs/api/ (ver
-        # compose.dev.yml). Reemplazar por los de una CA real es cambiar
+        # desde corporate-secrets/${SECRETS_ENV}/certs/api/ (ver
+        # compose.*.yml). Reemplazar por los de una CA real es cambiar
         # SOLO esos dos archivos en el host -mismo nombre, misma ruta- y
         # reiniciar este contenedor; nada de esta plantilla cambia.
         ssl_certificate     /etc/nginx/certs/tls.crt;
@@ -91,7 +91,35 @@ http {
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            # $remote_addr, NO $proxy_add_x_forwarded_for -hallazgo de
+            # auditoria de seguridad 2026-08-17: este puerto tambien se
+            # publica directo a ALLOCATED_IP (uso legitimo: Insomnia/API
+            # testing sin pasar por el front), y ahi un cliente externo puede
+            # mandar su propio header "X-Forwarded-For" con un valor distinto
+            # en cada request; $proxy_add_x_forwarded_for APILA ese valor
+            # spoofeado en vez de reemplazarlo, y corporate-api confia en el
+            # (trust proxy=1, ver api.ts) para armar req.ip -el rate-limiter
+            # de /auth/login (rateLimit.ts) usa ese req.ip como clave, asi
+            # que sin este fix, cambiar el XFF en cada intento evade por
+            # completo el limite de fuerza bruta en ESE camino.
+            #
+            # Trade-off aceptado, no resuelto del todo: cuando el trafico
+            # llega via nginx-frontdev (proxy_pass a este mismo host desde
+            # "frontapi-net", ver corporate-front/nginx/config/nginx.conf*.
+            # template), $remote_addr aca pasa a ser la IP interna de
+            # nginx-frontdev, no la del navegador real -nginx-frontdev SI
+            # arma bien el XFF real antes de reenviar, pero esta linea lo
+            # descarta igual. Efecto: todos los usuarios que entran por el
+            # front comparten un mismo bucket de rate-limit en vez de uno por
+            # IP real (peor UX bajo trafico legitimo alto, pero no un
+            # agujero de seguridad). Solucion completa: "set_real_ip_from"
+            # (ngx_http_realip_module) confiando SOLO en la subred de
+            # frontapi-net para recien ahi tomar su X-Forwarded-For -no
+            # aplicado aca porque esa subred la asigna Docker
+            # automaticamente (no esta pineada en la creacion de la red,
+            # root run.ps1) y hardcodearla in aumentaria el acoplamiento sin
+            # garantia de que se mantenga estable entre ambientes.
+            proxy_set_header X-Forwarded-For $remote_addr;
             proxy_set_header X-Forwarded-Proto $scheme;
             # Default de nginx (incluye "error" y "timeout"): si la réplica
             # elegida no responde -p.ej. justo la que acabamos de "docker

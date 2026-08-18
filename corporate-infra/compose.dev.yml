@@ -2,43 +2,46 @@ name: ${PROJECT_NAME}${SUFFIX}
 
 secrets:
     pg_replication_password:
-        file: ../corporate-secrets/Development/pg_replication_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/pg_replication_password.txt
     pg_admin_password:
-        file: ../corporate-secrets/Development/pg_admin_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/pg_admin_password.txt
     pg_user_password:
-        file: ../corporate-secrets/Development/pg_user_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/pg_user_password.txt
     pg_logger_password:
-        file: ../corporate-secrets/Development/pg_logger_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/pg_logger_password.txt
     pg_exporter_password:
-        file: ../corporate-secrets/Development/pg_exporter_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/pg_exporter_password.txt
     pg_password:
-        file: ../corporate-secrets/Development/pg_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/pg_password.txt
     db_mongo_password:
-        file: ../corporate-secrets/Development/db_mongo_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/db_mongo_password.txt
     db_mongo_user_password:
-        file: ../corporate-secrets/Development/db_mongo_user_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/db_mongo_user_password.txt
     db_gui_password:
-        file: ../corporate-secrets/Development/db_gui_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/db_gui_password.txt
     db_mongo_logs:
-        file: ../corporate-secrets/Development/db_mongo_logs.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/db_mongo_logs.txt
     mongodb_keyfile:
-        file: ../corporate-secrets/Development/MongoKeyfile/mongodb_keyfile.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/MongoKeyfile/mongodb_keyfile.txt
     db_mongo_exporter:
-        file: ../corporate-secrets/Development/db_mongo_exporter.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/db_mongo_exporter.txt
     mssql_password:
-        file: ../corporate-secrets/Development/mssql_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/mssql_password.txt
     mssql_exporter_password:
-        file: ../corporate-secrets/Development/mssql_exporter_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/mssql_exporter_password.txt
     mssql_app_password:
-        file: ../corporate-secrets/Development/mssql_app_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/mssql_app_password.txt
     redis_password:
-        file: ../corporate-secrets/Development/redis_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/redis_password.txt
     redis_exporter_password:
-        file: ../corporate-secrets/Development/redis_exporter_password.txt
+        file: ../corporate-secrets/${SECRETS_ENV}/redis_exporter_password.txt
 
 networks:
     backend:
         name: ${PROJECT_NAME}_backend${SUFFIX}
+        ipam:
+            config:
+                - subnet: 172.16.1.0/24
         # internal: true -hallazgo CRITICO de auditoria (PoC real: getent
         # hosts google.com / wget a 1.1.1.1 desde betelgeuse01dev y
         # centaury01dev resolvian/traian trafico real de internet). Ningun
@@ -76,6 +79,9 @@ networks:
     exporters:
         name: ${PROJECT_NAME}_exporters${SUFFIX}
         internal: true
+        ipam:
+            config:
+                - subnet: 172.16.2.0/24
     # Red exclusiva de nginxdev, DELIBERADAMENTE SIN "internal: true" -unica
     # forma de que Docker publique sus 4 puertos (Postgres/Mongo/Redis/MSSQL)
     # al host en este entorno (Docker Desktop/WSL2, Windows): confirmado en
@@ -87,6 +93,9 @@ networks:
     # de BD, que es lo que de verdad importaba aislar.
     public:
         name: ${PROJECT_NAME}_public${SUFFIX}
+        ipam:
+            config:
+                - subnet: 172.16.3.0/24
 
 volumes:
     pg_primary_data:
@@ -674,7 +683,7 @@ services:
             - mssql_password
         volumes:
             - mssql_primary_data:/var/opt/mssql
-            - ../corporate-secrets/Development/certs:/var/opt/mssql/certs
+            - ../corporate-secrets/${SECRETS_ENV}/certs:/var/opt/mssql/certs
         networks:
             - backend
         healthcheck:
@@ -710,7 +719,7 @@ services:
             - mssql_password
         volumes:
             - mssql_secondary_data:/var/opt/mssql
-            - ../corporate-secrets/Development/certs:/var/opt/mssql/certs
+            - ../corporate-secrets/${SECRETS_ENV}/certs:/var/opt/mssql/certs
         networks:
             - backend
         depends_on:
@@ -764,7 +773,7 @@ services:
             - mssql_app_password
         volumes:
             - ./MsSQL/scripts:/scripts:ro
-            - ../corporate-secrets/Development/certs:/certs
+            - ../corporate-secrets/${SECRETS_ENV}/certs:/certs
         networks:
             - backend
         depends_on:
