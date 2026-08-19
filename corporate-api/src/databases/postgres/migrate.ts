@@ -1,6 +1,27 @@
 import { postgres } from "./connection";
 import { logger } from "../../library/logger";
-import { isDuplicateObjectError } from "../../library/errors";
+import { isDuplicateObjectError, isUniqueConstraintError } from "../../library/errors";
+
+// Mismo problema que runDdl() en databases/mssql/migrate.ts, version
+// Postgres: con las 3 replicas migrando en paralelo contra una base recien
+// creada (instalacion limpia), "CREATE TABLE/INDEX IF NOT EXISTS" no es
+// atomico frente al chequeo de existencia -Postgres documenta esta carrera-,
+// asi que dos replicas pueden pasarlo a la vez. Segun el objeto, la carrera
+// se resuelve como 42710/42P07 (isDuplicateObjectError, ya cubierto por las
+// constraints con nombre explicito de abajo) o como un unique_violation real
+// sobre el catalogo (pg_class.relname/relnamespace) que Sequelize normaliza
+// a SequelizeUniqueConstraintError -encontrado en un clean install real de
+// Testing (2026-08-18): "roles" nunca habia migrado antes en ese ambiente, y
+// el CREATE TABLE IF NOT EXISTS sin guard tumbo el bootstrap de las 3
+// replicas. Ninguno de los dos es un error real, es "otra replica ya dejo el
+// objeto en el estado correcto".
+async function runDdl(sql: string): Promise<void> {
+  try {
+    await postgres.query(sql);
+  } catch (err) {
+    if (!isDuplicateObjectError(err) && !isUniqueConstraintError(err)) throw err;
+  }
+}
 
 // Migracion propia de la app (esquema de negocio), separada del bootstrap de
 // infra (corporate-infra/PostgreSQL/init/*.sh, que solo crea roles/usuarios
@@ -17,7 +38,7 @@ export async function migratePostgres(): Promise<void> {
 }
 
 async function migrateRoles(): Promise<void> {
-  await postgres.query(`
+  await runDdl(`
     CREATE TABLE IF NOT EXISTS roles (
       id SERIAL PRIMARY KEY,
       name VARCHAR(50) NOT NULL UNIQUE,
@@ -44,7 +65,7 @@ async function migrateRoles(): Promise<void> {
 // hardcodeado en el middleware (superusuario, no depende de filas en esta
 // tabla), asi que nunca puede quedar bloqueado por un seed incompleto.
 async function migratePermissions(): Promise<void> {
-  await postgres.query(`
+  await runDdl(`
     CREATE TABLE IF NOT EXISTS permissions (
       id SERIAL PRIMARY KEY,
       resource VARCHAR(50) NOT NULL,
@@ -65,21 +86,17 @@ async function migratePermissions(): Promise<void> {
   // CHECK inline de la version anterior de esta migracion (sin nombre
   // explicito) -hay que tumbarlo tambien, si no queda enforceando la lista
   // vieja en paralelo con la nueva constraint de abajo.
-  await postgres.query(`ALTER TABLE permissions DROP CONSTRAINT IF EXISTS permissions_action_check;`);
-  await postgres.query(`ALTER TABLE permissions DROP CONSTRAINT IF EXISTS permissions_action_allowed;`);
-  try {
-    await postgres.query(`
-      ALTER TABLE permissions ADD CONSTRAINT permissions_action_allowed
-        CHECK (action IN ('create','read','update','delete','approve'));
-    `);
-  } catch (err) {
-    // Carrera entre las 3 replicas (DROP+ADD sin transaccion compartida):
-    // otra replica ya la agrego entre nuestro DROP y nuestro ADD. Mismo
-    // criterio que isUniqueConstraintError para los seeds de datos.
-    if (!isDuplicateObjectError(err)) throw err;
-  }
+  await runDdl(`ALTER TABLE permissions DROP CONSTRAINT IF EXISTS permissions_action_check;`);
+  await runDdl(`ALTER TABLE permissions DROP CONSTRAINT IF EXISTS permissions_action_allowed;`);
+  // Carrera entre las 3 replicas (DROP+ADD sin transaccion compartida): otra
+  // replica ya la agrego entre nuestro DROP y nuestro ADD -runDdl() se traga
+  // ese choque especifico.
+  await runDdl(`
+    ALTER TABLE permissions ADD CONSTRAINT permissions_action_allowed
+      CHECK (action IN ('create','read','update','delete','approve'));
+  `);
 
-  await postgres.query(`
+  await runDdl(`
     CREATE TABLE IF NOT EXISTS role_permissions (
       role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
       permission_id INTEGER NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
@@ -97,7 +114,7 @@ async function migratePermissions(): Promise<void> {
 // getMenuTreeForRole() en services/postgres/menuItem.service.ts, consumido
 // por GET /auth/menu. is_active: soft-delete, mismo criterio que roles.
 async function migrateMenuItems(): Promise<void> {
-  await postgres.query(`
+  await runDdl(`
     CREATE TABLE IF NOT EXISTS menu_items (
       id SERIAL PRIMARY KEY,
       label VARCHAR(100) NOT NULL,
@@ -112,22 +129,18 @@ async function migrateMenuItems(): Promise<void> {
     );
   `);
 
-  await postgres.query(`
+  await runDdl(`
     CREATE INDEX IF NOT EXISTS ix_menu_items_parent_id ON menu_items(parent_id);
   `);
 
   // Postgres no tiene "ADD CONSTRAINT IF NOT EXISTS": intentar agregarla y
-  // tragarse el 42710 (duplicate_object) si otra replica ya la dejo en el
-  // estado correcto -mismo criterio que permissions_action_allowed arriba,
-  // pero sin el DROP previo (esta constraint no necesita "ensancharse" con
-  // el tiempo como el CHECK de action). label es la clave estable del
-  // catalogo (seedMenuItems, menu-catalog.ts): sin este UNIQUE, el upsert
-  // por label no tiene sobre que hacer ON CONFLICT.
-  try {
-    await postgres.query(`ALTER TABLE menu_items ADD CONSTRAINT uq_menu_items_label UNIQUE (label);`);
-  } catch (err) {
-    if (!isDuplicateObjectError(err)) throw err;
-  }
+  // tragarse el choque (via runDdl) si otra replica ya la dejo en el estado
+  // correcto -mismo criterio que permissions_action_allowed arriba, pero sin
+  // el DROP previo (esta constraint no necesita "ensancharse" con el tiempo
+  // como el CHECK de action). label es la clave estable del catalogo
+  // (seedMenuItems, menu-catalog.ts): sin este UNIQUE, el upsert por label no
+  // tiene sobre que hacer ON CONFLICT.
+  await runDdl(`ALTER TABLE menu_items ADD CONSTRAINT uq_menu_items_label UNIQUE (label);`);
 }
 
 // cost_centers y asset_statuses son catalogos/lookup, igual criterio que
@@ -140,7 +153,7 @@ async function migrateMenuItems(): Promise<void> {
 // a mano en la capa de servicio (mismo patron ya aceptado que users.role_id
 // hacia roles, en la direccion inversa).
 async function migrateAssets(): Promise<void> {
-  await postgres.query(`
+  await runDdl(`
     CREATE TABLE IF NOT EXISTS cost_centers (
       id SERIAL PRIMARY KEY,
       code INTEGER NOT NULL UNIQUE,
@@ -153,7 +166,7 @@ async function migrateAssets(): Promise<void> {
     );
   `);
 
-  await postgres.query(`
+  await runDdl(`
     CREATE TABLE IF NOT EXISTS asset_statuses (
       id SERIAL PRIMARY KEY,
       code VARCHAR(30) NOT NULL UNIQUE,
@@ -180,7 +193,7 @@ async function migrateAssets(): Promise<void> {
 
   // Modelo maestro + movimientos: el estado actual vive en assets.status_id,
   // no se recalcula buscando el ultimo movimiento.
-  await postgres.query(`
+  await runDdl(`
     CREATE TABLE IF NOT EXISTS assets (
       id SERIAL PRIMARY KEY,
       tag VARCHAR(50) NOT NULL UNIQUE,
@@ -202,11 +215,11 @@ async function migrateAssets(): Promise<void> {
   // forma idempotente -no hace falta el patron drop-and-recreate. Nullable:
   // los assets creados antes de este cambio quedan sin centro de costo,
   // no hay backfill.
-  await postgres.query(`
+  await runDdl(`
     ALTER TABLE assets ADD COLUMN IF NOT EXISTS cost_center_id INTEGER REFERENCES cost_centers(id);
   `);
 
-  await postgres.query(`
+  await runDdl(`
     CREATE TABLE IF NOT EXISTS asset_movements (
       id SERIAL PRIMARY KEY,
       asset_id INTEGER NOT NULL REFERENCES assets(id),
@@ -223,7 +236,7 @@ async function migrateAssets(): Promise<void> {
   // Un movimiento puede involucrar 1 o mas usuarios (N:M) -razon explicita
   // del usuario para sacar Asignacion de MSSQL, no encajaba junto a "users"
   // con un simple user_id 1:1.
-  await postgres.query(`
+  await runDdl(`
     CREATE TABLE IF NOT EXISTS asset_movement_users (
       id SERIAL PRIMARY KEY,
       asset_movement_id INTEGER NOT NULL REFERENCES asset_movements(id),
@@ -236,7 +249,7 @@ async function migrateAssets(): Promise<void> {
   // listMovementsByAsset. asset_movement_users NO necesita uno equivalente:
   // el UNIQUE(asset_movement_id, user_id) de arriba ya es, en si mismo, un
   // indice compuesto con asset_movement_id como columna líder.
-  await postgres.query(`
+  await runDdl(`
     CREATE INDEX IF NOT EXISTS ix_asset_movements_asset_id ON asset_movements(asset_id);
   `);
 }
@@ -247,7 +260,7 @@ async function migrateAssets(): Promise<void> {
 // en MSSQL (ver library/documentNumbering.ts), pero con "RETURNING" en vez
 // de "OUTPUT" -sintaxis propia de Postgres para el mismo incremento atomico.
 async function migrateAssetTagCounters(): Promise<void> {
-  await postgres.query(`
+  await runDdl(`
     CREATE TABLE IF NOT EXISTS asset_tag_counters (
       prefix VARCHAR(10) PRIMARY KEY,
       next_seq INTEGER NOT NULL DEFAULT 0

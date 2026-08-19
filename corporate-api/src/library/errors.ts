@@ -87,11 +87,16 @@ export function isDuplicateObjectError(err: unknown): boolean {
 // es "otra replica ya dejo la tabla/fila en el estado correcto".
 // tedious representa un error de un statement simple (DDL, insert de 1 fila)
 // como {parent: {number}}, pero un bulkCreate (INSERT multi-fila) lo envuelve
-// en un AggregateError -{parent: {aggregateErrors: [{number}, ...]}}-, sin
-// "number" directo en el parent. Hace falta revisar ambas formas: se
-// encontro en un clean install real (3 replicas corriendo seedCountries en
-// paralelo, ver country.service.ts) que el chequeo original solo miraba la
-// forma "simple" y dejaba pasar esta variante sin capturar.
+// en un AggregateError nativo -tedious hace "new AggregateError(this.errors)"
+// (ver node_modules/tedious/lib/token/handler.js)-, cuya propiedad real es
+// ".errors" (spec de AggregateError), NO ".aggregateErrors". Ese nombre solo
+// existe en el JSON que pino imprime al loguear el error (pino-std-serializers
+// renombra ".errors" a "aggregateErrors" en su salida, ver err.js de ese
+// paquete) -el chequeo original leyo el campo del LOG en vez del objeto real,
+// asi que nunca hizo match: se encontro en un clean install real (2026-08-18,
+// Testing) con 3 replicas corriendo seedCountries en paralelo contra una
+// tabla countries recien creada -el guard debia tragarse el 2627 y no lo
+// hizo, tumbando el arranque de las 3 replicas pese a "estar ya arreglado".
 function extractMssqlErrorNumber(err: unknown): number | undefined {
   if (!(err instanceof Error)) return undefined;
   const parent = (err as { parent?: unknown; original?: unknown }).parent
@@ -101,7 +106,7 @@ function extractMssqlErrorNumber(err: unknown): number | undefined {
   const direct = (parent as { number?: number }).number;
   if (typeof direct === "number") return direct;
 
-  const aggregateErrors = (parent as { aggregateErrors?: Array<{ number?: number }> }).aggregateErrors;
+  const aggregateErrors = (parent as { errors?: Array<{ number?: number }> }).errors;
   return aggregateErrors?.find((entry) => typeof entry.number === "number")?.number;
 }
 
