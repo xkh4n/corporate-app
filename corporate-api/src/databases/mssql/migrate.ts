@@ -394,6 +394,11 @@ async function migrateBusinessPartners(): Promise<void> {
         person_id INT NOT NULL UNIQUE,
         employee_code NVARCHAR(20) NOT NULL UNIQUE,
         cost_center_id INT NOT NULL,
+        -- ObjectId de Mongo (coleccion positions) en formato string -cross-engine,
+        -- sin FK real, misma convencion que product_id en purchase_request_lines.
+        -- NULL a proposito: los colaboradores creados antes de este cambio no
+        -- tienen cargo asignado retroactivamente.
+        position_id NVARCHAR(24) NULL,
         created_by INT NULL,
         updated_by INT NULL,
         created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
@@ -402,6 +407,19 @@ async function migrateBusinessPartners(): Promise<void> {
         CONSTRAINT fk_employees_created_by FOREIGN KEY (created_by) REFERENCES users(id),
         CONSTRAINT fk_employees_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
       );
+    END
+  `);
+
+  // Guard manual (ver el de users.must_change_password mas arriba) para que
+  // una base que ya tenia "employees" de antes de este cambio tambien termine
+  // con la columna.
+  await runDdl(`
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.columns
+      WHERE object_id = OBJECT_ID('employees') AND name = 'position_id'
+    )
+    BEGIN
+      ALTER TABLE employees ADD position_id NVARCHAR(24) NULL;
     END
   `);
 

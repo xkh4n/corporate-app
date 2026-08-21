@@ -12,6 +12,11 @@ export class EmployeeModel extends Model<InferAttributes<EmployeeModel>, InferCr
   declare personId: number;
   declare employeeCode: string;
   declare costCenterId: number;
+  // ObjectId de Mongo (coleccion positions) en formato string -cross-engine,
+  // sin FK real, se valida a mano en services/mssql/employee.service.ts
+  // contra position.service.ts. NULL solo en colaboradores creados antes de
+  // que existiera el cargo (ver migrate.ts).
+  declare positionId: string | null;
   declare createdBy: number | null;
   declare updatedBy: number | null;
   declare createdAt: CreationOptional<Date>;
@@ -24,6 +29,7 @@ EmployeeModel.init(
     personId: { type: DataTypes.INTEGER, allowNull: false, unique: true, field: "person_id" },
     employeeCode: { type: DataTypes.STRING(20), allowNull: false, unique: true, field: "employee_code" },
     costCenterId: { type: DataTypes.INTEGER, allowNull: false, field: "cost_center_id" },
+    positionId: { type: DataTypes.STRING(24), allowNull: true, field: "position_id" },
     createdBy: { type: DataTypes.INTEGER, allowNull: true, field: "created_by" },
     updatedBy: { type: DataTypes.INTEGER, allowNull: true, field: "updated_by" },
     createdAt: { type: DataTypes.DATE, field: "created_at" },

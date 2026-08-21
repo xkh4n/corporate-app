@@ -18,26 +18,25 @@ import {
   personService,
   employeeService,
   userService,
-  roleService,
+  positionService,
   costCenterService
 } from "../../services";
-import type { City, Country, State, CostCenter, Role } from "../../types";
+import type { City, Country, State, CostCenter, Position } from "../../types";
 
 // Permisos requeridos para completar el flujo entero (no solo para ver la
-// pantalla): crea un Person + Address + Employee + User encadenados.
+// pantalla): crea un Person + Address + Employee + User encadenados, mas
+// employees:read para poblar el combo de Cargos (GET /positions reutiliza
+// ese permiso, ver position.routes.ts).
 const REQUIRED_PERMISSIONS = [
   "persons:create",
   "addresses:create",
   "employees:create",
+  "employees:read",
   "users:create",
 ] as const;
 
 // EMP + los digitos antes del guion del RUT (ej. "12.667.399-4" -> los
-// puntos se descartan igual que el guion- -> "EMP12667399"). Se calcula en
-// el front a partir del mismo documentId que ya se manda para crear la
-// Person -no hay endpoint de correlativo ni nada que reservar, es una
-// transformacion pura y determinista del mismo dato (decision del usuario:
-// mantener el JSON de POST /employees tal cual esta hoy en el backend).
+// puntos se descartan igual que el guion- -> "EMP12667399").
 function buildEmployeeCode(documentId: string): string {
   const digitsBeforeHyphen = documentId.split("-")[0].replace(/\D/g, "");
   return `EMP${digitsBeforeHyphen}`;
@@ -51,7 +50,7 @@ export default function CreatePersonPage() {
   const [cities, setCities] = useState<City[]>([]);
   const [states, setStates] = useState<State[]>([]);
   const [ccostos, setCcostos] = useState<CostCenter[]>([]);
-  const [roles, setRoles] = useState<Role[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
 
   const [principalName, setPrincipalName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -62,7 +61,7 @@ export default function CreatePersonPage() {
 
   const [ccostSelected, setCcostSelected] = useState("");
 
-  const [roleSelected, setRoleSelected] = useState("");
+  const [positionSelected, setPositionSelected] = useState("");
   const [username, setUsername] = useState("");
 
   const [addressType, setAddressType] = useState("PARTICULAR / COMERCIAL");
@@ -84,24 +83,18 @@ export default function CreatePersonPage() {
 
     (async () => {
       try {
-        const [countriesRes, citiesRes, statesRes, roleRes, costRes] = await Promise.all([
+        const [countriesRes, citiesRes, statesRes, positionRes, costRes] = await Promise.all([
           countryService.list({ limit: 1000 }),
           cityService.list({ limit: 1000 }),
           stateService.list({ limit: 1000 }),
-          roleService.list({ limit: 1000 }),
+          positionService.list({ limit: 1000 }),
           costCenterService.list({ limit: 1000 }),
         ]);
         if (cancelled) return;
         setCountries(countriesRes.items);
         setCities(citiesRes.items);
         setStates(statesRes.items);
-        // Un rol inactivo no puede usarse para iniciar sesion (login() en
-        // corporate-api lo rechaza con "Credenciales invalidas" -mismo
-        // mensaje generico que una password incorrecta, sin pista alguna):
-        // ofrecerlo en el combo deja crear un colaborador que nunca va a
-        // poder entrar. roleService.list no tiene filtro isActive server-side,
-        // se filtra aca.
-        setRoles(roleRes.items.filter((role) => role.isActive));
+        setPositions(positionRes.items);
         setCcostos(costRes.items);
       } catch (error) {
         handleError(error, navigate);
@@ -137,7 +130,7 @@ export default function CreatePersonPage() {
     setPhone01("");
     setBirthday("");
     setCcostSelected("");
-    setRoleSelected("");
+    setPositionSelected("");
     setUsername("");
     setAddressType("FISCAL");
     setAddressLine("");
@@ -176,7 +169,7 @@ export default function CreatePersonPage() {
     }
     if (!stateId) throw createValidationError("Debe seleccionar pais, ciudad y comuna");
     if (!ccostSelected) throw createValidationError("Debe seleccionar el centro de costo");
-    if (!roleSelected) throw createValidationError("Debe seleccionar el rol");
+    if (!positionSelected) throw createValidationError("Debe seleccionar el cargo");
     if (!username.trim() || username.trim().length < 3) {
       throw createValidationError("El nombre de usuario debe tener al menos 3 caracteres");
     }
@@ -218,17 +211,25 @@ export default function CreatePersonPage() {
           personId: pId,
           employeeCode: buildEmployeeCode(nationalId.trim()),
           costCenterId: Number(ccostSelected),
+          positionId: positionSelected,
         });
         empId = employee.id;
         setEmployeeId(empId);
       }
 
       if (!userCreated) {
+        // El rol del usuario ya no se elige directamente: se hereda del
+        // cargo seleccionado (Position.roleId, ver NuevoCargo.tsx) -asi el
+        // acceso al sistema queda gobernado por el cargo, no por una
+        // eleccion libre en este formulario.
+        const position = positions.find((item) => item.id === positionSelected);
+        if (!position) throw createValidationError("El cargo seleccionado no es valido");
+
         // Sin password: el backend aplica la password fija por defecto y
         // marca mustChangePassword (ver createUser en corporate-api).
         await userService.create({
           personId: pId,
-          roleId: Number(roleSelected),
+          roleId: position.roleId,
           username: username.trim(),
         });
         setUserCreated(true);
@@ -411,20 +412,20 @@ export default function CreatePersonPage() {
                             </Select>
                             </Field>
                         </div>
-                        {/* ROLES */}
+                        {/* CARGO */}
                         <div className="w-full max-[799px]:w-full min-[800px]:col-span-2 min-[1000px]:col-span-3 min-[1200px]:col-span-3 min-[1400px]:col-span-2">
-                            <Field label="Seleccione en Role" htmlFor="rol_user">
+                            <Field label="Cargo" htmlFor="position_user">
                             <Select
-                                id="rol_user"
+                                id="position_user"
                                 className="bg-zinc-100 focus:bg-indigo-100"
-                                value={roleSelected}
-                                onChange={(e) => setRoleSelected(e.target.value)}
+                                value={positionSelected}
+                                onChange={(e) => setPositionSelected(e.target.value)}
                                 required
                             >
-                                <option value="">Seleccione el Role</option>
-                                {roles.map((term) => (
-                                <option key={term.id} value={term.id}>
-                                    {term.name.toUpperCase()}
+                                <option value="">Seleccione el Cargo</option>
+                                {positions.map((position) => (
+                                <option key={position.id} value={position.id}>
+                                    {position.title.toUpperCase()}
                                 </option>
                                 ))}
                             </Select>

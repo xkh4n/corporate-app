@@ -17,6 +17,7 @@ export type * from "./menu";
 export type * from "./menuItem";
 export type * from "./permission";
 export type * from "./person";
+export type * from "./position";
 export type * from "./product";
 export type * from "./productCategory";
 export type * from "./purchaseOrder";

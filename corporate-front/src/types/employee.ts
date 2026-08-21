@@ -6,6 +6,9 @@ export interface Employee {
   personId: number;
   employeeCode: string;
   costCenterId: number;
+  // ObjectId de Mongo (coleccion positions), null solo en colaboradores
+  // creados antes de que existiera el cargo.
+  positionId: string | null;
   createdBy: number | null;
   updatedBy: number | null;
   createdAt: string;
@@ -17,9 +20,11 @@ export interface EmployeeCreateInput {
   personId: number;
   employeeCode: string;
   costCenterId: number;
+  positionId: string;
 }
 
 export interface EmployeeUpdateInput {
   employeeCode?: string;
   costCenterId?: number;
+  positionId?: string;
 }

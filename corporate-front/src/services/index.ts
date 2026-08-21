@@ -13,6 +13,7 @@ import {goodsReceiptService} from "./goodsReceiptService";
 import {menuItemService} from "./menuItemService";
 import {permissionService} from "./permissionService";
 import {personService} from "./personService";
+import {positionService} from "./positionService";
 import {productCategoryService} from "./productCategoryService";
 import {productService} from "./productService";
 import {purchaseOrderService} from "./purchaseOrderService";
@@ -45,6 +46,7 @@ export {
     menuItemService,
     permissionService,
     personService,
+    positionService,
     productCategoryService,
     productService,
     purchaseOrderService,

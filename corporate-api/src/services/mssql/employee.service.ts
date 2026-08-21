@@ -3,6 +3,7 @@ import { EmployeeModel } from "../../models/mssql/employee.model";
 import { PersonModel } from "../../models/mssql/person.model";
 import { getPersonByIdOrThrow } from "./person.service";
 import { getCostCenterByIdOrThrow } from "../postgres/costCenter.service";
+import { getPositionByIdOrThrow } from "../mongo/position.service";
 import { ConflictError, NotFoundError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
@@ -70,12 +71,13 @@ export async function getEmployeeByPersonId(personId: number): Promise<EmployeeM
   return EmployeeModel.findOne({ where: { personId } });
 }
 
-// personId debe existir en persons (mismo motor, FK real). costCenterId es
-// cross-engine hacia Postgres -sin FK real, validado a mano aca- (ver
-// memoria project-erp-scope-and-data-classification).
+// personId debe existir en persons (mismo motor, FK real). costCenterId y
+// positionId son cross-engine (Postgres y Mongo respectivamente) -sin FK
+// real, validados a mano aca (ver memoria project-erp-scope-and-data-classification).
 export async function createEmployee(data: EmployeeCreationAttributes): Promise<EmployeeModel> {
   await getPersonByIdOrThrow(data.personId);
   await getCostCenterByIdOrThrow(data.costCenterId);
+  if (data.positionId) await getPositionByIdOrThrow(data.positionId);
 
   const existing = await getEmployeeByPersonId(data.personId);
   if (existing) throw new ConflictError(`La persona ${data.personId} ya es colaborador`);
@@ -88,6 +90,9 @@ export async function updateEmployee(id: number, data: EmployeeUpdateAttributes)
   const employee = await getEmployeeByIdOrThrow(id);
   if (data.costCenterId !== undefined) {
     await getCostCenterByIdOrThrow(data.costCenterId);
+  }
+  if (data.positionId) {
+    await getPositionByIdOrThrow(data.positionId);
   }
   await employee.update(data);
   return employee;

@@ -9,7 +9,6 @@ import { DashboardPage } from "../pages/dashboard/DashboardPage";
 import { ModulePlaceholder } from "../pages/module-placeholder/ModulePlaceholder";
 import { ForbiddenPage } from "../pages/forbidden/ForbiddenPage";
 import CreateBusinessPartnerPage from "../pages/adquisiciones/proveedores/createBusinessPartner";
-import CreatePersonPage from "../pages/personas/CrearPersona";
 import CreateRequest from "../pages/solicitudes/CreateRequest";
 import AproveRequest from "../pages/solicitudes/AproveRequest";
 import CreateProducts from "../pages/adquisiciones/productos/CreateProducts";
@@ -19,7 +18,8 @@ import ViewProductCategory from "../pages/adquisiciones/category/ViewProductCate
 import UpdateProductCategory from "../pages/adquisiciones/category/UpdateProductCategory";
 import NuevaPantalla from "../pages/pantallas/NuevaPantalla";
 import AsignarPermisos from "../pages/pantallas/AsignarPermisos";
-import { AsignarPermissionToRole, ListarRole, NuevoRole } from "../pages/personas/Roles";
+import { AsignarPermissionToRole, NuevoRole } from "../pages/permissions";
+import { ListarRole, CreatePersonPage, NuevoCargo } from "../pages/personas";
 import { flattenMenuLinks } from "../lib/menu";
 
 // Vistas reales ya implementadas, mapeadas por el "link" exacto del
@@ -41,6 +41,7 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/roles/create": () => <NuevoRole />,
   "/roles/update": () => <AsignarPermissionToRole />,
   "/roles/read": () => <ListarRole />,
+  "/employees/cargos": () => <NuevoCargo />,
 };
 
 // Fuerza /change-password antes de cualquier otra ruta protegida mientras

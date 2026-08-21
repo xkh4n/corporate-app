@@ -281,9 +281,9 @@ export default function CreateRequest() {
         ) : (
           <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
             <form onSubmit={(event) => void handleSubmit(event)} className="w-full">
-              <div className="grid grid-cols-1 max-[799px]:grid-cols-1 min-[800px]:grid-cols-6 min-[1000px]:grid-cols-8 min-[1200px]:grid-cols-10 min-[1400px]:grid-cols-12 gap-4">
+              <div className="grid grid-cols-1 max-[799px]:grid-cols-1 min-[800px]:grid-cols-6 min-[1000px]:grid-cols-8 min-[1200px]:grid-cols-12 min-[1400px]:grid-cols-12 gap-4">
                 {/* SOLICITANTE (usuario logeado, solo lectura) */}
-                <div className="w-full max-[799px]:w-full min-[800px]:col-span-3 min-[1000px]:col-span-4 min-[1200px]:col-span-3 min-[1400px]:col-span-3">
+                <div className="w-full max-[799px]:w-full min-[800px]:col-span-3 min-[1000px]:col-span-4 min-[1200px]:col-span-3 min-[1400px]:col-span-4">
                   <Field label="Solicitante" htmlFor="requesterDisplay">
                     <Input
                       id="requesterDisplay"
@@ -294,7 +294,7 @@ export default function CreateRequest() {
                   </Field>
                 </div>
                 {/* CARGO SOLICITANTE (rol del usuario logeado, solo lectura) */}
-                <div className="w-full max-[799px]:w-full min-[800px]:col-span-3 min-[1000px]:col-span-4 min-[1200px]:col-span-3 min-[1400px]:col-span-3">
+                <div className="w-full max-[799px]:w-full min-[800px]:col-span-3 min-[1000px]:col-span-4 min-[1200px]:col-span-3 min-[1400px]:col-span-4">
                   <Field label="Cargo del Solicitante" htmlFor="requesterPositionDisplay">
                     <Input
                       id="requesterPositionDisplay"
@@ -305,7 +305,7 @@ export default function CreateRequest() {
                   </Field>
                 </div>
                 {/* RUT BENEFICIARIO */}
-                <div className="w-full max-[799px]:w-full min-[800px]:col-span-3 min-[1000px]:col-span-4 min-[1200px]:col-span-3 min-[1400px]:col-span-3">
+                <div className="w-full max-[799px]:w-full min-[800px]:col-span-3 min-[1000px]:col-span-4 min-[1200px]:col-span-3 min-[1400px]:col-span-4">
                   <Field label="RUT Beneficiario" htmlFor="beneficiaryDocumentId">
                     <div className="flex gap-2">
                       <Input
@@ -328,7 +328,7 @@ export default function CreateRequest() {
                   </Field>
                 </div>
                 {/* BENEFICIARIO (se completa al validar el RUT) */}
-                <div className="w-full max-[799px]:w-full min-[800px]:col-span-3 min-[1000px]:col-span-4 min-[1200px]:col-span-3 min-[1400px]:col-span-3">
+                <div className="w-full max-[799px]:w-full min-[800px]:col-span-3 min-[1000px]:col-span-4 min-[1200px]:col-span-3 min-[1400px]:col-span-4">
                   <Field label="Beneficiario" htmlFor="beneficiaryName">
                     <Input
                       id="beneficiaryName"
@@ -340,7 +340,7 @@ export default function CreateRequest() {
                   </Field>
                 </div>
                 {/* CENTRO DE COSTO */}
-                <div className="w-full max-[799px]:w-full min-[800px]:col-span-2 min-[1000px]:col-span-4 min-[1200px]:col-span-2 min-[1400px]:col-span-4">
+                <div className="w-full max-[799px]:w-full min-[800px]:col-span-3 min-[1000px]:col-span-4 min-[1200px]:col-span-3 min-[1400px]:col-span-4">
                   <Field label="Centro de Costo" htmlFor="costCenterId">
                     <Select
                       id="costCenterId"
@@ -378,7 +378,7 @@ export default function CreateRequest() {
                   </Field>
                 </div>
                 {/* EMAIL SOLICITANTE */}
-                <div className="w-full max-[799px]:w-full min-[800px]:col-span-3 min-[1000px]:col-span-4 min-[1200px]:col-span-3 min-[1400px]:col-span-4">
+                <div className="w-full max-[799px]:w-full min-[800px]:col-span-3 min-[1000px]:col-span-4 min-[1200px]:col-span-3 min-[1400px]:col-span-6">
                   <Field label="Correo del Solicitante" htmlFor="requesterEmail">
                     <Input
                       id="requesterEmail"
@@ -391,7 +391,7 @@ export default function CreateRequest() {
                   </Field>
                 </div>
                 {/* TELEFONO SOLICITANTE */}
-                <div className="w-full max-[799px]:w-full min-[800px]:col-span-3 min-[1000px]:col-span-4 min-[1200px]:col-span-3 min-[1400px]:col-span-4">
+                <div className="w-full max-[799px]:w-full min-[800px]:col-span-3 min-[1000px]:col-span-4 min-[1200px]:col-span-3 min-[1400px]:col-span-6">
                   <Field label="Telefono del Solicitante" htmlFor="requesterPhone">
                     <Input
                       id="requesterPhone"
@@ -404,7 +404,7 @@ export default function CreateRequest() {
                   </Field>
                 </div>
                 {/* OBSERVACIONES */}
-                <div className="w-full max-[799px]:w-full min-[800px]:col-span-6 min-[1000px]:col-span-8 min-[1200px]:col-span-10 min-[1400px]:col-span-12">
+                <div className="w-full max-[799px]:w-full min-[800px]:col-span-6 min-[1000px]:col-span-8 min-[1200px]:col-span-12 min-[1400px]:col-span-12">
                   <Field label="Observaciones" htmlFor="notes">
                     <Textarea
                       id="notes"

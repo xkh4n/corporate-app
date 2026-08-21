@@ -38,6 +38,15 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     permissionKey: "employees:create",
     sortOrder: 10,
   },
+  { label: "Cargos", icon: "IoLibrary", parentLabel: "Colaboradores", sortOrder: 10 },
+  {
+    label: "Nuevo Cargo",
+    icon: "IoDocumentAttachOutline",
+    link: "/employees/cargos",
+    parentLabel: "Cargos",
+    permissionKey: "employees:create",
+    sortOrder: 10,
+  },
   { label: "Roles", icon: "IoLibrary", parentLabel: "Gerencia de Personas", sortOrder: 10 },
 
   {

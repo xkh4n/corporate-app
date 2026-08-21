@@ -8,6 +8,9 @@ export const createEmployeeSchema = z.object({
   personId: z.number().int().positive(),
   employeeCode: z.string().min(1).max(20),
   costCenterId: z.number().int().positive(),
+  // ObjectId de Mongo (coleccion positions) -mismo criterio que categoryId
+  // en product.controller.ts.
+  positionId: z.string().length(24),
 });
 
 export const updateEmployeeSchema = createEmployeeSchema.omit({ personId: true }).partial();
