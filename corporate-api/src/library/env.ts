@@ -50,12 +50,28 @@ export const env = {
     database: requireEnv("MSSQL_DBNAME"),
     user: requireEnv("MSSQL_APP_USER"),
     passwordFileVar: "MSSQL_APP_USER_PASSWORD_FILE",
+    // Default true en todos lados (Development/Testing/Production ya
+    // conectan por hostname de contenedor, nunca por IP). Solo
+    // corporate-api/.env.test lo pone en false: tedious tiene un bug/
+    // limitacion conocida (message-io.js startTls pasa el host directo como
+    // TLS "servername" sin el guard "es una IP?" que si tiene el otro path
+    // de encryption, connection-manager.js) que hace que Node rechace la
+    // conexion cuando el host es un literal de IP -exactamente el caso de
+    // los tests de integracion corriendo en el host contra el puerto
+    // publicado del stack de Testing (ver TESTING.md)-. No degrada
+    // Development/Testing/Production: ninguno de esos conecta por IP.
+    encrypt: boolEnv("MSSQL_ENCRYPT", true),
   },
 
   redis: {
     host: optionalEnv("REDIS_HOST", "localhost"),
     port: intEnv("REDIS_INTERNAL_PORT", 6379),
     passwordFileVar: "REDIS_PASSWORD_FILE",
+    // Indice de base logica dentro de la misma instancia (SELECT n), no un
+    // host/puerto distinto. Default 0 (el que ya usan sesiones/refresh
+    // tokens reales); los tests de integracion usan REDIS_DB=1 para que
+    // flushDb() en test/setupIntegration.ts nunca toque sesiones de dev.
+    db: intEnv("REDIS_DB", 0),
   },
 
   mongo: {
@@ -64,6 +80,16 @@ export const env = {
     database: requireEnv("MONGO_DATABASE"),
     user: requireEnv("MONGO_USER"),
     passwordFileVar: "MONGO_USER_PASSWORD_FILE",
+    // Default false en todos lados: Development/Testing/Production conectan
+    // al primario DENTRO de la misma red Docker, donde tambien puede
+    // alcanzar (por hostname) al resto del replica set para el discovery
+    // normal del driver. Solo corporate-api/.env.test lo pone en true: desde
+    // el host, unicamente el primario esta publicado (ver nginx L4 de
+    // corporate-infra) -sin directConnection, el driver intenta descubrir
+    // secundario/arbiter por su hostname interno de Docker, no resuelve
+    // desde el host, y la conexion se cuelga hasta el timeout del hook de
+    // Vitest en vez de fallar rapido-.
+    directConnection: boolEnv("MONGO_DIRECT_CONNECTION", false),
   },
 
   pool: {

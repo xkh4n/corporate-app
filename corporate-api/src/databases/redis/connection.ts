@@ -13,6 +13,7 @@ const password = readSecretFromEnv(env.redis.passwordFileVar);
 export const redis = createClient({
   socket: { host: env.redis.host, port: env.redis.port },
   password,
+  database: env.redis.db,
 });
 
 redis.on("error", (err) => logger.error({ err }, "Error de conexion a Redis"));

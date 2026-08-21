@@ -19,7 +19,7 @@ export const mssql = new Sequelize({
       // Certificado autofirmado de dev (mismo criterio que "sqlcmd -C" en
       // corporate-infra/MsSQL/scripts/*.sh): confia en el cert sin validarlo
       // contra una CA. Revisar antes de usar esto contra un ambiente real.
-      encrypt: true,
+      encrypt: env.mssql.encrypt,
       trustServerCertificate: true,
     },
   },

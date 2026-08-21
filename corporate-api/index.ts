@@ -11,47 +11,7 @@ import { seedBootstrapAdmin, seedGeography, seedMenuItems, seedPermissions } fro
 import { seedCostCenters } from "./src/services/postgres/costCenter.service";
 import { seedProducts } from "./src/services/mongo/product.service";
 import { seedProductCategories } from "./src/services/mongo/productCategory.service";
-
-// Registra las asociaciones de Sequelize (belongsTo/hasOne/hasMany en cada
-// *.model.ts) antes de que cualquier query las necesite.
-import "./src/models/mssql/person.model";
-import "./src/models/mssql/user.model";
-import "./src/models/mssql/passwordHistory.model";
-import "./src/models/postgres/role.model";
-import "./src/models/postgres/permission.model";
-import "./src/models/postgres/rolePermission.model";
-import "./src/models/postgres/menuItem.model";
-
-// Geografia (country -> city -> states)
-import "./src/models/mssql/country.model";
-import "./src/models/mssql/city.model";
-import "./src/models/mssql/state.model";
-
-// Terceros (business_partners + extensiones supplier/customer) y empleados
-import "./src/models/mssql/businessPartner.model";
-import "./src/models/mssql/supplierServiceType.model";
-import "./src/models/mssql/supplierDeliveryTerms.model";
-import "./src/models/mssql/supplier.model";
-import "./src/models/mssql/supplierProduct.model";
-import "./src/models/mssql/supplierContact.model";
-import "./src/models/mssql/customer.model";
-import "./src/models/mssql/employee.model";
-import "./src/models/mssql/address.model";
-
-// Flujo de compras: PurchaseRequest -> Quote -> Authorization -> PurchaseOrder -> GoodsReceipt
-import "./src/models/mssql/purchaseRequest.model";
-import "./src/models/mssql/purchaseRequestLine.model";
-import "./src/models/mssql/quote.model";
-import "./src/models/mssql/authorization.model";
-import "./src/models/mssql/purchaseOrder.model";
-import "./src/models/mssql/goodsReceipt.model";
-
-// Activos (Postgres)
-import "./src/models/postgres/costCenter.model";
-import "./src/models/postgres/assetStatus.model";
-import "./src/models/postgres/asset.model";
-import "./src/models/postgres/assetMovement.model";
-import "./src/models/postgres/assetMovementUser.model";
+import "./src/databases/registerModels";
 
 async function bootstrap(): Promise<void> {
   await Promise.all([connectPostgres(), connectMssql(), connectRedis(), connectMongo()]);
