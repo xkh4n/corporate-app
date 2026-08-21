@@ -1,4 +1,4 @@
-import { Schema, model, Document } from "mongoose";
+import mongoose, { Schema, model, Document, Model } from "mongoose";
 import type { ProductType } from "../../types/mongo/product.types";
 import { idJsonTransform } from "../../library/mongoSchema";
 
@@ -41,4 +41,11 @@ const productSchema = new Schema<ProductDocument>(
   { timestamps: true, collection: "products", toJSON: idJsonTransform },
 );
 
-export const ProductModel = model<ProductDocument>("Product", productSchema);
+// Guard contra "OverwriteModelError: Cannot overwrite `Product` model once
+// compiled": Vitest reevalua este archivo por cada test file de integracion
+// que lo importa (modulo aislado por archivo), pero el registro interno de
+// mongoose.models es un singleton que persiste entre esas reevaluaciones
+// dentro del mismo proceso -sin este guard, el segundo test file que toca
+// Product tumbaba la coleccion entera con ese error.
+export const ProductModel =
+  (mongoose.models.Product as Model<ProductDocument> | undefined) ?? model<ProductDocument>("Product", productSchema);

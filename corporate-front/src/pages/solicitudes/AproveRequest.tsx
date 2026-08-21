@@ -18,15 +18,22 @@ const REQUIRED_PERMISSIONS = [
   "purchase-request-lines:update",
 ] as const;
 
-// Estados del flujo de aprobacion todavia no definidos del todo (ver
-// PurchaseRequestStatus): se muestran tal cual los devuelve el backend,
-// solo con un color por si acaso encaja con uno de los ya conocidos.
+// Un color por estado (ver PurchaseRequestStatus, library/purchaseRequestStatus.ts
+// en corporate-api): mismo criterio en toda la cadena, verde = avanzo,
+// ambar = esperando accion de alguien, rojo/gris = terminal.
 const STATUS_STYLES: Record<string, string> = {
   DRAFT: "bg-slate-200 text-slate-600",
   SUBMITTED: "bg-amber-100 text-amber-700",
   PENDING: "bg-amber-100 text-amber-700",
   APPROVED: "bg-emerald-100 text-emerald-700",
   REJECTED: "bg-red-100 text-red-700",
+  IN_QUOTATION: "bg-sky-100 text-sky-700",
+  APPROVE_QUOTE: "bg-amber-100 text-amber-700",
+  QUOTE_APPROVED: "bg-emerald-100 text-emerald-700",
+  OC_GENERATED: "bg-sky-100 text-sky-700",
+  PENDING_DELIVERY: "bg-amber-100 text-amber-700",
+  AVAILABLE: "bg-emerald-100 text-emerald-700",
+  DELIVERED: "bg-emerald-100 text-emerald-700",
   CLOSED: "bg-slate-200 text-slate-600",
   CANCELLED: "bg-slate-200 text-slate-600",
 };
@@ -67,6 +74,7 @@ export default function AproveRequest() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [lineDrafts, setLineDrafts] = useState<LineDraft[]>([]);
   const [savingDecisions, setSavingDecisions] = useState(false);
+  const [rejectingRequest, setRejectingRequest] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,7 +82,15 @@ export default function AproveRequest() {
     (async () => {
       setLoading(true);
       try {
-        const res = await purchaseRequestService.listMyApprovals({ limit: 100, search: search.trim() || undefined });
+        // Solo lo que todavia esta esperando una decision de cabecera: una
+        // vez APPROVED, la solicitud sigue su camino (cotizacion, etc.) y ya
+        // no le corresponde a esta cola -ver requestQuotation/
+        // requestQuoteApproval en purchaseRequest.service.ts.
+        const res = await purchaseRequestService.listMyApprovals({
+          status: "DRAFT,SUBMITTED",
+          limit: 100,
+          search: search.trim() || undefined,
+        });
         if (cancelled) return;
         setRequests(res.items);
       } catch (error) {
@@ -201,8 +217,28 @@ export default function AproveRequest() {
     }
   }
 
+  // Rechazo de la CABECERA (distinto de rechazar una linea puntual, ver
+  // setDecision): solo tiene sentido mientras la solicitud sigue esperando
+  // esta decision -DRAFT/SUBMITTED, mismas transiciones que
+  // PURCHASE_REQUEST_TRANSITIONS en el backend-.
+  async function handleRejectRequest(): Promise<void> {
+    if (!selectedRequest) return;
+    setRejectingRequest(true);
+    try {
+      await purchaseRequestService.updateStatus(selectedRequest.id, "REJECTED");
+      showSuccessToast(`Solicitud ${selectedRequest.requestNumber} rechazada`);
+      handleBackToList();
+      setRequests((prev) => prev.filter((item) => item.id !== selectedRequest.id));
+    } catch (error) {
+      handleError(error, navigate);
+    } finally {
+      setRejectingRequest(false);
+    }
+  }
+
   if (selectedRequest) {
     const hasPendingDecisions = lineDrafts.some((draft) => draft.decision !== null);
+    const canRejectRequest = selectedRequest.status === "DRAFT" || selectedRequest.status === "SUBMITTED";
 
     return (
       <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
@@ -215,9 +251,22 @@ export default function AproveRequest() {
             <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h1 className="text-xl font-bold text-gray-600">Solicitud {selectedRequest.requestNumber}</h1>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadgeClass(selectedRequest.status)}`}>
-                  {selectedRequest.status}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadgeClass(selectedRequest.status)}`}>
+                    {selectedRequest.status}
+                  </span>
+                  {canRejectRequest && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="bg-red-600 text-white hover:bg-red-700 border-red-600"
+                      loading={rejectingRequest}
+                      onClick={() => void handleRejectRequest()}
+                    >
+                      Rechazar Solicitud
+                    </Button>
+                  )}
+                </div>
               </div>
               <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-slate-600 min-[800px]:grid-cols-3">
                 <p>

@@ -1,8 +1,21 @@
 import type { Person } from "./person";
 import type { SafeUser } from "./user";
 
-// Espejo de corporate-api/src/models/postgres/purchaseRequest.model.ts (PurchaseRequestAttributes).
-export type PurchaseRequestStatus = "DRAFT" | "SUBMITTED" | "APPROVED" | "REJECTED" | "CLOSED" | "CANCELLED";
+// Espejo de corporate-api/src/library/purchaseRequestStatus.ts (PURCHASE_REQUEST_STATUSES).
+export type PurchaseRequestStatus =
+  | "DRAFT"
+  | "SUBMITTED"
+  | "APPROVED"
+  | "REJECTED"
+  | "IN_QUOTATION"
+  | "APPROVE_QUOTE"
+  | "QUOTE_APPROVED"
+  | "OC_GENERATED"
+  | "PENDING_DELIVERY"
+  | "AVAILABLE"
+  | "DELIVERED"
+  | "CANCELLED"
+  | "CLOSED";
 
 // requestNumber y status son generados/controlados por el servidor: nunca se mandan en create/update.
 export interface PurchaseRequest {

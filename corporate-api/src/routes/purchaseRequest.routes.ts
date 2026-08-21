@@ -27,6 +27,11 @@ purchaseRequestRouter.get(
   purchaseRequestController.listMyApprovals,
 );
 purchaseRequestRouter.get(
+  "/my-requests",
+  authorize("purchase-requests", "create"),
+  purchaseRequestController.listMyRequests,
+);
+purchaseRequestRouter.get(
   "/:id",
   authorize("purchase-requests", "read"),
   purchaseRequestController.getById,
@@ -73,4 +78,17 @@ purchaseRequestRouter.patch(
   authorize("purchase-requests", "approve"),
   validateBody(purchaseRequestController.updateStatusSchema),
   purchaseRequestController.updateStatus,
+);
+// Mismo permiso que crear una cotizacion (quotes:create): abrir/cerrar la
+// etapa de cotizacion es parte del mismo trabajo que cargar las cotizaciones
+// en si, no una accion separada del catalogo.
+purchaseRequestRouter.post(
+  "/:id/request-quotation",
+  authorize("quotes", "create"),
+  purchaseRequestController.requestQuotation,
+);
+purchaseRequestRouter.post(
+  "/:id/request-quote-approval",
+  authorize("quotes", "create"),
+  purchaseRequestController.requestQuoteApproval,
 );

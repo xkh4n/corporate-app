@@ -21,6 +21,12 @@ export const purchaseRequestService = {
   listMyApprovals: (params?: ListParams) =>
     apiFetch<Paginated<PurchaseRequest>>(`/purchase-requests/my-approvals${toQuery(params)}`),
 
+  // Solo lo que le corresponde SEGUIR al solicitante logeado (badge de
+  // notificaciones de la Fase B, AttachPurchaseOrder.tsx de la Fase C) -exige
+  // purchase-requests:create, no purchase-requests:read.
+  listMyRequests: (params?: ListParams) =>
+    apiFetch<Paginated<PurchaseRequest>>(`/purchase-requests/my-requests${toQuery(params)}`),
+
   getById: (id: number) => apiFetch<PurchaseRequest>(`/purchase-requests/${id}`),
 
   create: (input: PurchaseRequestCreateInput) =>
@@ -31,6 +37,14 @@ export const purchaseRequestService = {
 
   updateStatus: (id: number, status: PurchaseRequestStatus) =>
     apiFetch<PurchaseRequest>(`/purchase-requests/${id}/status`, { method: "PATCH", body: { status } }),
+
+  // Paso 3 del flujo ("Solicitar Cotización"): APPROVED -> IN_QUOTATION.
+  requestQuotation: (id: number) =>
+    apiFetch<PurchaseRequest>(`/purchase-requests/${id}/request-quotation`, { method: "POST" }),
+
+  // Paso 4 del flujo ("Solicitar Autorización"): IN_QUOTATION -> APPROVE_QUOTE.
+  requestQuoteApproval: (id: number) =>
+    apiFetch<PurchaseRequest>(`/purchase-requests/${id}/request-quote-approval`, { method: "POST" }),
 
   // Descarga el PDF de cotizacion (stream binario, no JSON envelope).
   downloadQuoteDocument: (id: number, supplierId?: number) =>

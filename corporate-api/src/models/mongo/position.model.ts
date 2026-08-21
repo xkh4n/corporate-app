@@ -1,4 +1,4 @@
-import { Schema, model, Document } from "mongoose";
+import mongoose, { Schema, model, Document, Model } from "mongoose";
 import { idJsonTransform } from "../../library/mongoSchema";
 
 // Cargos/funciones a los que se asigna un colaborador (Employee) -vive en
@@ -35,4 +35,8 @@ const positionSchema = new Schema<PositionDocument>(
   { timestamps: true, collection: "positions", toJSON: idJsonTransform },
 );
 
-export const PositionModel = model<PositionDocument>("Position", positionSchema);
+// Guard contra OverwriteModelError bajo Vitest -ver el comentario en
+// product.model.ts.
+export const PositionModel =
+  (mongoose.models.Position as Model<PositionDocument> | undefined) ??
+  model<PositionDocument>("Position", positionSchema);

@@ -1,4 +1,4 @@
-import { Schema, model, Document } from "mongoose";
+import mongoose, { Schema, model, Document, Model } from "mongoose";
 import { idJsonTransform } from "../../library/mongoSchema";
 
 // Lista abierta (el usuario dio ejemplos y dijo "etc") -coleccion lookup, no
@@ -20,4 +20,8 @@ const productCategorySchema = new Schema<ProductCategoryDocument>(
   { timestamps: true, collection: "product_categories", toJSON: idJsonTransform },
 );
 
-export const ProductCategoryModel = model<ProductCategoryDocument>("ProductCategory", productCategorySchema);
+// Guard contra OverwriteModelError bajo Vitest -ver el comentario en
+// product.model.ts.
+export const ProductCategoryModel =
+  (mongoose.models.ProductCategory as Model<ProductCategoryDocument> | undefined) ??
+  model<ProductCategoryDocument>("ProductCategory", productCategorySchema);

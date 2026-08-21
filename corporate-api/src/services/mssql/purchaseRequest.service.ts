@@ -5,6 +5,7 @@ import { mssql } from "../../databases/mssql/connection";
 import { PurchaseRequestModel } from "../../models/mssql/purchaseRequest.model";
 import { PersonModel } from "../../models/mssql/person.model";
 import { UserModel } from "../../models/mssql/user.model";
+import { QuoteModel } from "../../models/mssql/quote.model";
 import { getPersonByIdOrThrow } from "./person.service";
 import { getUserByIdOrThrow, listUsersByRoleIds } from "./user.service";
 import { getCostCenterByIdOrThrow } from "../postgres/costCenter.service";
@@ -18,11 +19,13 @@ import { getProductCategoriesByIds } from "../mongo/productCategory.service";
 import { generateDocumentNumber } from "../../library/documentNumbering";
 import { getQuoteRequestFolder } from "../../library/documentStorage";
 import { sendMailViaMailer } from "../../library/mailerClient";
-import { NotFoundError, BadRequestError } from "../../library/errors";
+import { NotFoundError, BadRequestError, ForbiddenError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type { QuoteRequestPdfData } from "../../library/pdf/quoteRequestPdf";
+import { assertPurchaseRequestTransition } from "../../library/purchaseRequestStatus";
+import type { PurchaseRequestStatus } from "../../library/purchaseRequestStatus";
 import type {
   PurchaseRequestCreationAttributes,
   PurchaseRequestUpdateAttributes,
@@ -38,11 +41,15 @@ const includeParties = [
 
 const SEARCH_FIELDS = ["requestNumber", "notes", "status", "priority"];
 
+function buildStatusWhere(status?: string[]): Record<string, unknown> {
+  return status && status.length > 0 ? { status: { [Op.in]: status } } : {};
+}
+
 export async function listPurchaseRequests(
   params: PaginationParams,
 ): Promise<{ items: PurchaseRequestModel[]; total: number }> {
   const { rows, count } = await PurchaseRequestModel.findAndCountAll({
-    where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like),
+    where: { ...buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like), ...buildStatusWhere(params.status) },
     order: buildSequelizeOrder(params.sortBy, params.sortOrder),
     limit: params.limit,
     offset: getOffset(params),
@@ -63,7 +70,33 @@ export async function listPurchaseRequestsForApprover(
   params: PaginationParams,
 ): Promise<{ items: PurchaseRequestModel[]; total: number }> {
   const { rows, count } = await PurchaseRequestModel.findAndCountAll({
-    where: { ...buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like), approverId },
+    where: {
+      ...buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like),
+      ...buildStatusWhere(params.status),
+      approverId,
+    },
+    order: buildSequelizeOrder(params.sortBy, params.sortOrder),
+    limit: params.limit,
+    offset: getOffset(params),
+    include: includeParties,
+  });
+  return { items: rows, total: count };
+}
+
+// Solo lo que le corresponde SEGUIR al solicitante (badge de notificaciones
+// de la Fase B, pantalla de adjuntar OC de la Fase C): espejo exacto de
+// listPurchaseRequestsForApprover pero filtrando por requesterId en vez de
+// approverId.
+export async function listPurchaseRequestsForRequester(
+  requesterId: number,
+  params: PaginationParams,
+): Promise<{ items: PurchaseRequestModel[]; total: number }> {
+  const { rows, count } = await PurchaseRequestModel.findAndCountAll({
+    where: {
+      ...buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.like),
+      ...buildStatusWhere(params.status),
+      requesterId,
+    },
     order: buildSequelizeOrder(params.sortBy, params.sortOrder),
     limit: params.limit,
     offset: getOffset(params),
@@ -134,8 +167,18 @@ export async function updatePurchaseRequest(
   return request;
 }
 
-const VALID_STATUSES = ["DRAFT", "SUBMITTED", "APPROVED", "REJECTED", "CLOSED", "CANCELLED"] as const;
-export type PurchaseRequestStatus = (typeof VALID_STATUSES)[number];
+// Segregacion de funciones: solo el aprobador ASIGNADO a esta solicitud
+// puede actuar sobre ella (aprobar/rechazar/cancelar el header, y en la Fase
+// B tambien elegir la cotizacion ganadora) -no cualquier usuario con el
+// permiso generico purchase-requests:approve. Deliberadamente SIN bypass de
+// admin (a diferencia de authorize()): un admin saltandose esta regla ya no
+// es segregacion de funciones. No "arreglar" esto agregando un atajo para
+// admin mas adelante.
+export function assertIsAssignedApprover(request: PurchaseRequestModel, userId: number): void {
+  if (request.approverId !== userId) {
+    throw new ForbiddenError("Solo el aprobador asignado a esta solicitud puede actuar sobre ella");
+  }
+}
 
 export async function updatePurchaseRequestStatus(
   id: number,
@@ -143,7 +186,38 @@ export async function updatePurchaseRequestStatus(
   updatedBy?: number,
 ): Promise<PurchaseRequestModel> {
   const request = await getPurchaseRequestByIdOrThrow(id);
+  assertPurchaseRequestTransition(request.status as PurchaseRequestStatus, status);
+  if (status === "APPROVED" || status === "REJECTED" || status === "CANCELLED") {
+    // Sin actor identificado no se puede verificar que sea el aprobador
+    // asignado -fail closed, no se asume que esta bien.
+    if (updatedBy === undefined) throw new ForbiddenError("No se pudo identificar al usuario que realiza la accion");
+    assertIsAssignedApprover(request, updatedBy);
+  }
   await request.update({ status, updatedBy });
+  return request;
+}
+
+// Paso 3 del flujo: el analista/supervisor de adquisiciones (quotes:create)
+// abre la etapa de cotizacion sobre una solicitud ya APPROVED.
+export async function requestQuotation(requestId: number, updatedBy: number): Promise<PurchaseRequestModel> {
+  const request = await getPurchaseRequestByIdOrThrow(requestId);
+  assertPurchaseRequestTransition(request.status as PurchaseRequestStatus, "IN_QUOTATION");
+  await request.update({ status: "IN_QUOTATION", updatedBy });
+  return request;
+}
+
+// Paso 4 del flujo ("Solicitar Autorización"): cierra la carga de
+// cotizaciones (ver el gate en quote.service.ts, createQuote/
+// attachQuoteDocument exigen IN_QUOTATION) y deja la solicitud esperando que
+// el aprobador asignado elija la cotizacion ganadora (Fase B).
+export async function requestQuoteApproval(requestId: number, updatedBy: number): Promise<PurchaseRequestModel> {
+  const request = await getPurchaseRequestByIdOrThrow(requestId);
+  assertPurchaseRequestTransition(request.status as PurchaseRequestStatus, "APPROVE_QUOTE");
+  const quoteCount = await QuoteModel.count({ where: { requestId } });
+  if (quoteCount === 0) {
+    throw new BadRequestError("La solicitud no tiene ninguna cotizacion cargada todavia");
+  }
+  await request.update({ status: "APPROVE_QUOTE", updatedBy });
   return request;
 }
 

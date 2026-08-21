@@ -29,6 +29,11 @@ export interface ListParams {
   search?: string;
   sortBy?: string;
   sortOrder?: "asc" | "desc";
+  // Coma-separado (ej. "APPROVED,IN_QUOTATION"), ver library/pagination.ts
+  // en corporate-api. Se declara como string generico (no un union de
+  // PurchaseRequestStatus) porque ListParams es comun a todos los listados
+  // paginados, no solo a solicitudes de compra.
+  status?: string;
 }
 
 // Forma estandar de error (errorHandler.ts). El rate limiter del login es la

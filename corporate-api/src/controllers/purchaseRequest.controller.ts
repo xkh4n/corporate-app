@@ -7,6 +7,7 @@ import { archiveQuoteRequestPdf, renderQuoteRequestPdf } from "../library/pdf/qu
 import { getQuoteRequestFolder, listFiles } from "../library/documentStorage";
 import { NotFoundError } from "../library/errors";
 import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
+import { PURCHASE_REQUEST_STATUSES } from "../library/purchaseRequestStatus";
 import { sendList, sendOk } from "../library/response";
 
 export const createPurchaseRequestSchema = z.object({
@@ -35,7 +36,7 @@ export const updatePurchaseRequestSchema = createPurchaseRequestSchema
   .partial();
 
 export const updateStatusSchema = z.object({
-  status: z.enum(["DRAFT", "SUBMITTED", "APPROVED", "REJECTED", "CLOSED", "CANCELLED"]),
+  status: z.enum(PURCHASE_REQUEST_STATUSES),
 });
 
 export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -73,6 +74,23 @@ export async function listMyApprovals(req: Request, res: Response, next: NextFun
       params,
     );
     sendList(res, items, buildPaginationMeta(params, total), "Solicitudes por aprobar obtenidas exitosamente");
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Solo lo que le corresponde SEGUIR al solicitante logeado (badge de
+// notificaciones de la Fase B, pantalla de adjuntar OC de la Fase C) -mismo
+// criterio que listMyApprovals pero filtrando por requesterId (personId del
+// usuario logeado), no approverId.
+export async function listMyRequests(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const params = parsePaginationParams({ ...req.query, ...req.body }, "id", "desc");
+    const { items, total } = await purchaseRequestService.listPurchaseRequestsForRequester(
+      req.user!.personId,
+      params,
+    );
+    sendList(res, items, buildPaginationMeta(params, total), "Mis solicitudes obtenidas exitosamente");
   } catch (err) {
     next(err);
   }
@@ -122,6 +140,27 @@ export async function updateStatus(req: Request, res: Response, next: NextFuncti
       req.user?.userId,
     );
     sendOk(res, request, "Estado de la solicitud actualizado exitosamente");
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Paso 3 del flujo ("Solicitar Cotización"): sin body, el id de la
+// solicitud viene por parametro de ruta.
+export async function requestQuotation(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const request = await purchaseRequestService.requestQuotation(Number(req.params.id), req.user!.userId);
+    sendOk(res, request, "Cotización solicitada exitosamente");
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Paso 4 del flujo ("Solicitar Autorización"): sin body.
+export async function requestQuoteApproval(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const request = await purchaseRequestService.requestQuoteApproval(Number(req.params.id), req.user!.userId);
+    sendOk(res, request, "Autorización de cotización solicitada exitosamente");
   } catch (err) {
     next(err);
   }

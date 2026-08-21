@@ -9,7 +9,7 @@ import { archiveQuoteRequestPdf, renderQuoteRequestPdf } from "../../library/pdf
 import { getQuoteRequestFolder, saveBuffer } from "../../library/documentStorage";
 import { getSafeExtension } from "../../middlewares/upload";
 import { generateDocumentNumber } from "../../library/documentNumbering";
-import { NotFoundError } from "../../library/errors";
+import { ConflictError, NotFoundError } from "../../library/errors";
 import { logger } from "../../library/logger";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
@@ -47,7 +47,15 @@ export async function getQuoteByIdOrThrow(id: number): Promise<QuoteModel> {
 // cotizaciones pueden competir por la misma requestId+productId (distintos
 // proveedores); cual gana se decide recien en Authorization.
 export async function createQuote(data: QuoteCreationAttributes): Promise<QuoteModel> {
-  await getPurchaseRequestByIdOrThrow(data.requestId);
+  const request = await getPurchaseRequestByIdOrThrow(data.requestId);
+  // Paso 4 del flujo: la carga de cotizaciones solo esta abierta mientras la
+  // solicitud esta en IN_QUOTATION -"Solicitar Autorización" (ver
+  // requestQuoteApproval en purchaseRequest.service.ts) la cierra.
+  if (request.status !== "IN_QUOTATION") {
+    throw new ConflictError(
+      `No se pueden cargar cotizaciones: la solicitud ${request.requestNumber} esta en estado "${request.status}", no "IN_QUOTATION"`,
+    );
+  }
   await getProductByIdOrThrow(data.productId);
   await getSupplierByIdOrThrow(data.supplierId);
 
@@ -82,6 +90,11 @@ export async function createQuote(data: QuoteCreationAttributes): Promise<QuoteM
 export async function attachQuoteDocument(quoteId: number, file: Express.Multer.File): Promise<string> {
   const quote = await getQuoteByIdOrThrow(quoteId);
   const request = await getPurchaseRequestByIdOrThrow(quote.requestId);
+  if (request.status !== "IN_QUOTATION") {
+    throw new ConflictError(
+      `No se pueden adjuntar comprobantes de cotizacion: la solicitud ${request.requestNumber} esta en estado "${request.status}", no "IN_QUOTATION"`,
+    );
+  }
   const supplier = await getSupplierByIdOrThrow(quote.supplierId);
   const businessPartner = await getBusinessPartnerByIdOrThrow(supplier.businessPartnerId);
 

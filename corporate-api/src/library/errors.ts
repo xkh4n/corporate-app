@@ -110,7 +110,20 @@ function extractMssqlErrorNumber(err: unknown): number | undefined {
   return aggregateErrors?.find((entry) => typeof entry.number === "number")?.number;
 }
 
+// 1913 ("...an index or statistics with name '%.*ls' already exists on
+// table...") es el numero real que tira MSSQL para un CREATE INDEX que
+// choca -distinto de 2714 (objetos con nombre propio: tablas/constraints) y
+// 2627 (violacion de PK/UNIQUE al insertar). Encontrado en un restart real
+// de las 3 replicas (2026-08-21, Development): con el guard "IF NOT EXISTS"
+// no atomico de siempre (ver el comentario largo mas arriba), dos replicas
+// corriendo CREATE INDEX ix_purchase_requests_approver_id en paralelo
+// contra una base donde el indice ya se habia creado en un restart previo
+// -pero recien en ESTE restart una replica ganaba la carrera del "IF NOT
+// EXISTS" y la otra chocaba con 1913, sin que isDuplicateMssqlObjectError
+// lo reconociera-. Sin este numero cubierto, el guard fallaba exactamente
+// para lo que existe: "otra replica ya dejo el indice en el estado
+// correcto" no es un error real.
 export function isDuplicateMssqlObjectError(err: unknown): boolean {
   const number = extractMssqlErrorNumber(err);
-  return number === 2714 || number === 2627;
+  return number === 2714 || number === 2627 || number === 1913;
 }

@@ -526,6 +526,15 @@ async function migratePurchasingFlow(): Promise<void> {
     END
   `);
 
+  // Fase A: filtro server-side por status (RequestQuotation.tsx, UploadQuotes.tsx,
+  // AproveRequest.tsx, etc. -ver purchaseRequestService.list({status:...})).
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_purchase_requests_status' AND object_id = OBJECT_ID('purchase_requests'))
+    BEGIN
+      CREATE INDEX ix_purchase_requests_status ON purchase_requests(status);
+    END
+  `);
+
   await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'purchase_request_lines')
     BEGIN

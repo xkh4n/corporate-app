@@ -192,4 +192,20 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     permissionKey: "purchase-requests:approve",
     sortOrder: 20,
   },
+  {
+    label: "Solicitar Cotización",
+    icon: "IoPricetagsOutline",
+    link: "/quotes/request",
+    parentLabel: "Solicitudes",
+    permissionKey: "quotes:create",
+    sortOrder: 30,
+  },
+  {
+    label: "Cargar Cotizaciones",
+    icon: "IoDocumentAttachOutline",
+    link: "/quotes/upload",
+    parentLabel: "Solicitudes",
+    permissionKey: "quotes:create",
+    sortOrder: 40,
+  },
 ];

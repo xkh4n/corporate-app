@@ -73,11 +73,16 @@ describe("isDuplicateObjectError (Postgres)", () => {
 });
 
 describe("isDuplicateMssqlObjectError", () => {
-  it("reconoce 2714/2627 desde err.parent.number (statement simple)", () => {
+  it("reconoce 2714/2627/1913 desde err.parent.number (statement simple)", () => {
     const err2714 = Object.assign(new Error("dup"), { parent: { number: 2714 } });
     const err2627 = Object.assign(new Error("dup"), { parent: { number: 2627 } });
+    // 1913: "...an index or statistics with name ... already exists..." -el
+    // numero real que tira un CREATE INDEX que choca entre replicas (visto
+    // en un restart real, ver el comentario en isDuplicateMssqlObjectError).
+    const err1913 = Object.assign(new Error("dup"), { parent: { number: 1913 } });
     expect(isDuplicateMssqlObjectError(err2714)).toBe(true);
     expect(isDuplicateMssqlObjectError(err2627)).toBe(true);
+    expect(isDuplicateMssqlObjectError(err1913)).toBe(true);
   });
 
   it("busca el numero dentro de parent.errors[] (AggregateError de un bulkCreate)", () => {

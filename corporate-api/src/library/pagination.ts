@@ -4,6 +4,12 @@ export interface PaginationParams {
   search?: string;
   sortBy: string;
   sortOrder: "asc" | "desc";
+  // Filtro server-side por status (ej. "APPROVED,IN_QUOTATION"), usado por
+  // las pantallas del flujo de compras que necesitan ver solo un subconjunto
+  // de estados. Server-side y no un .filter() en el cliente a proposito:
+  // esas listas usan un limit fijo, un filtro client-side dejaria de mostrar
+  // filas elegibles en silencio apenas hubiera mas de esa cantidad.
+  status?: string[];
 }
 
 export interface PaginationMeta {
@@ -28,6 +34,12 @@ const MAX_LIMIT = 10000;
 // hoy dado que no hay una via de explotacion real.
 const SAFE_SORT_BY = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
+// Mismo criterio que SAFE_SORT_BY: un token que no calce con la forma de un
+// status conocido (SCREAMING_SNAKE, ver PURCHASE_REQUEST_STATUSES) se
+// descarta en silencio en vez de pasarlo tal cual a un Op.in -evita que un
+// valor arbitrario en el query string llegue a la query.
+const SAFE_STATUS_TOKEN = /^[A-Z_]{1,20}$/;
+
 function toInt(value: unknown, fallback: number): number {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -48,7 +60,13 @@ export function parsePaginationParams(
   const rawSortBy = typeof source.sortBy === "string" ? source.sortBy : "";
   const sortBy = SAFE_SORT_BY.test(rawSortBy) ? rawSortBy : defaultSortBy;
   const sortOrder = source.sortOrder === "asc" || source.sortOrder === "desc" ? source.sortOrder : defaultSortOrder;
-  return { page, limit, search, sortBy, sortOrder };
+  const rawStatus = typeof source.status === "string" ? source.status : "";
+  const statusTokens = rawStatus
+    .split(",")
+    .map((token) => token.trim())
+    .filter((token) => SAFE_STATUS_TOKEN.test(token));
+  const status = statusTokens.length > 0 ? statusTokens : undefined;
+  return { page, limit, search, sortBy, sortOrder, status };
 }
 
 export function getOffset(params: PaginationParams): number {
