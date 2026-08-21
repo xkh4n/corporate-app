@@ -18,6 +18,7 @@ import ListProducts from "../pages/adquisiciones/productos/ListProducts";
 import CreateProductCategory from "../pages/adquisiciones/category/CreateProductCategory";
 import ViewProductCategory from "../pages/adquisiciones/category/ViewProductCategory";
 import UpdateProductCategory from "../pages/adquisiciones/category/UpdateProductCategory";
+import LinkSupplierProducts from "../pages/adquisiciones/supplierProducts/LinkSupplierProducts";
 import NuevaPantalla from "../pages/pantallas/NuevaPantalla";
 import AsignarPermisos from "../pages/pantallas/AsignarPermisos";
 import { AsignarPermissionToRole, NuevoRole } from "../pages/permissions";
@@ -37,6 +38,7 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/category/create": () => <CreateProductCategory />,
   "/category/view": () => <ViewProductCategory />,
   "/category/update": () => <UpdateProductCategory />,
+  "/supplier-products/manage": () => <LinkSupplierProducts />,
   "/menu-items/create": () => <NuevaPantalla />,
   "/menu-items/update": () => <AsignarPermisos />,
   "/tickets/validate": () => <AproveRequest />,

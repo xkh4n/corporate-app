@@ -149,6 +149,15 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     sortOrder: 20,
   },
 
+  {
+    label: "Vincular Productos a Proveedor",
+    icon: "IoLink",
+    link: "/supplier-products/manage",
+    parentLabel: "Adquisiciones",
+    permissionKey: "supplier-products:create",
+    sortOrder: 25,
+  },
+
   { label: "Categoria Productos", icon: "IoLibrary", parentLabel: "Adquisiciones", sortOrder: 30 },
   {
     label: "Nueva Categoria",

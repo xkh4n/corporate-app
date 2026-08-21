@@ -10,6 +10,7 @@ import {
   purchaseRequestLineService,
   purchaseRequestService,
   quoteService,
+  supplierProductService,
   supplierService,
 } from "../../services";
 import type { PurchaseRequest, PurchaseRequestLine, Quote, Supplier } from "../../types";
@@ -41,6 +42,11 @@ export default function UploadQuotes() {
 
   const [selectedProductId, setSelectedProductId] = useState("");
   const [selectedSupplierId, setSelectedSupplierId] = useState("");
+  // Proveedores vinculados al producto elegido en el formulario -no el
+  // catalogo completo de `suppliers` (ese sigue haciendo falta para resolver
+  // el nombre del proveedor de cotizaciones ya cargadas, ver mas abajo).
+  const [productSuppliers, setProductSuppliers] = useState<Supplier[]>([]);
+  const [loadingProductSuppliers, setLoadingProductSuppliers] = useState(false);
   const [purchaseValue, setPurchaseValue] = useState("");
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -100,6 +106,40 @@ export default function UploadQuotes() {
   async function handleViewRequest(request: PurchaseRequest): Promise<void> {
     setSelectedRequest(request);
     await loadDetail(request.id);
+  }
+
+  useEffect(() => {
+    if (!selectedProductId) {
+      setProductSuppliers([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoadingProductSuppliers(true);
+        const res = await supplierProductService.listByProduct(selectedProductId, { limit: 1000 });
+        if (cancelled) return;
+        setProductSuppliers(
+          res.items
+            .map((link) => link.supplier)
+            .filter((supplier): supplier is Supplier => supplier !== null),
+        );
+      } catch (error) {
+        handleError(error, navigate);
+      } finally {
+        if (!cancelled) setLoadingProductSuppliers(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProductId, navigate]);
+
+  function handleProductChange(value: string): void {
+    setSelectedProductId(value);
+    // El proveedor elegido para el producto anterior puede no vender el
+    // nuevo -evita mandar un supplierId que no aparece en el select filtrado.
+    setSelectedSupplierId("");
   }
 
   function resetFormFields(): void {
@@ -204,7 +244,7 @@ export default function UploadQuotes() {
                           id="selectedProductId"
                           className="bg-zinc-100 focus:bg-indigo-100"
                           value={selectedProductId}
-                          onChange={(e) => setSelectedProductId(e.target.value)}
+                          onChange={(e) => handleProductChange(e.target.value)}
                         >
                           <option value="">Seleccione el producto</option>
                           {[...new Set(lines.map((line) => line.productId))].map((productId) => (
@@ -222,9 +262,18 @@ export default function UploadQuotes() {
                           className="bg-zinc-100 focus:bg-indigo-100"
                           value={selectedSupplierId}
                           onChange={(e) => setSelectedSupplierId(e.target.value)}
+                          disabled={!selectedProductId || loadingProductSuppliers}
                         >
-                          <option value="">Seleccione el proveedor</option>
-                          {suppliers.map((supplier) => (
+                          <option value="">
+                            {!selectedProductId
+                              ? "Primero seleccione el producto"
+                              : loadingProductSuppliers
+                                ? "Cargando proveedores..."
+                                : productSuppliers.length === 0
+                                  ? "Sin proveedores vinculados a este producto"
+                                  : "Seleccione el proveedor"}
+                          </option>
+                          {productSuppliers.map((supplier) => (
                             <option key={supplier.id} value={supplier.id}>
                               {supplier.businessPartner.legalName}
                             </option>
