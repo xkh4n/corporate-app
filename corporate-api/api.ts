@@ -1,5 +1,5 @@
 import { hostname } from "node:os";
-import express, { type Express } from "express";
+import express, { type Express, type RequestHandler } from "express";
 import helmet from "helmet";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -23,10 +23,36 @@ const instanceId = hostname();
 // es CommonJS a proposito (ver tsconfig.json), asi que se importa dinamico
 // aca en vez de con un "import" estatico -Node soporta import() ESM desde un
 // modulo CJS sin problema, es la unica forma de consumir el paquete tal cual.
-export async function createApp(): Promise<Express> {
+//
+// Extraido de createApp() para que index.ts pueda pasarle la MISMA instancia
+// tanto a Express (sesion HTTP normal) como a Socket.IO (io.engine.use, ver
+// library/realtime/socketServer.ts) -asi el handshake del socket reusa
+// exactamente la misma sesion Redis que REST, sin token nuevo.
+export async function createSessionMiddleware(): Promise<RequestHandler> {
   const { RedisStore } = await import("connect-redis");
   const sessionSecret = readSecretFromEnv(env.session.secretFileVar);
 
+  return session({
+    store: new RedisStore({ client: redis, prefix: "sess:" }),
+    name: env.session.name,
+    secret: sessionSecret,
+    cookie: {
+      httpOnly: true,
+      // Fijo en true, no derivado de NODE_ENV: en este proyecto NGINX
+      // SIEMPRE termina TLS (autofirmado en dev, real en prod), incluido
+      // el ambiente "development" -atarlo a NODE_ENV dejaba la cookie de
+      // sesion viajando sin el flag Secure en dev pese a que el canal real
+      // ya es HTTPS (hallazgo de auditoria de seguridad 2026-08-07).
+      secure: true,
+      sameSite: "lax",
+      maxAge: env.session.ttlHours * 60 * 60 * 1000,
+    },
+    resave: false,
+    saveUninitialized: false,
+  });
+}
+
+export async function createApp(sessionMiddleware: RequestHandler): Promise<Express> {
   const app = express();
 
   app.set("trust proxy", 1);
@@ -66,26 +92,7 @@ export async function createApp(): Promise<Express> {
     next();
   });
 
-  app.use(
-    session({
-      store: new RedisStore({ client: redis, prefix: "sess:" }),
-      name: env.session.name,
-      secret: sessionSecret,
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        httpOnly: true,
-        // Fijo en true, no derivado de NODE_ENV: en este proyecto NGINX
-        // SIEMPRE termina TLS (autofirmado en dev, real en prod), incluido
-        // el ambiente "development" -atarlo a NODE_ENV dejaba la cookie de
-        // sesion viajando sin el flag Secure en dev pese a que el canal real
-        // ya es HTTPS (hallazgo de auditoria de seguridad 2026-08-07).
-        secure: true,
-        sameSite: "lax",
-        maxAge: env.session.ttlHours * 60 * 60 * 1000,
-      },
-    }),
-  );
+  app.use(sessionMiddleware);
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", instance: instanceId });

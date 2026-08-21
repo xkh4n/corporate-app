@@ -1,4 +1,5 @@
-import { createApp } from "./api";
+import http from "node:http";
+import { createApp, createSessionMiddleware } from "./api";
 import { env } from "./src/library/env";
 import { logger } from "./src/library/logger";
 import { connectPostgres } from "./src/databases/postgres/connection";
@@ -11,6 +12,7 @@ import { seedBootstrapAdmin, seedGeography, seedMenuItems, seedPermissions } fro
 import { seedCostCenters } from "./src/services/postgres/costCenter.service";
 import { seedProducts } from "./src/services/mongo/product.service";
 import { seedProductCategories } from "./src/services/mongo/productCategory.service";
+import { initSocketServer } from "./src/library/realtime/socketServer";
 import "./src/databases/registerModels";
 
 async function bootstrap(): Promise<void> {
@@ -25,9 +27,18 @@ async function bootstrap(): Promise<void> {
   await seedMenuItems();
   await seedBootstrapAdmin();
 
-  const app = await createApp();
+  // Misma instancia de sessionMiddleware para Express (REST) y para el
+  // handshake de Socket.IO (io.engine.use, ver socketServer.ts) -asi el
+  // socket reusa exactamente la misma sesion Redis que REST, sin token
+  // nuevo. http.createServer(app) en vez de app.listen(): Socket.IO
+  // intercepta a nivel de http.Server, antes del ruteo de Express, y
+  // necesita ser el mismo servidor HTTP que atiende las requests REST.
+  const sessionMiddleware = await createSessionMiddleware();
+  const app = await createApp(sessionMiddleware);
+  const server = http.createServer(app);
+  await initSocketServer(server, sessionMiddleware);
 
-  app.listen(env.port, () => {
+  server.listen(env.port, () => {
     logger.info({ port: env.port, env: env.nodeEnv }, "corporate-api escuchando");
   });
 }

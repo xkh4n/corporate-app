@@ -217,4 +217,12 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     permissionKey: "quotes:create",
     sortOrder: 40,
   },
+  {
+    label: "Aprobar Cotización",
+    icon: "IoCheckmarkDoneOutline",
+    link: "/quotes/approve",
+    parentLabel: "Solicitudes",
+    permissionKey: "authorizations:create",
+    sortOrder: 50,
+  },
 ];

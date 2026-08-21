@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
 import { SidebarMenu } from "../components/SidebarMenu";
+import { NotificationBell } from "../components/NotificationBell";
 import logo from "../assets/imperial_white.png";
 
 function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }) {
@@ -47,6 +48,7 @@ function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
         Hola: {user?.firstName} {user?.lastName}
       </p>
       <div className="ml-auto flex items-center gap-3">
+        <NotificationBell />
         <button
           type="button"
           onClick={() => void logout()}

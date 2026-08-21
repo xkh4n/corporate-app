@@ -13,6 +13,7 @@ import CreateRequest from "../pages/solicitudes/CreateRequest";
 import AproveRequest from "../pages/solicitudes/AproveRequest";
 import RequestQuotation from "../pages/solicitudes/RequestQuotation";
 import UploadQuotes from "../pages/solicitudes/UploadQuotes";
+import ApproveQuote from "../pages/solicitudes/ApproveQuote";
 import CreateProducts from "../pages/adquisiciones/productos/CreateProducts";
 import ListProducts from "../pages/adquisiciones/productos/ListProducts";
 import CreateProductCategory from "../pages/adquisiciones/category/CreateProductCategory";
@@ -44,6 +45,7 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/tickets/validate": () => <AproveRequest />,
   "/quotes/request": () => <RequestQuotation />,
   "/quotes/upload": () => <UploadQuotes />,
+  "/quotes/approve": () => <ApproveQuote />,
   "/roles/create": () => <NuevoRole />,
   "/roles/update": () => <AsignarPermissionToRole />,
   "/roles/read": () => <ListarRole />,

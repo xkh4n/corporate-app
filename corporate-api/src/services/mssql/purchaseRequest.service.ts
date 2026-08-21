@@ -19,6 +19,7 @@ import { getProductCategoriesByIds } from "../mongo/productCategory.service";
 import { generateDocumentNumber } from "../../library/documentNumbering";
 import { getQuoteRequestFolder } from "../../library/documentStorage";
 import { sendMailViaMailer } from "../../library/mailerClient";
+import { notifyPendingQuoteApproval, notifyPendingRequestApproval } from "../../library/realtime/notify";
 import { NotFoundError, BadRequestError, ForbiddenError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
@@ -152,7 +153,9 @@ export async function createPurchaseRequest(
     return PurchaseRequestModel.create({ ...data, requestNumber }, { transaction });
   });
 
-  return getPurchaseRequestByIdOrThrow(request.id);
+  const created = await getPurchaseRequestByIdOrThrow(request.id);
+  notifyPendingRequestApproval(data.approverId, created);
+  return created;
 }
 
 export async function updatePurchaseRequest(
@@ -218,6 +221,9 @@ export async function requestQuoteApproval(requestId: number, updatedBy: number)
     throw new BadRequestError("La solicitud no tiene ninguna cotizacion cargada todavia");
   }
   await request.update({ status: "APPROVE_QUOTE", updatedBy });
+  if (request.approverId !== null) {
+    notifyPendingQuoteApproval(request.approverId, request);
+  }
   return request;
 }
 

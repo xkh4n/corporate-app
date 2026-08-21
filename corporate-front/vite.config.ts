@@ -85,6 +85,11 @@ export default defineConfig({
                 target: `https://${env.ALLOCATED_IP}:${env.API_SSL_PORT}`,
                 changeOrigin: true,
                 secure: false, // certificado self-signed del backend en dev
+                // Sin esto el websocket de Socket.IO (/api/socket.io,
+                // notificaciones push en tiempo real) no atraviesa el proxy
+                // de Vite -mismo motivo que el "map $http_upgrade" en los
+                // templates de nginx para el flujo dockerizado.
+                ws: true,
               },
             },
           };

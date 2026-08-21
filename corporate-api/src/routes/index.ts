@@ -30,6 +30,7 @@ import { goodsReceiptRouter } from "./goodsReceipt.routes";
 import { assetStatusRouter } from "./assetStatus.routes";
 import { assetRouter } from "./asset.routes";
 import { assetMovementRouter } from "./assetMovement.routes";
+import { notificationRouter } from "./notification.routes";
 
 export const apiRouter = Router();
 
@@ -72,3 +73,7 @@ apiRouter.use("/goods-receipts", goodsReceiptRouter);
 apiRouter.use("/asset-statuses", assetStatusRouter);
 apiRouter.use("/assets", assetRouter);
 apiRouter.use("/asset-movements", assetMovementRouter);
+
+// Resumen derivado de pendientes del usuario logeado (badge + push en
+// tiempo real, ver library/realtime/).
+apiRouter.use("/notifications", notificationRouter);

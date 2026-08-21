@@ -43,6 +43,15 @@ export async function getUserByIdOrThrow(id: number): Promise<UserModel> {
   return user;
 }
 
+// Resuelve el User (si existe) dueño de una Person -usado para notificar al
+// solicitante cuando su solicitud pasa a QUOTE_APPROVED (ver
+// authorization.service.ts): requesterId es un personId, no todo Person
+// tiene necesariamente una cuenta. null es un resultado valido, no un error
+// -el caller decide que hacer (hoy: solo loguear y seguir).
+export async function getUserByPersonId(personId: number): Promise<UserModel | null> {
+  return UserModel.findOne({ where: { personId }, include: [{ model: PersonModel, as: "person" }] });
+}
+
 const SEARCH_FIELDS = ["username"];
 
 export async function listUsers(params: PaginationParams): Promise<{ items: SafeUser[]; total: number }> {

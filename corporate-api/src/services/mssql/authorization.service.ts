@@ -1,15 +1,18 @@
+import { Op } from "sequelize";
 import { mssql } from "../../databases/mssql/connection";
 import { AuthorizationModel } from "../../models/mssql/authorization.model";
-import { getLineByIdOrThrow } from "./purchaseRequestLine.service";
-import { getPurchaseRequestByIdOrThrow } from "./purchaseRequest.service";
+import { QuoteModel } from "../../models/mssql/quote.model";
+import { areAllApprovedLinesAuthorized, getLineByIdOrThrow } from "./purchaseRequestLine.service";
+import { assertIsAssignedApprover, getPurchaseRequestByIdOrThrow, updatePurchaseRequestStatus } from "./purchaseRequest.service";
 import { getQuoteByIdOrThrow } from "./quote.service";
-import { getUserByIdOrThrow } from "./user.service";
+import { getUserByIdOrThrow, getUserByPersonId } from "./user.service";
 import { getSupplierByIdOrThrow } from "./supplier.service";
 import { getBusinessPartnerByIdOrThrow } from "./businessPartner.service";
 import { copyIfExists, findFileByPrefix, getAcquisitionFolder, getQuoteRequestFolder, saveBuffer } from "../../library/documentStorage";
 import { getSafeExtension } from "../../middlewares/upload";
-import { BadRequestError, ForbiddenError, NotFoundError } from "../../library/errors";
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../../library/errors";
 import { logger } from "../../library/logger";
+import { notifyPendingPurchaseOrder } from "../../library/realtime/notify";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder } from "../../library/sequelizeSearch";
@@ -59,12 +62,27 @@ export async function createAuthorization(
     );
   }
 
+  const request = await getPurchaseRequestByIdOrThrow(line.requestId);
+
+  // Decision A del plan de implementacion: solo el aprobador ASIGNADO a
+  // esta solicitud puede elegir la cotizacion ganadora -no cualquier usuario
+  // con el permiso generico authorizations:create. Deliberadamente SIN
+  // bypass de admin (mismo criterio que assertIsAssignedApprover en
+  // purchaseRequest.service.ts): un admin saltandose esto ya no es
+  // segregacion de funciones.
+  assertIsAssignedApprover(request, data.approverId);
+
+  if (request.status !== "APPROVE_QUOTE") {
+    throw new ConflictError(
+      `No se puede autorizar: la solicitud ${request.requestNumber} esta en estado "${request.status}", no "APPROVE_QUOTE"`,
+    );
+  }
+
   // Segregacion de funciones: quien solicito la compra no puede ser quien la
   // autoriza -sin esto, un usuario con permiso "authorizations:create"
   // podria aprobarse su propia solicitud. requesterId es un personId; se
   // compara contra el personId del usuario aprobador, no su userId (son
   // entidades distintas, ver types/auth.types.ts).
-  const request = await getPurchaseRequestByIdOrThrow(line.requestId);
   if (request.requesterId === approver.personId) {
     throw new ForbiddenError("El solicitante de la compra no puede autorizar su propia solicitud");
   }
@@ -89,6 +107,21 @@ export async function createAuthorization(
       { transaction },
     );
     await quote.update({ status: "SELECTED", updatedBy: data.approverId }, { transaction });
+    // Cotizaciones competidoras del MISMO producto en esta solicitud quedan
+    // REJECTED -autorizar ES la accion de negocio que decide, entre varias,
+    // cual proveedor gano (ver comentario mas arriba en este archivo).
+    await QuoteModel.update(
+      { status: "REJECTED", updatedBy: data.approverId },
+      {
+        where: {
+          requestId: line.requestId,
+          productId: quote.productId,
+          status: "PENDING",
+          id: { [Op.ne]: quote.id },
+        },
+        transaction,
+      },
+    );
     return created;
   });
 
@@ -110,6 +143,23 @@ export async function createAuthorization(
       { err, authorizationId: authorization.id },
       "No se pudo consolidar los documentos de la solicitud/cotizacion en la carpeta de adquisicion",
     );
+  }
+
+  // Cierre del paso 5->6: recien cuando TODAS las lineas APPROVED de la
+  // solicitud tienen ya un ganador (no en la primera, ver
+  // areAllApprovedLinesAuthorized) la solicitud pasa a QUOTE_APPROVED y se
+  // notifica al solicitante que ya puede adjuntar la OC.
+  if (await areAllApprovedLinesAuthorized(request.id)) {
+    await updatePurchaseRequestStatus(request.id, "QUOTE_APPROVED", data.approverId);
+    const requesterUser = await getUserByPersonId(request.requesterId);
+    if (requesterUser) {
+      notifyPendingPurchaseOrder(requesterUser.id, request);
+    } else {
+      logger.info(
+        { requestId: request.id },
+        "El solicitante no tiene cuenta de usuario -no se pudo notificar el pase a QUOTE_APPROVED",
+      );
+    }
   }
 
   return getAuthorizationByIdOrThrow(authorization.id);

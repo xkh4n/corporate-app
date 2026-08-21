@@ -15,6 +15,16 @@ http {
     # error (hallazgo de auditoria de seguridad 2026-08-12).
     server_tokens off;
 
+    # Mismo criterio que corporate-api/nginx/config/nginx.conf.template:
+    # traduce "Upgrade" a "Connection: upgrade" solo cuando el cliente pide
+    # un upgrade real (el websocket de Socket.IO atravesando "location
+    # /api/" hacia nginx-apidev, ver mas abajo) -las requests REST normales
+    # no se ven afectadas.
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ""      close;
+    }
+
     # Una sola instancia de "vite dev" (seraphinedev): a diferencia de
     # api_backend en corporate-api (3 replicas, round-robin), acá no hay
     # balanceo -el websocket de HMR tiene estado por conexion, repartirlo
@@ -69,13 +79,23 @@ http {
         # corre directo en el host, no hay hairpin NAT posible.
         # proxy_ssl_verify off: certificado autofirmado de dev en el destino
         # (mismo criterio que "secure:false" en el proxy de Vite).
+        # proxy_http_version 1.1 + Upgrade/Connection: sin esto el websocket
+        # de Socket.IO (notificaciones push, /api/socket.io) no atraviesa
+        # este proxy hacia nginx-apidev -mismo motivo que "location /" mas
+        # abajo lo necesita para el HMR de Vite. proxy_read_timeout largo:
+        # es una conexion persistente, no una request REST que termina en
+        # milisegundos.
         location /api/ {
             proxy_pass https://${API_PROXY_HOST}${SUFFIX}:443;
             proxy_ssl_verify off;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
         }
 
         # Upgrade/Connection: sin esto, el websocket de HMR de Vite no

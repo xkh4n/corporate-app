@@ -15,6 +15,14 @@ http {
     # error (hallazgo de auditoria de seguridad 2026-08-12).
     server_tokens off;
 
+    # Mismo criterio que nginx.conf.template (dev): traduce "Upgrade" a
+    # "Connection: upgrade" solo para el websocket de Socket.IO atravesando
+    # "location /api/" hacia nginx-apidev.
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ""      close;
+    }
+
     # Version de produccion de nginx.conf.template: a diferencia de esa
     # plantilla (que proxea a "vite dev" con soporte de HMR por websocket),
     # esta sirve el bundle estatico ya compilado (dist/, servido por "serve"
@@ -57,10 +65,14 @@ http {
         location /api/ {
             proxy_pass https://${API_PROXY_HOST}${SUFFIX}:443;
             proxy_ssl_verify off;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
         }
 
         location / {

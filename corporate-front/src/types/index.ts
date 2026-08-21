@@ -15,6 +15,7 @@ export type * from "./employee";
 export type * from "./goodsReceipt";
 export type * from "./menu";
 export type * from "./menuItem";
+export type * from "./notification";
 export type * from "./permission";
 export type * from "./person";
 export type * from "./position";

@@ -46,6 +46,29 @@ export async function listAllLinesByRequest(requestId: number): Promise<Purchase
   return PurchaseRequestLineModel.findAll({ where: { requestId }, order: [["id", "ASC"]] });
 }
 
+// Cierre del paso 5->6 del flujo (ver authorization.service.ts,
+// createAuthorization): la solicitud pasa a QUOTE_APPROVED recien cuando
+// CADA linea APPROVED tiene ya al menos una Authorization -no en la
+// primera-, para no decirle al solicitante que ya puede adjuntar la OC
+// mientras otras lineas todavia esperan que el aprobador elija ganadora.
+// Sin lineas APPROVED todavia (no deberia pasar en el flujo real, la
+// solicitud no llega a APPROVE_QUOTE sin al menos una) se considera
+// "no completo" -fail closed, no se asume que esta bien.
+export async function areAllApprovedLinesAuthorized(requestId: number): Promise<boolean> {
+  const approvedLines = await PurchaseRequestLineModel.findAll({
+    where: { requestId, status: "APPROVED" },
+    attributes: ["id"],
+  });
+  if (approvedLines.length === 0) return false;
+
+  const authorizedCount = await AuthorizationModel.count({
+    where: { requestLineId: { [Op.in]: approvedLines.map((line) => line.id) } },
+    distinct: true,
+    col: "requestLineId",
+  });
+  return authorizedCount === approvedLines.length;
+}
+
 // productId es un ObjectId de Mongo (catalogo de producto) -sin FK real,
 // validado a mano contra el service de Mongo, mismo criterio que
 // getRoleByIdOrThrow en user.service.ts para el cross-engine hacia Postgres.
