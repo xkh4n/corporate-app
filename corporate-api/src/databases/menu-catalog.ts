@@ -225,4 +225,20 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     permissionKey: "authorizations:create",
     sortOrder: 50,
   },
+  {
+    label: "Adjuntar Orden de Compra",
+    icon: "IoDocumentTextOutline",
+    link: "/purchase-orders/attach",
+    parentLabel: "Solicitudes",
+    permissionKey: "purchase-orders:update",
+    sortOrder: 60,
+  },
+  {
+    label: "Enviar Orden de Compra",
+    icon: "IoSendOutline",
+    link: "/purchase-orders/send",
+    parentLabel: "Solicitudes",
+    permissionKey: "quotes:create",
+    sortOrder: 70,
+  },
 ];

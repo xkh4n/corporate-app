@@ -13,7 +13,7 @@ export interface SendMailInput {
   to: string[];
   subject: string;
   text: string;
-  attachment?: MailAttachment;
+  attachments?: MailAttachment[];
 }
 
 // Transporte SMTP generico (nodemailer): funciona igual sea cual sea el
@@ -37,15 +37,17 @@ export async function sendMail(input: SendMailInput): Promise<void> {
     to: input.to,
     subject: input.subject,
     text: input.text,
-    attachments: input.attachment
-      ? [
-          {
-            filename: input.attachment.filename,
-            content: input.attachment.content,
-            contentType: input.attachment.contentType,
-          },
-        ]
-      : undefined,
+    // "attachments" es nativo de nodemailer (array) -antes este codigo solo
+    // envolvia un elemento; ahora pasa la lista completa tal cual (ej. OC +
+    // cotizacion ganadora, ver purchaseOrder.service.ts en corporate-api).
+    attachments: input.attachments?.map((attachment) => ({
+      filename: attachment.filename,
+      content: attachment.content,
+      contentType: attachment.contentType,
+    })),
   });
-  logger.info({ to: input.to, subject: input.subject }, "Correo enviado");
+  logger.info(
+    { to: input.to, subject: input.subject, attachmentCount: input.attachments?.length ?? 0 },
+    "Correo enviado",
+  );
 }

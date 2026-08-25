@@ -137,6 +137,7 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
 
   { resource: "purchase-orders",action: "read",description: "Consultar ordenes de compra",grantToUser: true,},
   { resource: "purchase-orders",action: "create",description: "Crear ordenes de compra",grantToUser: true,},
+  { resource: "purchase-orders",action: "update",description: "Editar ordenes de compra (incluye adjuntar la OC en PDF)",grantToUser: true,},
 
   { resource: "goods-receipts",action: "read",description: "Consultar recepciones de mercaderia",grantToUser: true,},
   { resource: "goods-receipts",action: "create",description: "Registrar recepciones de mercaderia",grantToUser: true,},

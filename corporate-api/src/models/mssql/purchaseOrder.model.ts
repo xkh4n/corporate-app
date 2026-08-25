@@ -13,6 +13,7 @@ export class PurchaseOrderModel extends Model<
   declare issuedAt: CreationOptional<Date>;
   declare paymentTerms: string | null;
   declare supplierId: number;
+  declare sentAt: Date | null;
   declare createdBy: number | null;
   declare updatedBy: number | null;
   declare createdAt: CreationOptional<Date>;
@@ -27,6 +28,7 @@ PurchaseOrderModel.init(
     issuedAt: { type: DataTypes.DATE, allowNull: false, field: "issued_at" },
     paymentTerms: { type: DataTypes.STRING(50), allowNull: true, field: "payment_terms" },
     supplierId: { type: DataTypes.INTEGER, allowNull: false, field: "supplier_id" },
+    sentAt: { type: DataTypes.DATE, allowNull: true, field: "sent_at" },
     createdBy: { type: DataTypes.INTEGER, allowNull: true, field: "created_by" },
     updatedBy: { type: DataTypes.INTEGER, allowNull: true, field: "updated_by" },
     createdAt: { type: DataTypes.DATE, field: "created_at" },

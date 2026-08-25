@@ -14,6 +14,8 @@ import AproveRequest from "../pages/solicitudes/AproveRequest";
 import RequestQuotation from "../pages/solicitudes/RequestQuotation";
 import UploadQuotes from "../pages/solicitudes/UploadQuotes";
 import ApproveQuote from "../pages/solicitudes/ApproveQuote";
+import AttachPurchaseOrder from "../pages/solicitudes/AttachPurchaseOrder";
+import SendPurchaseOrder from "../pages/solicitudes/SendPurchaseOrder";
 import CreateProducts from "../pages/adquisiciones/productos/CreateProducts";
 import ListProducts from "../pages/adquisiciones/productos/ListProducts";
 import CreateProductCategory from "../pages/adquisiciones/category/CreateProductCategory";
@@ -46,6 +48,8 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/quotes/request": () => <RequestQuotation />,
   "/quotes/upload": () => <UploadQuotes />,
   "/quotes/approve": () => <ApproveQuote />,
+  "/purchase-orders/attach": () => <AttachPurchaseOrder />,
+  "/purchase-orders/send": () => <SendPurchaseOrder />,
   "/roles/create": () => <NuevoRole />,
   "/roles/update": () => <AsignarPermissionToRole />,
   "/roles/read": () => <ListarRole />,

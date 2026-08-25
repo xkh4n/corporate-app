@@ -111,19 +111,26 @@ export function getSafeExtension(file: Express.Multer.File): string {
 }
 
 // Factory para los endpoints "POST /:id/attachment" de quotes/authorizations/
-// goods-receipts: los 3 controllers repetian el mismo try/catch/BadRequestError/
-// sendOk, difiriendo solo en la funcion de servicio y el mensaje de exito. Los
-// *services* (attachQuoteDocument/attachAuthorizationDocument/
-// attachGoodsReceiptDocument) NO se unifican -sus cadenas de resolucion de
+// goods-receipts/purchase-orders: los controllers repetian el mismo
+// try/catch/BadRequestError/sendOk, difiriendo solo en la funcion de servicio
+// y el mensaje de exito. Los *services* (attachQuoteDocument/
+// attachAuthorizationDocument/attachGoodsReceiptDocument/
+// attachPurchaseOrderDocument) NO se unifican -sus cadenas de resolucion de
 // entidades son genuinamente distintas, solo comparten estas 3 lineas finales.
+// userId es OPCIONAL y va tercero: los primeros 3 usos (quote/authorization/
+// goods-receipt) no lo necesitan y siguen compilando con su firma de 2
+// argumentos tal cual (TS permite pasar una funcion con MENOS parametros
+// donde se espera una con mas, el argumento extra simplemente se ignora en
+// runtime) -solo attachPurchaseOrderDocument lo usa, para poder actualizar
+// purchase_requests.updated_by al flipear el status a OC_GENERATED.
 export function makeAttachmentHandler(
-  attachFn: (id: number, file: Express.Multer.File) => Promise<string>,
+  attachFn: (id: number, file: Express.Multer.File, userId?: number) => Promise<string>,
   successMessage: string,
 ) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       if (!req.file) throw new BadRequestError("Debe adjuntar un archivo (campo 'file')");
-      const filename = await attachFn(Number(req.params.id), req.file);
+      const filename = await attachFn(Number(req.params.id), req.file, req.user?.userId);
       sendOk(res, { filename }, successMessage, 201);
     } catch (err) {
       next(err);

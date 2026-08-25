@@ -14,7 +14,12 @@ export interface SendMailRequest {
   to: string[];
   subject: string;
   text: string;
+  // Mutuamente excluyentes: un caller manda UNO de los dos segun tenga un
+  // adjunto o varios (ej. sendQuoteRequestEmail sigue usando "attachment",
+  // sendPurchaseOrderToSupplier usa "attachments" con la OC + la cotizacion
+  // ganadora, ver purchaseOrder.service.ts).
   attachment?: SendMailAttachment;
+  attachments?: SendMailAttachment[];
 }
 
 export interface SendMailResult {
@@ -37,6 +42,13 @@ export async function sendMailViaMailer(request: SendMailRequest): Promise<SendM
   try {
     const sharedSecret = readSecretFromEnv(env.mailer.sharedSecretFileVar);
 
+    const attachmentList = request.attachments ?? (request.attachment ? [request.attachment] : []);
+    const toWire = (attachment: SendMailAttachment) => ({
+      filename: attachment.filename,
+      contentBase64: attachment.content.toString("base64"),
+      contentType: attachment.contentType,
+    });
+
     const response = await fetch(env.mailer.url, {
       method: "POST",
       headers: {
@@ -47,13 +59,14 @@ export async function sendMailViaMailer(request: SendMailRequest): Promise<SendM
         to: request.to,
         subject: request.subject,
         text: request.text,
-        attachment: request.attachment
-          ? {
-              filename: request.attachment.filename,
-              contentBase64: request.attachment.content.toString("base64"),
-              contentType: request.attachment.contentType,
-            }
-          : undefined,
+        // Forma dual a proposito: manda "attachments" (array) SIEMPRE que
+        // haya adjuntos, y ademas el campo legado "attachment" (singular)
+        // cuando hay exactamente uno -asi un corporate-mailer todavia no
+        // redeployado (que solo entiende "attachment") sigue funcionando
+        // para el caso de un solo adjunto, degradandose en vez de romperse
+        // cuando hay mas de uno (ver corporate-mailer/src/controllers/send.controller.ts).
+        attachment: attachmentList.length === 1 ? toWire(attachmentList[0]!) : undefined,
+        attachments: attachmentList.length > 0 ? attachmentList.map(toWire) : undefined,
       }),
       signal: AbortSignal.timeout(MAILER_TIMEOUT_MS),
     });

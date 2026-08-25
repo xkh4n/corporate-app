@@ -622,6 +622,7 @@ async function migratePurchasingFlow(): Promise<void> {
         issued_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         payment_terms NVARCHAR(50) NULL,
         supplier_id INT NOT NULL,
+        sent_at DATETIME2 NULL,
         created_by INT NULL,
         updated_by INT NULL,
         created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
@@ -631,6 +632,20 @@ async function migratePurchasingFlow(): Promise<void> {
         CONSTRAINT fk_purchase_orders_created_by FOREIGN KEY (created_by) REFERENCES users(id),
         CONSTRAINT fk_purchase_orders_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
       );
+    END
+  `);
+
+  // sent_at: cuando la OC efectivamente salio por correo al proveedor (paso
+  // 7) -distinto de issued_at (cuando se emitio/adjunto, paso 6). Guard
+  // manual contra sys.columns, mismo patron que must_change_password arriba,
+  // para instalaciones que ya tenian la tabla antes de este cambio.
+  await runDdl(`
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.columns
+      WHERE object_id = OBJECT_ID('purchase_orders') AND name = 'sent_at'
+    )
+    BEGIN
+      ALTER TABLE purchase_orders ADD sent_at DATETIME2 NULL;
     END
   `);
 

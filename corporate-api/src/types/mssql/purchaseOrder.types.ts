@@ -5,6 +5,7 @@ export interface PurchaseOrderAttributes {
   issuedAt: Date;
   paymentTerms: string | null;
   supplierId: number;
+  sentAt: Date | null;
   createdBy: number | null;
   updatedBy: number | null;
   createdAt: Date;
