@@ -14,6 +14,11 @@ import type { PurchaseOrder, PurchaseRequest, Quote, Supplier } from "../../type
 // permiso que ya exige GET /purchase-requests/my-requests.
 const REQUIRED_PERMISSIONS = [
   "purchase-requests:create",
+  // Ademas de "create" (que ya gatea /my-requests): handleIssueOrder relee
+  // la solicitud via GET /purchase-requests/:id despues de emitir la OC, y
+  // esa ruta exige "read" -sin este permiso el refresh posterior a un exito
+  // real 403ea (la OC ya quedo emitida/adjuntada, solo falla el refetch).
+  "purchase-requests:read",
   "quotes:read",
   "purchase-orders:read",
   "purchase-orders:create",

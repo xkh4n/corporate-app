@@ -23,12 +23,17 @@ export interface GoodsReceiptAttributes {
 // services/mssql/goodsReceipt.service.ts). documentNumber SI es input: es el
 // numero del documento tributario real del proveedor (guia/boleta/factura),
 // no un numero interno generado por esta app.
+//
+// serialNumbers: uno por unidad recibida -si viene, DEBE tener exactamente
+// receivedQuantity elementos (validado en goodsReceipt.controller.ts, no
+// aca) -manifestacion directa de la decision B (un Asset por unidad, ver
+// services/postgres/asset.service.ts).
 export interface GoodsReceiptCreationInput {
   documentType: GoodsReceiptDocumentType;
   documentNumber: string;
   purchaseOrderId: number;
   receivedQuantity: number;
-  serialNumber?: string | null;
+  serialNumbers?: (string | null)[];
   warrantyExpiresAt?: string | null;
   createdBy?: number | null;
 }

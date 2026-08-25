@@ -11,14 +11,28 @@ export const uploadAttachment = makeAttachmentHandler(
   "Documento de recepcion adjuntado exitosamente",
 );
 
-export const createGoodsReceiptSchema = z.object({
-  documentType: z.enum(["GUIA_DESPACHO", "BOLETA", "FACTURA"]),
-  documentNumber: z.string().min(1).max(50),
-  purchaseOrderId: z.number().int().positive(),
-  receivedQuantity: z.number().int().positive(),
-  serialNumber: z.string().max(100).optional(),
-  warrantyExpiresAt: z.string().date().optional(),
-});
+// serialNumbers: un elemento por unidad recibida (decision B, ver
+// asset.types.ts) -si viene, tiene que calzar exacto con receivedQuantity o
+// no se sabria a que unidad corresponde cada serie. Es opcional del todo:
+// no todo producto recibido tiene numero de serie propio.
+export const createGoodsReceiptSchema = z
+  .object({
+    documentType: z.enum(["GUIA_DESPACHO", "BOLETA", "FACTURA"]),
+    documentNumber: z.string().min(1).max(50),
+    purchaseOrderId: z.number().int().positive(),
+    receivedQuantity: z.number().int().positive(),
+    serialNumbers: z.array(z.string().max(100).nullable()).optional(),
+    warrantyExpiresAt: z.string().date().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.serialNumbers && data.serialNumbers.length !== data.receivedQuantity) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["serialNumbers"],
+        message: `Debe indicar exactamente ${data.receivedQuantity} numeros de serie (uno por unidad) o ninguno`,
+      });
+    }
+  });
 
 export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {

@@ -19,12 +19,13 @@ export const createAuthorizationSchema = z.object({
 
 export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    if (!req.query.requestLineId) throw new BadRequestError("Debe indicar requestLineId como query param");
+    const requestLineId = req.query.requestLineId ? Number(req.query.requestLineId) : undefined;
+    const quoteId = req.query.quoteId ? Number(req.query.quoteId) : undefined;
+    if (requestLineId === undefined && quoteId === undefined) {
+      throw new BadRequestError("Debe indicar requestLineId o quoteId como query param");
+    }
     const params = parsePaginationParams({ ...req.query, ...req.body }, "id");
-    const { items, total } = await authorizationService.listAuthorizationsByLine(
-      Number(req.query.requestLineId),
-      params,
-    );
+    const { items, total } = await authorizationService.listAuthorizations({ requestLineId, quoteId }, params);
     sendList(res, items, buildPaginationMeta(params, total), "Autorizaciones obtenidas exitosamente");
   } catch (err) {
     next(err);

@@ -8,6 +8,12 @@ export const authorizationService = {
   list: (requestLineId: number, params?: ListParams) =>
     apiFetch<Paginated<Authorization>>(`/authorizations${toQuery({ requestLineId, ...params })}`),
 
+  // Alternativa a list(): resuelve la autorizacion de UNA PurchaseOrder
+  // puntual (que solo conoce su quoteId, no el requestLineId) -usado por
+  // ReceiveGoods.tsx para mostrar/validar la cantidad autorizada.
+  listByQuote: (quoteId: number, params?: ListParams) =>
+    apiFetch<Paginated<Authorization>>(`/authorizations${toQuery({ quoteId, ...params })}`),
+
   getById: (id: number) => apiFetch<Authorization>(`/authorizations/${id}`),
 
   create: (input: AuthorizationCreateInput) =>

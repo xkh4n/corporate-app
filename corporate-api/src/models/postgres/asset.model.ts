@@ -1,4 +1,4 @@
-import { CreationOptional, DataTypes, InferAttributes, InferCreationAttributes, Model } from "sequelize";
+import { CreationOptional, DataTypes, InferAttributes, InferCreationAttributes, Model, NonAttribute } from "sequelize";
 import { postgres } from "../../databases/postgres/connection";
 import { AssetStatusModel } from "./assetStatus.model";
 import { CostCenterModel } from "./costCenter.model";
@@ -22,6 +22,10 @@ export class AssetModel extends Model<InferAttributes<AssetModel>, InferCreation
   declare updatedBy: number | null;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
+  // NonAttribute: solo esta poblado cuando el query pide explicitamente
+  // include:[{model: AssetStatusModel, as:"status"}] (ver asset.service.ts)
+  // -no es una columna propia de "assets".
+  declare status?: NonAttribute<AssetStatusModel>;
 }
 
 AssetModel.init(

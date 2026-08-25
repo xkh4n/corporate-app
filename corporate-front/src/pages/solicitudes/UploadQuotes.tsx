@@ -17,7 +17,11 @@ import type { PurchaseRequest, PurchaseRequestLine, Quote, Supplier } from "../.
 
 // purchase-request-lines:read para restringir el producto a los de la
 // solicitud, quotes:read/quotes:create para el detalle y el alta,
-// suppliers:read/products:read para poblar los selects.
+// suppliers:read/products:read para poblar los selects. supplier-products:read
+// ademas: el select de "Proveedor" se restringe a los realmente vinculados al
+// producto elegido via GET /supplier-products?productId= (ver
+// supplierProductService.listByProduct) -sin este permiso ese select queda
+// vacio y bloquea el submit (exige proveedor seleccionado).
 const REQUIRED_PERMISSIONS = [
   "purchase-requests:read",
   "purchase-request-lines:read",
@@ -25,6 +29,7 @@ const REQUIRED_PERMISSIONS = [
   "quotes:create",
   "suppliers:read",
   "products:read",
+  "supplier-products:read",
 ] as const;
 
 export default function UploadQuotes() {

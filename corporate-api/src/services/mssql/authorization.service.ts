@@ -20,12 +20,19 @@ import type { AuthorizationCreationAttributes } from "../../types/mssql/authoriz
 
 // Sin campos de texto propios significativos (productId es un ObjectId de
 // Mongo, supplierId es FK): solo paginacion/orden, sin filtro de busqueda.
-export async function listAuthorizationsByLine(
-  requestLineId: number,
+// quoteId, alternativa a requestLineId, la usa ReceiveGoods.tsx (Fase D)
+// para resolver la Authorization de una PurchaseOrder puntual (PurchaseOrder
+// solo conoce su quoteId, no el requestLineId) -mismo patron que el filtro
+// requestId de listPurchaseOrders/goodsReceiptId de listAssets.
+export async function listAuthorizations(
+  filter: { requestLineId?: number; quoteId?: number },
   params: PaginationParams,
 ): Promise<{ items: AuthorizationModel[]; total: number }> {
   const { rows, count } = await AuthorizationModel.findAndCountAll({
-    where: { requestLineId },
+    where: {
+      ...(filter.requestLineId !== undefined ? { requestLineId: filter.requestLineId } : {}),
+      ...(filter.quoteId !== undefined ? { quoteId: filter.quoteId } : {}),
+    },
     order: buildSequelizeOrder(params.sortBy, params.sortOrder),
     limit: params.limit,
     offset: getOffset(params),

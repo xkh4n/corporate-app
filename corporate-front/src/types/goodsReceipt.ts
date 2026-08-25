@@ -20,11 +20,13 @@ export interface GoodsReceipt {
   updatedAt: string;
 }
 
+// serialNumbers: uno por unidad recibida (decision B, un Asset por unidad) -si
+// viene, tiene que tener exactamente receivedQuantity elementos.
 export interface GoodsReceiptCreateInput {
   documentType: GoodsReceiptDocumentType;
   documentNumber: string;
   purchaseOrderId: number;
   receivedQuantity: number;
-  serialNumber?: string;
+  serialNumbers?: (string | null)[];
   warrantyExpiresAt?: string;
 }

@@ -22,9 +22,19 @@ import type { PurchaseRequest, PurchaseRequestLine, Quote, Supplier } from "../.
 // quotes:approve queda reservado/sin usar a proposito.
 const REQUIRED_PERMISSIONS = [
   "purchase-requests:approve",
+  // Ademas de "approve" (que ya gatea /my-approvals): handleAuthorizeLine
+  // relee la solicitud via GET /purchase-requests/:id despues de autorizar,
+  // y esa ruta exige "read" -sin este permiso el refresh posterior a un
+  // exito real 403ea (la autorizacion ya quedo creada, solo falla el
+  // refetch).
+  "purchase-requests:read",
   "purchase-request-lines:read",
   "quotes:read",
   "authorizations:create",
+  // loadDetail resuelve el nombre del proveedor de cada cotizacion
+  // competidora via GET /suppliers (supplierService.list) -sin este permiso
+  // el detalle entero de la solicitud falla al abrir "Ver".
+  "suppliers:read",
 ] as const;
 
 interface LineDetail {

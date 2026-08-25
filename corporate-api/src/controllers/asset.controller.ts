@@ -16,7 +16,8 @@ export const updateAssetSchema = z.object({
 export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const params = parsePaginationParams({ ...req.query, ...req.body }, "id", "desc");
-    const { items, total } = await assetService.listAssets(params);
+    const goodsReceiptId = req.query.goodsReceiptId ? Number(req.query.goodsReceiptId) : undefined;
+    const { items, total } = await assetService.listAssets(params, goodsReceiptId);
     sendList(res, items, buildPaginationMeta(params, total), "Activos obtenidos exitosamente");
   } catch (err) {
     next(err);

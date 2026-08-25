@@ -9,7 +9,7 @@ import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type { ProductType } from "../../types/mongo/product.types";
-import type { AssetUpdateAttributes, CreateAssetFromReceiptInput } from "../../types/postgres/asset.types";
+import type { AssetUpdateAttributes, CreateAssetsFromReceiptInput } from "../../types/postgres/asset.types";
 
 const PAD_LENGTH = 9;
 
@@ -37,9 +37,19 @@ async function generateAssetTag(prefix: "ARR" | "SRV" | "ACT", transaction: Tran
 
 const SEARCH_FIELDS = ["tag", "serialNumber"];
 
-export async function listAssets(params: PaginationParams): Promise<{ items: AssetModel[]; total: number }> {
+// goodsReceiptId opcional: cuando viene, restringe a los assets nacidos de
+// ESA recepcion puntual -usado por ReceiveGoods.tsx (Fase D) para mostrar de
+// inmediato los tags/series recien generados, mismo patron que el filtro
+// requestId de listPurchaseOrders.
+export async function listAssets(
+  params: PaginationParams,
+  goodsReceiptId?: number,
+): Promise<{ items: AssetModel[]; total: number }> {
   const { rows, count } = await AssetModel.findAndCountAll({
-    where: buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.iLike),
+    where: {
+      ...buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.iLike),
+      ...(goodsReceiptId !== undefined ? { goodsReceiptId } : {}),
+    },
     order: buildSequelizeOrder(params.sortBy, params.sortOrder),
     limit: params.limit,
     offset: getOffset(params),
@@ -61,32 +71,58 @@ export async function getAssetByIdOrThrow(id: number): Promise<AssetModel> {
 // Se llama desde services/mssql/goodsReceipt.service.ts al confirmar una
 // recepcion -escritura cross-engine real (MSSQL ya confirmado -> Postgres),
 // no atomica entre los dos motores: si esto falla despues de confirmado el
-// GoodsReceipt, queda un GoodsReceipt sin Asset, hay que reconciliar a mano
+// GoodsReceipt, queda un GoodsReceipt sin Assets, hay que reconciliar a mano
 // (ver memoria project-erp-scope-and-data-classification).
-export async function createAssetFromReceipt(input: CreateAssetFromReceiptInput): Promise<AssetModel> {
+//
+// Un Asset POR UNIDAD (decision B del plan), no un Asset con campo cantidad
+// -asi cada unidad se puede asignar a un empleado distinto mas adelante
+// (Fase E). Loop SECUENCIAL, no Promise.all: generateAssetTag hace un
+// UPDATE...RETURNING sobre la misma fila del contador dentro de la misma
+// transaccion -correrlo en paralelo serializaria las queries o generaria
+// deadlock, sin ninguna ganancia real (la cantidad tipica es de unidades,
+// no miles).
+//
+// Nacen en RECEIVED y, si input.finalStatusCode viene (ej. "AVAILABLE"), se
+// transicionan en la MISMA transaccion via setAssetStatus -en vez de nacer
+// directo en el status final- para que RECEIVED->AVAILABLE quede como un
+// paso real y rastreable (el status ya estaba sembrado en asset_statuses
+// pero ningun codigo lo usaba hasta ahora), sin costo adicional.
+export async function createAssetsFromReceipt(input: CreateAssetsFromReceiptInput): Promise<AssetModel[]> {
   const product = await getProductByIdOrThrow(input.productId);
   const prefix = TAG_PREFIX_BY_PRODUCT_TYPE[product.productType];
   const receivedStatus = await getAssetStatusByCodeOrThrow("RECEIVED");
+  const finalStatus = input.finalStatusCode ? await getAssetStatusByCodeOrThrow(input.finalStatusCode) : null;
 
-  const asset = await postgres.transaction(async (transaction) => {
-    const tag = await generateAssetTag(prefix, transaction);
-    return AssetModel.create(
-      {
-        tag,
-        statusId: receivedStatus.id,
-        serialNumber: input.serialNumber ?? null,
-        warrantyExpiresAt: input.warrantyExpiresAt ?? null,
-        value: input.value ?? null,
-        receivedAt: input.receivedAt ?? new Date().toISOString().slice(0, 10),
-        goodsReceiptId: input.goodsReceiptId,
-        costCenterId: input.costCenterId ?? null,
-        createdBy: input.createdBy ?? null,
-      },
-      { transaction },
-    );
+  const createdIds = await postgres.transaction(async (transaction) => {
+    const ids: number[] = [];
+    for (let i = 0; i < input.quantity; i++) {
+      const tag = await generateAssetTag(prefix, transaction);
+      const asset = await AssetModel.create(
+        {
+          tag,
+          statusId: receivedStatus.id,
+          serialNumber: input.serialNumbers?.[i] ?? null,
+          warrantyExpiresAt: input.warrantyExpiresAt ?? null,
+          value: input.value ?? null,
+          receivedAt: input.receivedAt ?? new Date().toISOString().slice(0, 10),
+          goodsReceiptId: input.goodsReceiptId,
+          costCenterId: input.costCenterId ?? null,
+          createdBy: input.createdBy ?? null,
+        },
+        { transaction },
+      );
+      if (finalStatus) {
+        await setAssetStatus(asset.id, finalStatus.id, transaction, input.createdBy ?? undefined);
+      }
+      ids.push(asset.id);
+    }
+    return ids;
   });
 
-  return getAssetByIdOrThrow(asset.id);
+  return AssetModel.findAll({
+    where: { id: { [Op.in]: createdIds } },
+    include: [{ model: AssetStatusModel, as: "status" }],
+  });
 }
 
 export async function updateAsset(id: number, data: AssetUpdateAttributes): Promise<AssetModel> {
