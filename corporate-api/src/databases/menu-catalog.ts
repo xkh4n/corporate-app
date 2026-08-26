@@ -180,6 +180,14 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     permissionKey: "goods-receipts:create",
     sortOrder: 80,
   },
+  {
+    label: "Asignar Activos",
+    icon: "IoPersonAddOutline",
+    link: "/assets/assign",
+    parentLabel: "Productos",
+    permissionKey: "asset-movements:create",
+    sortOrder: 90,
+  },
 
   {
     label: "Vincular Productos a Proveedor",

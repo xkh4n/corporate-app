@@ -16,6 +16,15 @@ export const updateAssetSchema = z.object({
 export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const params = parsePaginationParams({ ...req.query, ...req.body }, "id", "desc");
+    const requestId = req.query.requestId ? Number(req.query.requestId) : undefined;
+    // requestId: usado por AssignAssets.tsx (Fase E) -reverse-lookup cross-
+    // engine sin paginar (ver getAssetsByRequestId), distinto del filtro
+    // goodsReceiptId de abajo que si pagina.
+    if (requestId !== undefined) {
+      const items = await assetService.getAssetsByRequestId(requestId);
+      sendList(res, items, buildPaginationMeta(params, items.length), "Activos obtenidos exitosamente");
+      return;
+    }
     const goodsReceiptId = req.query.goodsReceiptId ? Number(req.query.goodsReceiptId) : undefined;
     const { items, total } = await assetService.listAssets(params, goodsReceiptId);
     sendList(res, items, buildPaginationMeta(params, total), "Activos obtenidos exitosamente");

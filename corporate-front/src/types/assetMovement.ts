@@ -27,3 +27,10 @@ export interface AssetMovementCreateInput {
   userIds?: number[];
   notes?: string;
 }
+
+// Paso 9: asignar UNA unidad a UN empleado (userId singular, no userIds[]).
+export interface AssignAssetInput {
+  assetId: number;
+  userId: number;
+  notes?: string;
+}

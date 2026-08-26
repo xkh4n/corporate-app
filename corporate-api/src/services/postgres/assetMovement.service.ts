@@ -4,11 +4,11 @@ import { AssetMovementUserModel } from "../../models/postgres/assetMovementUser.
 import { getAssetByIdOrThrow, setAssetStatus } from "./asset.service";
 import { getAssetStatusByCodeOrThrow } from "./assetStatus.service";
 import { getUserByIdOrThrow } from "../mssql/user.service";
-import { BadRequestError } from "../../library/errors";
+import { BadRequestError, ConflictError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder } from "../../library/sequelizeSearch";
-import type { CreateAssetMovementInput } from "../../types/postgres/assetMovement.types";
+import type { AssignAssetInput, CreateAssetMovementInput } from "../../types/postgres/assetMovement.types";
 
 // El estado ACTUAL del activo (Asset.statusId) se actualiza aca como efecto
 // del movimiento -no se recalcula despues buscando el ultimo movimiento
@@ -44,7 +44,7 @@ export async function listMovementsByAsset(
 // -validada aca contra el service de MSSQL antes de insertar, mismo criterio
 // que el resto de las referencias cross-engine de este proyecto.
 export async function createAssetMovement(input: CreateAssetMovementInput): Promise<AssetMovementModel> {
-  await getAssetByIdOrThrow(input.assetId);
+  const asset = await getAssetByIdOrThrow(input.assetId);
 
   const userIds = input.userIds ?? [];
   if (MOVEMENT_TYPES_REQUIRING_USERS.has(input.movementType) && userIds.length === 0) {
@@ -52,6 +52,19 @@ export async function createAssetMovement(input: CreateAssetMovementInput): Prom
   }
   for (const userId of userIds) {
     await getUserByIdOrThrow(userId);
+  }
+
+  // Guards nuevos (Fase E) -hoy no habia ninguno: se podia "asignar" un
+  // activo DECOMMISSIONED sin que nada lo impidiera.
+  if (input.movementType === "ASSIGNED" && asset.status?.code !== "AVAILABLE") {
+    throw new ConflictError(
+      `El activo ${asset.tag} no esta disponible para asignar (estado actual: ${asset.status?.code ?? "desconocido"})`,
+    );
+  }
+  if (input.movementType === "REASSIGNED" && asset.status?.code !== "ASSIGNED") {
+    throw new ConflictError(
+      `El activo ${asset.tag} no esta asignado, no se puede reasignar (estado actual: ${asset.status?.code ?? "desconocido"})`,
+    );
   }
 
   const newStatus = await getAssetStatusByCodeOrThrow(STATUS_CODE_BY_MOVEMENT_TYPE[input.movementType]);
@@ -84,4 +97,24 @@ export async function createAssetMovement(input: CreateAssetMovementInput): Prom
   });
 
   return movement;
+}
+
+// Paso 9 del flujo: asigna UNA unidad a UN empleado. NO toca el estado de la
+// PurchaseRequest -el cierre del ciclo de compra (DELIVERED) se dispara en
+// createGoodsReceipt (ver isRequestFullyReceived en goodsReceipt.service.ts)
+// cuando lo recibido cubre lo autorizado, sin importar si ya se asigno a
+// alguien. Decision del usuario tras un caso real: una solicitud de 4
+// notebooks para 3 personas + 1 de respaldo nunca cerraria si el cierre
+// dependiera de que TODAS las unidades queden ASSIGNED, porque el respaldo
+// se deja deliberadamente disponible sin asignar. Asignar es entonces un
+// simple wrapper de createAssetMovement con userIds:[userId] -un ciclo de
+// vida del activo aparte, sin relacion con el cierre de la solicitud.
+export async function assignAssetToUser(input: AssignAssetInput): Promise<AssetMovementModel> {
+  return createAssetMovement({
+    assetId: input.assetId,
+    movementType: "ASSIGNED",
+    userIds: [input.userId],
+    notes: input.notes,
+    createdBy: input.createdBy,
+  });
 }

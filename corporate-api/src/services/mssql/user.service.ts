@@ -201,6 +201,37 @@ export async function changePassword(
   });
 }
 
+// Lookup acotado para el picker de asignacion de activos (Fase E, paso 9):
+// NO se expone GET /users?personId= de forma general -users:read es
+// admin-only por diseno (PII, ver permission-catalog.ts). En vez de eso,
+// este lookup vive detras del mismo permiso que ya exige completar la
+// accion (asset-movements:create), acotado a Users activos, y solo por
+// busqueda explicita (nunca devuelve el listado completo sin filtro).
+export async function listAssignableUsers(search: string): Promise<SafeUser[]> {
+  const trimmed = search.trim();
+  if (!trimmed) return [];
+  const users = await UserModel.findAll({
+    where: { isActive: true },
+    include: [
+      {
+        model: PersonModel,
+        as: "person",
+        required: true,
+        where: {
+          [Op.or]: [
+            { documentId: { [Op.like]: `%${trimmed}%` } },
+            { firstName: { [Op.like]: `%${trimmed}%` } },
+            { lastName: { [Op.like]: `%${trimmed}%` } },
+          ],
+        },
+      },
+    ],
+    order: [["username", "ASC"]],
+    limit: 20,
+  });
+  return users.map(toSafeUser);
+}
+
 export async function deactivateUser(id: number): Promise<void> {
   const user = await getUserByIdOrThrow(id);
   await user.update({ isActive: false });

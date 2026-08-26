@@ -23,3 +23,14 @@ export interface CreateAssetMovementInput {
   notes?: string | null;
   createdBy?: number | null;
 }
+
+// Paso 9 del flujo: asignar UNA unidad a UN empleado -userId singular (no
+// userIds[] como el movimiento generico) porque assignAssetToUser modela
+// especificamente esa accion; por debajo llama a createAssetMovement con
+// userIds:[userId]. Ver services/postgres/assetMovement.service.ts.
+export interface AssignAssetInput {
+  assetId: number;
+  userId: number;
+  notes?: string | null;
+  createdBy?: number | null;
+}

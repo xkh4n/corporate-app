@@ -40,7 +40,11 @@ const nonCancelTransitions: Record<PurchaseRequestStatus, readonly PurchaseReque
   APPROVE_QUOTE: ["QUOTE_APPROVED", "IN_QUOTATION", "REJECTED"],
   QUOTE_APPROVED: ["OC_GENERATED"],
   OC_GENERATED: ["PENDING_DELIVERY"],
-  PENDING_DELIVERY: ["AVAILABLE"],
+  // DELIVERED directo desde PENDING_DELIVERY: si la primera recepcion ya
+  // cubre el total autorizado (ej. una sola linea, una sola OC), no hay
+  // paso intermedio por AVAILABLE que recorrer -ver isRequestFullyReceived
+  // en goodsReceipt.service.ts.
+  PENDING_DELIVERY: ["AVAILABLE", "DELIVERED"],
   // CLOSED es alcanzable desde AVAILABLE y desde DELIVERED (ver la fila
   // "CLOSED | terminal | ... desde AVAILABLE/DELIVERED" de la tabla).
   AVAILABLE: ["DELIVERED", "CLOSED"],

@@ -17,6 +17,7 @@ import ApproveQuote from "../pages/solicitudes/ApproveQuote";
 import AttachPurchaseOrder from "../pages/solicitudes/AttachPurchaseOrder";
 import SendPurchaseOrder from "../pages/solicitudes/SendPurchaseOrder";
 import ReceiveGoods from "../pages/solicitudes/ReceiveGoods";
+import AssignAssets from "../pages/solicitudes/AssignAssets";
 import CreateProducts from "../pages/adquisiciones/productos/CreateProducts";
 import ListProducts from "../pages/adquisiciones/productos/ListProducts";
 import CreateProductCategory from "../pages/adquisiciones/category/CreateProductCategory";
@@ -52,6 +53,7 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/purchase-orders/attach": () => <AttachPurchaseOrder />,
   "/purchase-orders/send": () => <SendPurchaseOrder />,
   "/goods-receipts/create": () => <ReceiveGoods />,
+  "/assets/assign": () => <AssignAssets />,
   "/roles/create": () => <NuevoRole />,
   "/roles/update": () => <AsignarPermissionToRole />,
   "/roles/read": () => <ListarRole />,

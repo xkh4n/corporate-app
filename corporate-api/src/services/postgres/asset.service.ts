@@ -2,6 +2,7 @@ import { Op, QueryTypes, Transaction } from "sequelize";
 import { postgres } from "../../databases/postgres/connection";
 import { AssetModel } from "../../models/postgres/asset.model";
 import { AssetStatusModel } from "../../models/postgres/assetStatus.model";
+import { GoodsReceiptModel } from "../../models/mssql/goodsReceipt.model";
 import { getAssetStatusByCodeOrThrow } from "./assetStatus.service";
 import { getProductByIdOrThrow } from "../mongo/product.service";
 import { NotFoundError } from "../../library/errors";
@@ -56,6 +57,20 @@ export async function listAssets(
     include: [{ model: AssetStatusModel, as: "status" }],
   });
   return { items: rows, total: count };
+}
+
+// Reverse-lookup cross-engine (GoodsReceipt vive en MSSQL, Asset en
+// Postgres, sin FK real entre ambos): usado por AssignAssets.tsx (Fase E)
+// para listar TODAS las unidades recibidas de una solicitud de una sola vez
+// -sin paginar, la cantidad tipica es de unidades, no miles.
+export async function getAssetsByRequestId(requestId: number): Promise<AssetModel[]> {
+  const receipts = await GoodsReceiptModel.findAll({ where: { requestId }, attributes: ["id"] });
+  if (receipts.length === 0) return [];
+  return AssetModel.findAll({
+    where: { goodsReceiptId: { [Op.in]: receipts.map((receipt) => receipt.id) } },
+    include: [{ model: AssetStatusModel, as: "status" }],
+    order: [["id", "ASC"]],
+  });
 }
 
 export async function getAssetById(id: number): Promise<AssetModel | null> {

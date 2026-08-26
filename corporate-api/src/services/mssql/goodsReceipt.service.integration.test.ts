@@ -141,7 +141,7 @@ async function createFixtureAtPendingDelivery(approvedQuantity: number) {
 
 describe("goodsReceipt.service (integracion, MSSQL + Postgres reales)", () => {
   describe("createGoodsReceipt", () => {
-    it("recepciona completo y pasa la solicitud a AVAILABLE, creando un Asset por unidad", async () => {
+    it("recepciona completo en un solo envio y pasa la solicitud directo a DELIVERED, creando un Asset por unidad", async () => {
       const { request, order } = await createFixtureAtPendingDelivery(3);
 
       const receipt = await createGoodsReceipt({
@@ -153,7 +153,10 @@ describe("goodsReceipt.service (integracion, MSSQL + Postgres reales)", () => {
       });
 
       expect(receipt.receivedQuantity).toBe(3);
-      expect((await getPurchaseRequestByIdOrThrow(request.id)).status).toBe("AVAILABLE");
+      // Recepcion unica que ya cubre lo autorizado -salta AVAILABLE, cierra
+      // el ciclo de compra directo (isRequestFullyReceived), sin depender de
+      // que las unidades se le asignen a alguien despues.
+      expect((await getPurchaseRequestByIdOrThrow(request.id)).status).toBe("DELIVERED");
 
       const { items, total } = await listAssets({ page: 1, limit: 10, sortBy: "id", sortOrder: "asc" }, receipt.id);
       expect(total).toBe(3);
@@ -161,7 +164,7 @@ describe("goodsReceipt.service (integracion, MSSQL + Postgres reales)", () => {
       expect(items.every((asset) => asset.status?.code === "AVAILABLE")).toBe(true);
     });
 
-    it("acepta recepciones parciales: pasa a AVAILABLE ya en la primera, no exige recepcion completa", async () => {
+    it("acepta recepciones parciales: AVAILABLE mientras falte recibir, DELIVERED recien al completar -sin asignar nada a nadie", async () => {
       const { request, order } = await createFixtureAtPendingDelivery(5);
 
       const firstReceipt = await createGoodsReceipt({
@@ -178,9 +181,9 @@ describe("goodsReceipt.service (integracion, MSSQL + Postgres reales)", () => {
         purchaseOrderId: order.id,
         receivedQuantity: 3,
       });
-      // AVAILABLE -> AVAILABLE es no-op (assertPurchaseRequestTransition,
-      // from===to) -sigue AVAILABLE, no lanza.
-      expect((await getPurchaseRequestByIdOrThrow(request.id)).status).toBe("AVAILABLE");
+      // 2 + 3 = 5 = approvedQuantity -queda completo, cierra a DELIVERED aun
+      // cuando ningun Asset fue asignado todavia (caso "stock de respaldo").
+      expect((await getPurchaseRequestByIdOrThrow(request.id)).status).toBe("DELIVERED");
 
       const { total: totalFirst } = await listAssets({ page: 1, limit: 10, sortBy: "id", sortOrder: "asc" }, firstReceipt.id);
       const { total: totalSecond } = await listAssets({ page: 1, limit: 10, sortBy: "id", sortOrder: "asc" }, secondReceipt.id);
@@ -189,7 +192,11 @@ describe("goodsReceipt.service (integracion, MSSQL + Postgres reales)", () => {
     });
 
     it("rechaza (BadRequestError) si la cantidad acumulada supera lo autorizado", async () => {
-      const { order } = await createFixtureAtPendingDelivery(2);
+      // approvedQuantity:3 con una primera recepcion PARCIAL de 2 -a
+      // diferencia del resto de los tests de esta suite, no puede recibirse
+      // completo de entrada: eso cerraria la solicitud a DELIVERED antes de
+      // llegar al guard de cantidad que este test quiere ejercitar.
+      const { order } = await createFixtureAtPendingDelivery(3);
 
       await createGoodsReceipt({
         documentType: "GUIA_DESPACHO",
@@ -203,7 +210,7 @@ describe("goodsReceipt.service (integracion, MSSQL + Postgres reales)", () => {
           documentType: "GUIA_DESPACHO",
           documentNumber: "GD-0004",
           purchaseOrderId: order.id,
-          receivedQuantity: 1,
+          receivedQuantity: 2,
         }),
       ).rejects.toBeInstanceOf(BadRequestError);
     });

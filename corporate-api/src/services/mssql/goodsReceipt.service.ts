@@ -1,6 +1,7 @@
 import { Op } from "sequelize";
 import { GoodsReceiptModel } from "../../models/mssql/goodsReceipt.model";
 import { AuthorizationModel } from "../../models/mssql/authorization.model";
+import { PurchaseRequestLineModel } from "../../models/mssql/purchaseRequestLine.model";
 import { getPurchaseOrderByIdOrThrow } from "./purchaseOrder.service";
 import { getQuoteByIdOrThrow } from "./quote.service";
 import { getPurchaseRequestByIdOrThrow, updatePurchaseRequestStatus } from "./purchaseRequest.service";
@@ -68,6 +69,42 @@ export async function getGoodsReceiptByIdOrThrow(id: number): Promise<GoodsRecei
 // siempre, porque la primera ya dejo la solicitud en AVAILABLE. Recepciones
 // siguientes reintentan la misma transicion AVAILABLE->AVAILABLE, que
 // assertPurchaseRequestTransition ya trata como no-op (from===to).
+//
+// El cierre a DELIVERED se dispara aca (isRequestFullyReceived), no en
+// assignAssetToUser -decision del usuario tras un caso real: una solicitud
+// de 4 notebooks para 3 personas + 1 de respaldo nunca terminaria si el
+// cierre dependiera de que TODAS las unidades queden asignadas, porque el
+// respaldo se deja deliberadamente sin asignar. El ciclo de COMPRA (esta
+// solicitud) se completa cuando lo recibido cubre lo autorizado; a quien se
+// le asigna cada unidad despues es un ciclo de vida del activo aparte (ver
+// assetMovement.service.ts), que puede no completarse nunca.
+// Analogo a areAllApprovedLinesAuthorized/areAllWinningQuotesOrdered: una
+// solicitud puede tener varias lineas aprobadas, cada una con su propia
+// cotizacion ganadora, Authorization y por lo tanto sus propias recepciones.
+// Solo cuando lo recibido acumulado de CADA Authorization ya alcanza su
+// approvedQuantity la solicitud esta realmente completa -no en la primera
+// recepcion parcial. Sin lineas aprobadas o sin Authorizations se considera
+// "no completo" (fail closed, mismo criterio que las otras dos funciones).
+async function isRequestFullyReceived(requestId: number): Promise<boolean> {
+  const approvedLines = await PurchaseRequestLineModel.findAll({
+    where: { requestId, status: "APPROVED" },
+    attributes: ["id"],
+  });
+  if (approvedLines.length === 0) return false;
+
+  const authorizations = await AuthorizationModel.findAll({
+    where: { requestLineId: { [Op.in]: approvedLines.map((line) => line.id) } },
+  });
+  if (authorizations.length === 0) return false;
+
+  for (const authorization of authorizations) {
+    const received =
+      (await GoodsReceiptModel.sum("receivedQuantity", { where: { quoteId: authorization.quoteId } })) || 0;
+    if (received < authorization.approvedQuantity) return false;
+  }
+  return true;
+}
+
 export async function createGoodsReceipt(input: GoodsReceiptCreationInput): Promise<GoodsReceiptModel> {
   const order = await getPurchaseOrderByIdOrThrow(input.purchaseOrderId);
   const quote = await getQuoteByIdOrThrow(order.quoteId);
@@ -135,7 +172,8 @@ export async function createGoodsReceipt(input: GoodsReceiptCreationInput): Prom
     throw err;
   }
 
-  await updatePurchaseRequestStatus(request.id, "AVAILABLE", input.createdBy ?? undefined);
+  const nextStatus = (await isRequestFullyReceived(request.id)) ? "DELIVERED" : "AVAILABLE";
+  await updatePurchaseRequestStatus(request.id, nextStatus, input.createdBy ?? undefined);
 
   return receipt;
 }
