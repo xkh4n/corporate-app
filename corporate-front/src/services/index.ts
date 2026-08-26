@@ -1,4 +1,5 @@
 import {addressService} from "./addressService";
+import {assetKardexService} from "./assetKardexService";
 import {assetMovementService} from "./assetMovementService";
 import {assetService} from "./assetService";
 import {assetStatusService} from "./assetStatusService";
@@ -33,6 +34,7 @@ import {userService} from "./userService";
 
 export {
     addressService,
+    assetKardexService,
     assetMovementService,
     assetService,
     assetStatusService,

@@ -147,4 +147,10 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
 
   { resource: "asset-movements",action: "read",description: "Consultar movimientos de activos",grantToUser: true,},
   { resource: "asset-movements",action: "create",description: "Registrar movimientos de activos (asignar/mover)",grantToUser: true,},
+
+  // Kardex de valorizacion contable: admin-only por defecto (sin
+  // grantToUser), encaja con el caso de uso de rol "contabilidad" separado
+  // de "adquisiciones" que ya se planteo para el RBAC granular.
+  { resource: "asset-kardex", action: "read", description: "Consultar el kardex de valorizacion de activos" },
+  { resource: "asset-kardex", action: "create", description: "Registrar asientos manuales de kardex (ajuste/baja)" },
 ];

@@ -1,10 +1,15 @@
-import { CreationOptional, DataTypes, InferAttributes, InferCreationAttributes, Model } from "sequelize";
+import { CreationOptional, DataTypes, InferAttributes, InferCreationAttributes, Model, NonAttribute } from "sequelize";
 import { mssql } from "../../databases/mssql/connection";
 import { PersonModel } from "./person.model";
 
 export class UserModel extends Model<InferAttributes<UserModel>, InferCreationAttributes<UserModel>> {
   declare id: CreationOptional<number>;
   declare personId: number;
+  // NonAttribute: solo esta poblado cuando el query pide explicitamente
+  // include:[{model: PersonModel, as:"person"}] (ver getUserById/
+  // getUserByUsername/getUserByPersonId en user.service.ts) -no es una
+  // columna propia de "users". Mismo patron que AssetModel.status.
+  declare person?: NonAttribute<PersonModel>;
   // roleId apunta a roles.id en Postgres: sin FK real (motores distintos),
   // se valida a mano en services/mssql/user.service.ts contra role.service.
   declare roleId: number;

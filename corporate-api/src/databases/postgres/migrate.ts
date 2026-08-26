@@ -33,6 +33,7 @@ export async function migratePostgres(): Promise<void> {
   await migrateMenuItems();
   await migrateAssets();
   await migrateAssetTagCounters();
+  await migrateAssetKardex();
 
   logger.info("Migracion de Postgres aplicada");
 }
@@ -219,6 +220,17 @@ async function migrateAssets(): Promise<void> {
     ALTER TABLE assets ADD COLUMN IF NOT EXISTS cost_center_id INTEGER REFERENCES cost_centers(id);
   `);
 
+  // ObjectId de Mongo (coleccion products) en formato string -cross-engine,
+  // sin FK real, mismo patron que employees.position_id. Nullable, sin
+  // backfill: los assets creados antes de este cambio quedan sin producto
+  // asociado. Hace falta para agregar el Kardex "por producto" (ver
+  // migrateAssetKardex mas abajo) sin tener que saltar
+  // Asset -> GoodsReceipt (MSSQL) -> PurchaseOrder -> Quote -> productId cada
+  // vez que se necesita saber de que producto es un activo.
+  await runDdl(`
+    ALTER TABLE assets ADD COLUMN IF NOT EXISTS product_id VARCHAR(24);
+  `);
+
   await runDdl(`
     CREATE TABLE IF NOT EXISTS asset_movements (
       id SERIAL PRIMARY KEY,
@@ -252,6 +264,30 @@ async function migrateAssets(): Promise<void> {
   await runDdl(`
     CREATE INDEX IF NOT EXISTS ix_asset_movements_asset_id ON asset_movements(asset_id);
   `);
+
+  // Campos del acta de entrega (Fase E, formulario enriquecido): todos
+  // nullable, sin backfill -las asignaciones ya existentes no tenian estos
+  // datos. supervisorName es texto libre (no hay tabla de "jefe directo" en
+  // el modelo de empleados hoy, mismo criterio que AntherxSoft: se tipea al
+  // momento de asignar, no se deriva).
+  await runDdl(`
+    ALTER TABLE asset_movements ADD COLUMN IF NOT EXISTS supervisor_name VARCHAR(150);
+  `);
+  await runDdl(`
+    ALTER TABLE asset_movements ADD COLUMN IF NOT EXISTS mac_address VARCHAR(17);
+  `);
+  // "accessories" (texto libre unico) se reemplazo por columnas discretas
+  // -decision revisada del usuario tras ver el acta real de AntherxSoft:
+  // ahi bolso/candado/cargador/almacenamiento/memoria son filas propias de
+  // la tabla de especificaciones, no un texto compuesto. DROP en vez de
+  // dejarla huerfana: se agrego en esta misma fase, sin datos reales que
+  // preservar salvo pruebas puntuales.
+  await runDdl(`ALTER TABLE asset_movements DROP COLUMN IF EXISTS accessories;`);
+  await runDdl(`ALTER TABLE asset_movements ADD COLUMN IF NOT EXISTS storage_capacity VARCHAR(20);`);
+  await runDdl(`ALTER TABLE asset_movements ADD COLUMN IF NOT EXISTS ram_capacity VARCHAR(20);`);
+  await runDdl(`ALTER TABLE asset_movements ADD COLUMN IF NOT EXISTS has_bag BOOLEAN;`);
+  await runDdl(`ALTER TABLE asset_movements ADD COLUMN IF NOT EXISTS has_lock BOOLEAN;`);
+  await runDdl(`ALTER TABLE asset_movements ADD COLUMN IF NOT EXISTS has_charger BOOLEAN;`);
 }
 
 // Contador atomico para el tag de activo (ARR/SRV/ACT segun
@@ -273,5 +309,43 @@ async function migrateAssetTagCounters(): Promise<void> {
       ('SRV', 0),
       ('ACT', 0)
     ON CONFLICT (prefix) DO NOTHING;
+  `);
+}
+
+// Libro contable de valorizacion de activos (Kardex): insert-only, un
+// renglon por movimiento -a diferencia del Kardex de AntherxSoft (un
+// documento por producto que se SOBRESCRIBE en cada recepcion, perdiendo el
+// historial salvo el ultimo movimiento), aca cada asiento queda escrito para
+// siempre. Un error se corrige con un asiento ADJUSTMENT que lo compense,
+// nunca editando/borrando el renglon anterior. product_id no lleva FK real
+// (referencia cross-engine hacia Mongo, mismo criterio que assets.product_id
+// de arriba) y se duplica desde assets.product_id al momento de insertar
+// para poder agregar "por producto" (GET /asset-kardex/by-product) con un
+// simple GROUP BY sobre esta misma tabla, sin tener que resolver cada activo
+// contra Mongo en cada lectura.
+async function migrateAssetKardex(): Promise<void> {
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS asset_kardex_entries (
+      id SERIAL PRIMARY KEY,
+      asset_id INTEGER NOT NULL REFERENCES assets(id),
+      product_id VARCHAR(24),
+      entry_type VARCHAR(20) NOT NULL CHECK (entry_type IN ('ACQUISITION','ADJUSTMENT','WRITE_OFF')),
+      entry_date TIMESTAMPTZ NOT NULL DEFAULT now(),
+      unit_cost DECIMAL(18,2) NOT NULL,
+      amount DECIMAL(18,2) NOT NULL,
+      balance DECIMAL(18,2) NOT NULL,
+      reference VARCHAR(50),
+      notes VARCHAR(255),
+      created_by INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await runDdl(`
+    CREATE INDEX IF NOT EXISTS ix_asset_kardex_entries_asset_id_entry_date
+      ON asset_kardex_entries(asset_id, entry_date);
+  `);
+  await runDdl(`
+    CREATE INDEX IF NOT EXISTS ix_asset_kardex_entries_product_id ON asset_kardex_entries(product_id);
   `);
 }

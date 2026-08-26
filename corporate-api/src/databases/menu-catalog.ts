@@ -188,6 +188,30 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     permissionKey: "asset-movements:create",
     sortOrder: 90,
   },
+  {
+    label: "Estado de Activos por Solicitud",
+    icon: "IoListOutline",
+    link: "/solicitudes/estado-activos",
+    parentLabel: "Productos",
+    permissionKey: "purchase-requests:read",
+    sortOrder: 92,
+  },
+  {
+    label: "Etiquetas de Activos",
+    icon: "IoPricetagOutline",
+    link: "/assets/labels",
+    parentLabel: "Productos",
+    permissionKey: "assets:read",
+    sortOrder: 95,
+  },
+  {
+    label: "Kardex de Activos",
+    icon: "IoCalculatorOutline",
+    link: "/assets/kardex",
+    parentLabel: "Productos",
+    permissionKey: "asset-kardex:read",
+    sortOrder: 100,
+  },
 
   {
     label: "Vincular Productos a Proveedor",

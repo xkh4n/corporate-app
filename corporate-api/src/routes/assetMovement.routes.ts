@@ -21,6 +21,11 @@ assetMovementRouter.post(
   validateBody(assetMovementController.assignAssetSchema),
   assetMovementController.assign,
 );
+assetMovementRouter.get(
+  "/:id/handover.pdf",
+  authorize("asset-movements", "read"),
+  assetMovementController.downloadHandover,
+);
 assetMovementRouter.get("/", authorize("asset-movements", "read"), assetMovementController.list);
 assetMovementRouter.post(
   "/",

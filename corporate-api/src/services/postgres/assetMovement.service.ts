@@ -3,12 +3,21 @@ import { AssetMovementModel } from "../../models/postgres/assetMovement.model";
 import { AssetMovementUserModel } from "../../models/postgres/assetMovementUser.model";
 import { getAssetByIdOrThrow, setAssetStatus } from "./asset.service";
 import { getAssetStatusByCodeOrThrow } from "./assetStatus.service";
+import { recordWriteOff } from "./assetKardex.service";
 import { getUserByIdOrThrow } from "../mssql/user.service";
-import { BadRequestError, ConflictError } from "../../library/errors";
+import { getEmployeeByPersonId } from "../mssql/employee.service";
+import { GoodsReceiptModel } from "../../models/mssql/goodsReceipt.model";
+import { getSupplierByIdOrThrow } from "../mssql/supplier.service";
+import { getBusinessPartnerByIdOrThrow } from "../mssql/businessPartner.service";
+import { getCostCenterById } from "./costCenter.service";
+import { getPositionById } from "../mongo/position.service";
+import { getProductById } from "../mongo/product.service";
+import { BadRequestError, ConflictError, NotFoundError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder } from "../../library/sequelizeSearch";
 import type { AssignAssetInput, CreateAssetMovementInput } from "../../types/postgres/assetMovement.types";
+import type { AssetHandoverPdfData } from "../../library/pdf/assetHandoverPdf";
 
 // El estado ACTUAL del activo (Asset.statusId) se actualiza aca como efecto
 // del movimiento -no se recalcula despues buscando el ultimo movimiento
@@ -79,6 +88,13 @@ export async function createAssetMovement(input: CreateAssetMovementInput): Prom
         // del cliente por allowNull:false sin valor.
         movementDate: new Date(),
         notes: input.notes ?? null,
+        supervisorName: input.supervisorName ?? null,
+        macAddress: input.macAddress ?? null,
+        storageCapacity: input.storageCapacity ?? null,
+        ramCapacity: input.ramCapacity ?? null,
+        hasBag: input.hasBag ?? null,
+        hasLock: input.hasLock ?? null,
+        hasCharger: input.hasCharger ?? null,
         createdBy: input.createdBy ?? null,
       },
       { transaction },
@@ -93,14 +109,76 @@ export async function createAssetMovement(input: CreateAssetMovementInput): Prom
 
     await setAssetStatus(input.assetId, newStatus.id, transaction, input.createdBy ?? undefined);
 
+    // Baja del Kardex: la unidad deja de tener valor en libros al darse de
+    // baja, en la MISMA transaccion que el resto del movimiento. Asignar
+    // NO escribe al Kardex a proposito -mover un activo entre personas no
+    // cambia su valorizacion.
+    if (input.movementType === "DECOMMISSIONED") {
+      await recordWriteOff({ assetId: input.assetId, reference: asset.tag }, transaction);
+    }
+
     return created;
   });
 
   return movement;
 }
 
-// Paso 9 del flujo: asigna UNA unidad a UN empleado. NO toca el estado de la
-// PurchaseRequest -el cierre del ciclo de compra (DELIVERED) se dispara en
+// Compone los datos del acta de entrega (library/pdf/assetHandoverPdf.ts)
+// cruzando los 3 motores: el movimiento y el activo (Postgres), el usuario
+// asignado -> persona -> colaborador (MSSQL), y cargo/producto (Mongo).
+// Solo tiene sentido para ASSIGNED/REASSIGNED (los unicos con usuario
+// asociado) -SUPPORT/DECOMMISSIONED no generan acta.
+export async function getAssetHandoverData(movementId: number): Promise<AssetHandoverPdfData> {
+  const movement = await AssetMovementModel.findByPk(movementId, {
+    include: [{ model: AssetMovementUserModel, as: "movementUsers" }],
+  });
+  if (!movement) throw new NotFoundError(`El movimiento ${movementId} no existe`);
+  const assignedUserId = movement.movementUsers?.[0]?.userId;
+  if (!assignedUserId) {
+    throw new BadRequestError(`El movimiento ${movementId} no tiene un usuario asignado, no genera acta`);
+  }
+
+  const [asset, user] = await Promise.all([getAssetByIdOrThrow(movement.assetId), getUserByIdOrThrow(assignedUserId)]);
+  const person = user.person;
+  if (!person) throw new NotFoundError(`El usuario ${assignedUserId} no tiene una persona asociada`);
+
+  const employee = await getEmployeeByPersonId(person.id);
+  // Proveedor: Asset -> GoodsReceipt (MSSQL, via goodsReceiptId) -> Supplier
+  // -> BusinessPartner.legalName. Resuelto automaticamente (el usuario lo
+  // pidio explicitamente): la cadena ya existe en el modelo, no hace falta
+  // pedirselo a nadie en el formulario. Sin goodsReceiptId (activo legado,
+  // creado antes de este campo) simplemente no hay proveedor que mostrar.
+  const goodsReceipt = asset.goodsReceiptId ? await GoodsReceiptModel.findByPk(asset.goodsReceiptId) : null;
+  const [position, costCenter, product, supplier] = await Promise.all([
+    employee?.positionId ? getPositionById(employee.positionId) : Promise.resolve(null),
+    asset.costCenterId ? getCostCenterById(asset.costCenterId) : Promise.resolve(null),
+    asset.productId ? getProductById(asset.productId) : Promise.resolve(null),
+    goodsReceipt ? getSupplierByIdOrThrow(goodsReceipt.supplierId) : Promise.resolve(null),
+  ]);
+  const businessPartner = supplier ? await getBusinessPartnerByIdOrThrow(supplier.businessPartnerId) : null;
+
+  return {
+    employeeName: `${person.firstName} ${person.lastName}`,
+    employeeDocumentId: person.documentId,
+    position: position?.title ?? null,
+    costCenterName: costCenter?.name ?? null,
+    supervisorName: movement.supervisorName,
+    assetTag: asset.tag,
+    serialNumber: asset.serialNumber,
+    productName: product?.name ?? null,
+    supplierName: businessPartner?.legalName ?? null,
+    storageCapacity: movement.storageCapacity,
+    ramCapacity: movement.ramCapacity,
+    hasBag: movement.hasBag,
+    hasLock: movement.hasLock,
+    hasCharger: movement.hasCharger,
+    macAddress: movement.macAddress,
+    assignedAt: movement.movementDate,
+  };
+}
+
+// Asigna UNA unidad a UN empleado. NO toca el estado de la PurchaseRequest
+// -el cierre del ciclo de compra (DELIVERED) se dispara en
 // createGoodsReceipt (ver isRequestFullyReceived en goodsReceipt.service.ts)
 // cuando lo recibido cubre lo autorizado, sin importar si ya se asigno a
 // alguien. Decision del usuario tras un caso real: una solicitud de 4
@@ -115,6 +193,13 @@ export async function assignAssetToUser(input: AssignAssetInput): Promise<AssetM
     movementType: "ASSIGNED",
     userIds: [input.userId],
     notes: input.notes,
+    supervisorName: input.supervisorName,
+    macAddress: input.macAddress,
+    storageCapacity: input.storageCapacity,
+    ramCapacity: input.ramCapacity,
+    hasBag: input.hasBag,
+    hasLock: input.hasLock,
+    hasCharger: input.hasCharger,
     createdBy: input.createdBy,
   });
 }

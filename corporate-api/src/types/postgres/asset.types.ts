@@ -8,6 +8,7 @@ export interface AssetAttributes {
   receivedAt: string | null;
   goodsReceiptId: number | null;
   costCenterId: number | null;
+  productId: string | null;
   createdBy: number | null;
   updatedBy: number | null;
   createdAt: Date;

@@ -82,10 +82,17 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 }
 
 // Para los endpoints que devuelven el archivo directo (PDF de cotizacion,
-// adjuntos descargados) en vez del sobre {codigo,message,data}: no hay JSON
-// que desenvolver.
-export async function apiFetchBlob(path: string): Promise<Blob> {
-  const res = await fetch(`/api${path}`, { credentials: "include" });
+// acta de entrega, ZPL de etiquetas, adjuntos descargados) en vez del sobre
+// {codigo,message,data}: no hay JSON que desenvolver. options es el mismo
+// shape que apiFetch -la mayoria de estos endpoints son GET, pero
+// POST /assets/labels.zpl (lote de etiquetas) necesita mandar body.
+export async function apiFetchBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
+  const res = await fetch(`/api${path}`, {
+    method: options.method ?? "GET",
+    credentials: "include",
+    headers: options.body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+  });
 
   if (!res.ok) {
     const { message, details } = await parseErrorBody(res);

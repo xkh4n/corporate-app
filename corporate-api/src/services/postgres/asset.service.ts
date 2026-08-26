@@ -2,9 +2,11 @@ import { Op, QueryTypes, Transaction } from "sequelize";
 import { postgres } from "../../databases/postgres/connection";
 import { AssetModel } from "../../models/postgres/asset.model";
 import { AssetStatusModel } from "../../models/postgres/assetStatus.model";
+import { CostCenterModel } from "../../models/postgres/costCenter.model";
 import { GoodsReceiptModel } from "../../models/mssql/goodsReceipt.model";
 import { getAssetStatusByCodeOrThrow } from "./assetStatus.service";
-import { getProductByIdOrThrow } from "../mongo/product.service";
+import { recordAcquisition } from "./assetKardex.service";
+import { getProductByIdOrThrow, getProductsByIds } from "../mongo/product.service";
 import { NotFoundError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
@@ -54,7 +56,13 @@ export async function listAssets(
     order: buildSequelizeOrder(params.sortBy, params.sortOrder),
     limit: params.limit,
     offset: getOffset(params),
-    include: [{ model: AssetStatusModel, as: "status" }],
+    // costCenter incluido para AssignAsset.tsx (pantalla independiente de
+    // asignacion, ver menu-catalog.ts): busca por tag/serie y necesita
+    // mostrar el centro de costo de solo lectura sin una segunda llamada.
+    include: [
+      { model: AssetStatusModel, as: "status" },
+      { model: CostCenterModel, as: "costCenter" },
+    ],
   });
   return { items: rows, total: count };
 }
@@ -68,17 +76,25 @@ export async function getAssetsByRequestId(requestId: number): Promise<AssetMode
   if (receipts.length === 0) return [];
   return AssetModel.findAll({
     where: { goodsReceiptId: { [Op.in]: receipts.map((receipt) => receipt.id) } },
-    include: [{ model: AssetStatusModel, as: "status" }],
+    include: [
+      { model: AssetStatusModel, as: "status" },
+      { model: CostCenterModel, as: "costCenter" },
+    ],
     order: [["id", "ASC"]],
   });
 }
 
-export async function getAssetById(id: number): Promise<AssetModel | null> {
-  return AssetModel.findByPk(id, { include: [{ model: AssetStatusModel, as: "status" }] });
+// transaction opcional: sin el, Sequelize toma una conexion cualquiera del
+// pool -si se llama DENTRO de una transaccion abierta en OTRA conexion (ej.
+// desde assetKardex.service.ts al crear un asiento en la misma transaccion
+// que crea el Asset), esa lectura no ve la fila todavia no confirmada y
+// tira NotFoundError sobre un activo que en los hechos SI existe.
+export async function getAssetById(id: number, transaction?: Transaction): Promise<AssetModel | null> {
+  return AssetModel.findByPk(id, { include: [{ model: AssetStatusModel, as: "status" }], transaction });
 }
 
-export async function getAssetByIdOrThrow(id: number): Promise<AssetModel> {
-  const asset = await getAssetById(id);
+export async function getAssetByIdOrThrow(id: number, transaction?: Transaction): Promise<AssetModel> {
+  const asset = await getAssetById(id, transaction);
   if (!asset) throw new NotFoundError(`El activo ${id} no existe`);
   return asset;
 }
@@ -122,12 +138,26 @@ export async function createAssetsFromReceipt(input: CreateAssetsFromReceiptInpu
           receivedAt: input.receivedAt ?? new Date().toISOString().slice(0, 10),
           goodsReceiptId: input.goodsReceiptId,
           costCenterId: input.costCenterId ?? null,
+          productId: input.productId,
           createdBy: input.createdBy ?? null,
         },
         { transaction },
       );
       if (finalStatus) {
         await setAssetStatus(asset.id, finalStatus.id, transaction, input.createdBy ?? undefined);
+      }
+      // Alta en el Kardex: un asiento ACQUISITION por unidad, en la MISMA
+      // transaccion que crea el Asset -si el Kardex falla, la recepcion de
+      // esa unidad se revierte junto con el, no puede quedar un Asset sin su
+      // asiento de alta. Sin input.value no hay costo que registrar (no
+      // debería pasar en el flujo real -goodsReceipt.service.ts siempre
+      // manda quote.purchaseValue-, pero no es motivo para tumbar toda la
+      // recepcion si algun caller nuevo lo omite).
+      if (input.value) {
+        await recordAcquisition(
+          { assetId: asset.id, unitCost: input.value, reference: tag, createdBy: input.createdBy },
+          transaction,
+        );
       }
       ids.push(asset.id);
     }
@@ -144,6 +174,25 @@ export async function updateAsset(id: number, data: AssetUpdateAttributes): Prom
   const asset = await getAssetByIdOrThrow(id);
   await asset.update(data);
   return asset;
+}
+
+// Datos para la etiqueta fisica (library/labels/assetLabelZpl.ts): batch por
+// ids -evita N+1 contra Mongo al imprimir un lote (ver getProductsByIds,
+// mismo patron ya usado por getQuoteRequestDocumentData/attachProduct).
+// Assets sin productId (creados antes de esta fase) simplemente no llevan
+// nombre de producto en la etiqueta.
+export async function getAssetsLabelData(
+  ids: number[],
+): Promise<{ tag: string; serialNumber: string | null; productName: string | null }[]> {
+  const assets = await AssetModel.findAll({ where: { id: { [Op.in]: ids } } });
+  const productIds = [...new Set(assets.map((asset) => asset.productId).filter((id): id is string => id !== null))];
+  const products = await getProductsByIds(productIds);
+  const productNameById = new Map(products.map((product) => [String(product._id), product.name]));
+  return assets.map((asset) => ({
+    tag: asset.tag,
+    serialNumber: asset.serialNumber,
+    productName: asset.productId ? (productNameById.get(asset.productId) ?? null) : null,
+  }));
 }
 
 export async function setAssetStatus(

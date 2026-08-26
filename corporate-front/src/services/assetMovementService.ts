@@ -1,4 +1,4 @@
-import { apiFetch } from "../lib/apiClient";
+import { apiFetch, apiFetchBlob } from "../lib/apiClient";
 import { toQuery } from "../lib/query";
 import type { ListParams, Paginated } from "../types/api";
 import type { AssetMovement, AssetMovementCreateInput, AssignAssetInput } from "../types/assetMovement";
@@ -19,4 +19,8 @@ export const assetMovementService = {
     apiFetch<SafeUser[]>(`/asset-movements/assignable-users${toQuery({ search })}`),
 
   assign: (body: AssignAssetInput) => apiFetch<AssetMovement>("/asset-movements/assign", { method: "POST", body }),
+
+  // Acta de entrega en PDF (Fase E enriquecida): archivo directo, no el
+  // sobre {codigo,message,data} -mismo criterio que downloadQuoteDocument.
+  downloadHandover: (movementId: number) => apiFetchBlob(`/asset-movements/${movementId}/handover.pdf`),
 };
