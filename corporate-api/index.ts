@@ -43,7 +43,54 @@ async function bootstrap(): Promise<void> {
   });
 }
 
-bootstrap().catch((err) => {
-  logger.error({ err }, "No se pudo levantar corporate-api");
+const BOOTSTRAP_MAX_RETRIES = 5;
+const BOOTSTRAP_BASE_DELAY_MS = 2000;
+const BOOTSTRAP_MAX_DELAY_MS = 30_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// "Full jitter" (AWS, "Exponential Backoff And Jitter"): el delay real es
+// aleatorio ENTRE 0 y el techo exponencial, no el techo fijo. Con las 3
+// replicas de este servicio arrancando casi al mismo tiempo (mismo evento de
+// arranque del stack), un backoff fijo (2s, 4s, 8s...) las haria reintentar
+// sincronizadas, golpeando la BD en el mismo instante en cada vuelta -el
+// jitter las desincroniza.
+function backoffWithJitter(attempt: number): number {
+  const cap = Math.min(BOOTSTRAP_MAX_DELAY_MS, BOOTSTRAP_BASE_DELAY_MS * 2 ** attempt);
+  return Math.random() * cap;
+}
+
+// Reintenta bootstrap() completo (conexiones + migraciones + seed), no solo
+// el connect: si la BD se cae a mitad de una migracion, todo el flujo ya es
+// idempotente (IF NOT EXISTS / ON CONFLICT en todo el proyecto, ver
+// migrate.ts y seed.ts), asi que repetirlo entero es seguro. Sin esto, una
+// carrera de arranque contra un motor de BD que todavia no esta listo (ej.
+// todo el stack reiniciando a la vez) tira process.exit(1) en el primer
+// intento -en produccion "restart: always" + PID 1 = node (a diferencia de
+// tsx watch en dev, que absorbe el crash del hijo sin reiniciar el
+// contenedor) igual lo recupera solo, pero con el backoff de Docker, que
+// puede tardar hasta ~1 minuto entre reintentos. Reintentando aca adentro
+// primero, la carrera se resuelve en segundos.
+async function bootstrapWithRetry(): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await bootstrap();
+      return;
+    } catch (err) {
+      if (attempt >= BOOTSTRAP_MAX_RETRIES) throw err;
+      const delay = backoffWithJitter(attempt);
+      logger.error(
+        { err, attempt: attempt + 1, maxRetries: BOOTSTRAP_MAX_RETRIES, retryInMs: Math.round(delay) },
+        "No se pudo levantar corporate-api, reintentando",
+      );
+      await sleep(delay);
+    }
+  }
+}
+
+bootstrapWithRetry().catch((err) => {
+  logger.error({ err }, "No se pudo levantar corporate-api tras agotar los reintentos");
   process.exit(1);
 });

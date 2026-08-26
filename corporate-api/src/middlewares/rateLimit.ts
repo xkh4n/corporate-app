@@ -34,6 +34,14 @@ function getLimiter(): RateLimitRequestHandler {
       limit: 10,
       standardHeaders: true,
       legacyHeaders: false,
+      // Solo los intentos FALLIDOS (contrasena incorrecta) gastan cupo -un
+      // login correcto no cuenta. Sin esto, una racha de usuarios legitimos
+      // reintentando sesion tras una caida del servicio (todos detras de la
+      // misma IP corporativa/NAT, ej. una oficina completa) agotaria el
+      // limite entre ellos mismos y bloquearia al resto de la empresa por 15
+      // minutos -gente que no hizo nada mal. La proteccion contra fuerza
+      // bruta (que genera muchos FALLOS) sigue intacta.
+      skipSuccessfulRequests: true,
       store: new RedisStore({
         sendCommand: (...args: string[]) => redis.sendCommand(args),
       }),
