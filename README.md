@@ -365,6 +365,14 @@ carrera ya documentada, mitigada por `restart: always`) — un segundo `docker c
 inmediatamente después converge limpio, sin intervención adicional. No es un fallo del stack, es el
 timeout de espera siendo corto para un arranque en frío.
 
+## Ramas y flujo de contribución
+
+Cada ambiente tiene su rama: `develop` (desarrollo) → `testing` (pre-productivo) → `master`
+(producción). `master` nunca recibe tests unitarios/integración ni configuración propia de `test`/`dev`
+— la promoción `testing → master` pasa por un script que arma una rama intermedia ya limpia, y un
+chequeo de CI que bloquea el Pull Request si algo prohibido igual se cuela. Detalle completo,
+incluyendo cómo configurar accesos por rama en GitHub: **[`CONTRIBUTING.md`](CONTRIBUTING.md)**.
+
 ## Limitaciones conocidas y notas de desarrollo
 
 - **Ambientes `prod`/`test`**: `compose.prod.yml`/`compose.test.yml` existen en los 5 stacks y ya se

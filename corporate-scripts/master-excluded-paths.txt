@@ -1,0 +1,37 @@
+# Rutas y patrones que NUNCA deben llegar a la rama "master" (producción).
+#
+# Fuente única de verdad: la leen tanto corporate-scripts/promote-to-master.ps1
+# (que las quita del merge testing -> release/master antes de commitear) como
+# .github/workflows/master-no-testing-artifacts.yml (que bloquea el Pull
+# Request hacia master si igual se cuela alguna). Si agregas un patrón nuevo,
+# agrégalo UNA sola vez acá — no lo dupliques a mano en el script ni en el
+# workflow.
+#
+# Formato, una entrada por línea:
+#   - Una línea SIN "/"      -> coincide por NOMBRE de archivo en cualquier
+#                                carpeta del repo (glob simple, "*" = comodín).
+#   - Una línea CON "/"      -> coincide por RUTA EXACTA relativa a la raíz
+#                                del repo (sin comodines).
+#   - Líneas que empiezan con "#" o vacías se ignoran.
+
+# Tests unitarios y de integración (viven junto al código fuente, no en una
+# carpeta aparte — por eso el match es por sufijo de nombre, no por ruta).
+*.unit.test.ts
+*.integration.test.ts
+
+# Config del test runner: sin *.test.ts en master, queda huérfana ahí.
+corporate-api/vitest.config.ts
+corporate-front/vitest.config.ts
+
+# Compose de Desarrollo y Testing de los 5 stacks — master solo debe conocer
+# compose.prod.yml de cada uno.
+corporate-api/compose.dev.yml
+corporate-api/compose.test.yml
+corporate-front/compose.dev.yml
+corporate-front/compose.test.yml
+corporate-infra/compose.dev.yml
+corporate-infra/compose.test.yml
+corporate-mailer/compose.dev.yml
+corporate-mailer/compose.test.yml
+corporate-monitoring/compose.dev.yml
+corporate-monitoring/compose.test.yml
