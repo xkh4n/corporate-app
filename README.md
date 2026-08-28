@@ -107,7 +107,7 @@ flowchart TB
     %% = el dato en reposo, el más protegido → el tono más oscuro.
     %% Los subgrafos comparten un mismo fill claro (el "contenedor Compose"
     %% como convención propia), independiente del color de sus nodos.
-    classDef exterior fill:#FBE4D6,stroke:#0C0950,color:#0C0950
+    classDef exterior fill:#7BF1A8,stroke:#0C0950,color:#0C0950
     classDef borde fill:#261FB3,stroke:#161179,color:#FBE4D6
     classDef aplicacion fill:#161179,stroke:#0C0950,color:#FBE4D6
     classDef datos fill:#0C0950,stroke:#261FB3,stroke-width:2px,color:#FBE4D6
@@ -129,11 +129,11 @@ flowchart TB
     %% "contenedor Compose", una sola convención visual, con el color ya
     %% resuelto por los nodos que agrupan adentro.
     style Cliente fill:#D9EFBD,stroke:#7BF1A8,color:#7BF1A8
-    style FRONT fill:#D9EFBD,stroke:#161179,color:#0C0950
-    style API fill:#D9EFBD,stroke:#161179,color:#0C0950
-    style MAILER fill:#D9EFBD,stroke:#161179,color:#0C0950
-    style MON fill:#D9EFBD,stroke:#161179,color:#0C0950
-    style INFRA fill:#D9EFBD,stroke:#161179,color:#0C0950
+    style FRONT fill:#D9EFBD,stroke:#161179,color:#7BF1A8
+    style API fill:#D9EFBD,stroke:#161179,color:#7BF1A8
+    style MAILER fill:#D9EFBD,stroke:#161179,color:#7BF1A8
+    style MON fill:#D9EFBD,stroke:#161179,color:#7BF1A8
+    style INFRA fill:#D9EFBD,stroke:#161179,color:#7BF1A8
 
     %% Conectores en índigo oscuro — un rojo vivo se lee como alarma/error
     %% sobre una paleta fría, y son las aristas el elemento más repetido
