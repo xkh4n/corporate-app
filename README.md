@@ -156,7 +156,9 @@ run.ps1 monitoring dev   # 5. corporate-monitoring: métricas/logs/dashboards
 réplicas de la API por nombre) — por eso `backend` va antes. Los 3 ambientes (`dev`, `prod`, `test`)
 usan el mismo comando con el sufijo ambiente: `run.ps1 backend prod`, `run.ps1 backend test`, etc.
 También está `run.ps1 mongokey <ambiente>` para generar el keyfile de MongoDB, y `run.ps1 fixendline`
-(sin ambiente) para corregir terminaciones de línea en Windows.
+(sin ambiente) para corregir terminaciones de línea en Windows. El mismo `run.ps1` maneja la
+promoción entre ramas (`gitpush` / `gitpr` / `pre`, requiere `gh` — ver "Promoción entre ramas" más
+abajo).
 
 Cada script de `corporate-scripts/` genera certificados TLS autofirmados y resuelve credenciales
 desde `corporate-secrets/` (carpeta **excluida de git**, un archivo por credencial, montados como
@@ -172,9 +174,9 @@ corporate-app/
 ├── corporate-mailer/      # Microservicio de correo: adjuntos OC, notificaciones, SMTP
 ├── corporate-monitoring/  # Compose: Prometheus, Loki, Alloy, Grafana, NGINX (TLS)
 ├── corporate-front/       # Frontend React 19/TypeScript/Tailwind v4 (Vite) — menú dinámico desde BD
-├── corporate-scripts/     # Scripts PowerShell de orquestación (certs, secretos, arranque)
+├── corporate-scripts/     # Scripts PowerShell de orquestación (certs, secretos, arranque, promoción de ramas)
 ├── corporate-secrets/     # Credenciales/certificados por ambiente — excluido de git
-└── run.ps1                # Punto de entrada único: run.ps1 <bdd|backend|mailer|monitoring|frontend> <dev|prod|test>
+└── run.ps1                # Punto de entrada único: stacks (<bdd|backend|mailer|monitoring|frontend> <dev|prod|test>) y git (gitpush/gitpr/pre)
 ```
 
 > Este árbol muestra lo que trae el repositorio (`git clone`). Además, quien trabaje con Claude Code
@@ -288,7 +290,8 @@ src/
 
 ## Cómo levantar el proyecto
 
-Requiere Docker Desktop y PowerShell 7+. Los 5 stacks se levantan en orden desde la raíz del repo.
+Requiere Docker Desktop y PowerShell 7+ (y [GitHub CLI `gh`](https://cli.github.com/) solo para los
+comandos de promoción entre ramas). Los 5 stacks se levantan en orden desde la raíz del repo.
 Ejemplo para ambiente `dev`:
 
 ```powershell
@@ -322,6 +325,67 @@ Comandos adicionales:
 .\run.ps1 mongokey <ambiente>   # Generar keyfile de MongoDB para el ambiente
 .\run.ps1 fixendline            # Corregir terminaciones de línea (Windows)
 ```
+
+### Promoción entre ramas (`gitpush` / `gitpr` / `pre`)
+
+El mismo `run.ps1` centraliza el flujo `develop → testing → master` para no olvidar pasos
+(actualizar la rama, pushear, poner etiquetas, no duplicar PRs).
+
+```mermaid
+flowchart TD
+    feat["feature/*"]
+
+    subgraph DEV ["desarrollo"]
+        dev(["rama develop"])
+    end
+    subgraph TST ["pre-productivo"]
+        test(["rama testing"])
+    end
+    subgraph PRD ["produccion"]
+        rel(["rama release/master<br/>intermedia, ya limpia"])
+        prod(["rama master"])
+    end
+
+    feat -->|PR normal| dev
+    dev -->|"run.ps1 gitpush dev  (commit + push)"| dev
+    dev -->|"run.ps1 gitpr testing dev  /  run.ps1 pre testing"| pr1{{"PR develop &rarr; testing"}}
+    pr1 -->|review + merge| test
+
+    test -->|"run.ps1 pre prod  &rarr;  promote-to-master.ps1<br/>merge testing sobre master +<br/>saca rutas de master-excluded-paths.txt"| rel
+    rel --> pr2{{"PR release/master &rarr; master"}}
+    pr2 --> ci{"CI Guardia de master:<br/>toca alguna ruta excluida?"}
+    ci -->|si| block["check falla<br/>no se puede mergear"]
+    ci -->|no| approve["review + approval<br/>de quien opera prod"]
+    approve -->|merge| prod
+
+    block -.->|"sacar el archivo del PR o ajustar el patron"| pr2
+```
+
+**Requiere [GitHub CLI (`gh`)](https://cli.github.com/) con sesión iniciada.** `gh` ya está instalado
+en este equipo (`winget install --id GitHub.cli`); si lo instalás en otro, abrí una terminal nueva
+para que tome el PATH. Iniciá sesión una sola vez:
+
+```powershell
+gh auth login          # GitHub.com → SSH (o HTTPS) → login con el navegador
+```
+
+```powershell
+.\run.ps1 gitpush dev "fix: valida el RUT en el alta de proveedor"
+#   commit de lo pendiente (si hay) + git push origin develop. Sin mensaje solo pushea.
+.\run.ps1 gitpush testing "hotfix aprobado por QA"     # idem sobre la rama testing
+
+.\run.ps1 gitpr testing dev
+#   PR develop → testing (etiquetas release,testing + checklist). Reusa el PR si ya hay uno abierto.
+
+.\run.ps1 pre testing
+#   Atajo: git checkout develop + pull + push + PR develop → testing.
+
+.\run.ps1 pre prod "sprint 12"
+#   Corre promote-to-master.ps1 (arma release/master ya sin rutas de solo-testing) y abre el
+#   PR release/master → master. master NUNCA recibe push ni PR directo desde testing.
+```
+
+Detalle del modelo de ramas, exclusiones de `master` y branch protection: **[`CONTRIBUTING.md`](CONTRIBUTING.md)**.
 
 Cada script resuelve por su cuenta las credenciales/certificados que necesita (ver
 `corporate-scripts/`); no requieren configuración manual adicional más allá de tener
@@ -372,6 +436,18 @@ Cada ambiente tiene su rama: `develop` (desarrollo) → `testing` (pre-productiv
 — la promoción `testing → master` pasa por un script que arma una rama intermedia ya limpia, y un
 chequeo de CI que bloquea el Pull Request si algo prohibido igual se cuela. Detalle completo,
 incluyendo cómo configurar accesos por rama en GitHub: **[`CONTRIBUTING.md`](CONTRIBUTING.md)**.
+
+El día a día se maneja con `run.ps1` (necesita `gh` con sesión, ver "Promoción entre ramas"):
+`gitpush dev "msg"` (commit + push), `gitpr testing dev` (PR `develop → testing`), `pre prod`
+(promoción + PR `release/master → master`).
+
+**Pipeline corrido de punta a punta por primera vez el 2026-08-28** (PR #7 `develop → testing`, PR #8
+`release/master → master`): `master` estaba desde antes de esta política casi como un espejo de
+`develop` (arrastraba los 10 `compose.dev.yml`/`compose.test.yml` de los 5 stacks y los 20 archivos de
+test/`vitest.config.ts`) — se hizo una limpieza retroactiva de esos 30 archivos como parte de esta
+primera promoción. Verificado en vivo con `git ls-tree` sobre `origin/master`: **cero** rutas de la
+lista de exclusión presentes. De ahora en más cada promoción pasa por el mismo script y el mismo
+chequeo de CI, así que `master` no debería volver a acumular esto sin que el PR falle primero.
 
 ## Limitaciones conocidas y notas de desarrollo
 
