@@ -23,12 +23,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Comparar contra la base del PR y validar contra la lista de rutas excluidas
+      - name: Validar el arbol resultante contra la lista de rutas excluidas
         shell: bash
         run: |
           set -euo pipefail
 
-          BASE_SHA="${{ github.event.pull_request.base.sha }}"
           HEAD_SHA="${{ github.event.pull_request.head.sha }}"
           PATTERNS_FILE="corporate-scripts/master-excluded-paths.txt"
 
@@ -37,9 +36,14 @@ jobs:
             exit 1
           fi
 
-          mapfile -t CHANGED < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
-          echo "Archivos modificados en este PR:"
-          printf '%s\n' "${CHANGED[@]}"
+          # Ojo: se valida el ARBOL RESULTANTE (que archivos existen en HEAD
+          # del PR), no el diff contra la base. Si se comparara el diff, un
+          # commit que justamente BORRA archivos prohibidos (limpieza) haria
+          # fallar este chequeo por error -las rutas borradas tambien
+          # aparecen en un diff. Lo que importa es si master, despues de
+          # mergear este PR, terminaria con alguna ruta prohibida presente.
+          mapfile -t CHANGED < <(git ls-tree -r "$HEAD_SHA" --name-only)
+          echo "Archivos presentes en el HEAD de este PR: ${#CHANGED[@]}"
           echo ""
 
           # Comparacion por glob NATIVA de bash (shopt nullglob evita que un
