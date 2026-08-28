@@ -107,7 +107,10 @@ flowchart TB
     %% = el dato en reposo, el más protegido → el tono más oscuro.
     %% Los subgrafos comparten un mismo fill claro (el "contenedor Compose"
     %% como convención propia), independiente del color de sus nodos.
-  
+    classDef exterior fill:#7BF1A8,stroke:#0C0950,color:#0C0950
+    classDef borde fill:#261FB3,stroke:#161179,color:#FBE4D6
+    classDef aplicacion fill:#161179,stroke:#0C0950,color:#FBE4D6
+    classDef datos fill:#0C0950,stroke:#261FB3,stroke-width:2px,color:#FBE4D6
 
     class USR,Internet exterior
     class NGINXFRONT,NGINXAPI,NGINXMON,NGINXDB borde
