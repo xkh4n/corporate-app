@@ -30,6 +30,7 @@ vía su propio NGINX) exponen puertos hacia la red corporativa; `corporate-maile
 saliente hacia el proveedor SMTP; ningún motor de base de datos publica puertos directamente al host.
 
 ```mermaid
+%%{init: {'themeVariables': {'edgeLabelBackground': '#003049'}}}%%
 flowchart TB
     subgraph Cliente["Red corporativa"]
         USR[Usuario / Frontend / Insomnia]
@@ -37,10 +38,10 @@ flowchart TB
 
     subgraph INFRA["corporate-infra (Compose: bases de datos)"]
         direction TB
-        PG["PostgreSQL\nprimario + réplica\n(RBAC, activos)"]
-        MSSQL["MSSQL Availability Group\nprimario + secundario\n(PII, flujo de compras)"]
-        MONGO["MongoDB replica set (PSA)\n(catálogo de productos)"]
-        REDIS["Redis primario + réplica\n(sesiones, refresh tokens)"]
+        PG[("PostgreSQL\nprimario + réplica\n(RBAC, activos)")]
+        MSSQL[["MSSQL Availability Group\nprimario + secundario\n(PII, flujo de compras)"]]
+        MONGO{{"MongoDB replica set (PSA)\n(catálogo de productos)"}}
+        REDIS(["Redis primario + réplica\n(sesiones, refresh tokens)"])
         EXP["Exporters de cada motor\n(Postgres/Mongo/MSSQL/Redis)"]
         NGINXDB["NGINX (proxy L4/stream)"]
     end
@@ -98,6 +99,47 @@ flowchart TB
     ALLOY -.->|logs de contenedores| LOKI
 
     NGINXDB -.->|solo trafico interno,\nsin publicar al host| PG & MSSQL & MONGO & REDIS
+
+    %% Paleta de marca (4 tonos) aplicada por CAPA/profundidad, no por
+    %% servicio — con 4 colores no alcanza para "un color por tecnología"
+    %% sin repetir tonos sin criterio (eso fue el efecto "arcoíris" de la
+    %% iteración anterior). Cliente/Internet = afuera de la infra (claro),
+    %% proxies = borde, cómputo/observabilidad = aplicación, motores de BD
+    %% = el dato en reposo, el más protegido → el tono más oscuro.
+    %% Los subgrafos comparten un mismo fill claro (el "contenedor Compose"
+    %% como convención propia), independiente del color de sus nodos.
+    classDef exterior fill:#7BF1A8,stroke:#1591DC,color:#0C0950
+    classDef borde fill:#6FCF97,stroke:#161179,color:#FBE4D6
+    classDef aplicacion fill:#2C5EAD,stroke:#1591DC,color:#FBE4D6
+    classDef datos fill:#1591DC,stroke:#261FB3,stroke-width:2px,color:#FBE4D6
+
+    class USR,Internet exterior
+    class NGINXFRONT,NGINXAPI,NGINXMON,NGINXDB borde
+    class REACT,API1,API2,API3,MAILERAPI,SMTPGW,GRAFANA,PROM,LOKI,ALLOY,EXP aplicacion
+    class PG,MSSQL,MONGO,REDIS datos
+
+    %% Los 4 motores comparten capa/color (misma criticidad) — se
+    %% distinguen por FORMA de nodo (cilindro/doble-borde/hexágono/stadium,
+    %% ya asignada arriba en el subgrafo INFRA) y por stroke, no por color.
+    style PG stroke:#261FB3,stroke-width:2px
+    style MSSQL stroke:#1B4EF5,stroke-width:2px
+    style MONGO stroke:#FBE4D6,stroke-width:2px
+    style REDIS stroke:#261FB3,stroke-width:2px,stroke-dasharray:4 3
+
+    %% Todos los subgrafos con el mismo fill claro (#FBE4D6) — son el
+    %% "contenedor Compose", una sola convención visual, con el color ya
+    %% resuelto por los nodos que agrupan adentro.
+    style Cliente fill:#D9EFBD,stroke:#7BF1A8,color:#1447E6
+    style FRONT fill:#D9EFBD,stroke:#161179,color:#1447E6
+    style API fill:#D9EFBD,stroke:#161179,color:#1447E6
+    style MAILER fill:#D9EFBD,stroke:#161179,color:#1447E6
+    style MON fill:#D9EFBD,stroke:#161179,color:#1447E6
+    style INFRA fill:#D9EFBD,stroke:#161179,color:#1447E6
+
+    %% Conectores en índigo oscuro — un rojo vivo se lee como alarma/error
+    %% sobre una paleta fría, y son las aristas el elemento más repetido
+    %% del diagrama (no conviene que compitan visualmente con los nodos).
+    linkStyle default stroke:#07F04D,stroke-width:1.25px
 ```
 
 **Cómo se levanta** (orquestador `run.ps1` en la raíz, dispatch a `corporate-scripts/*.ps1`):
