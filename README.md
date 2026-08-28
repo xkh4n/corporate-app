@@ -128,12 +128,12 @@ flowchart TB
     %% Todos los subgrafos con el mismo fill claro (#FBE4D6) — son el
     %% "contenedor Compose", una sola convención visual, con el color ya
     %% resuelto por los nodos que agrupan adentro.
-    style Cliente fill:#D9EFBD,stroke:#7BF1A8,color:#7BF1A8
-    style FRONT fill:#D9EFBD,stroke:#161179,color:#7BF1A8
-    style API fill:#D9EFBD,stroke:#161179,color:#7BF1A8
-    style MAILER fill:#D9EFBD,stroke:#161179,color:#7BF1A8
-    style MON fill:#D9EFBD,stroke:#161179,color:#7BF1A8
-    style INFRA fill:#D9EFBD,stroke:#161179,color:#7BF1A8
+    style Cliente fill:#D9EFBD,stroke:#7BF1A8,color:#1447E6
+    style FRONT fill:#D9EFBD,stroke:#161179,color:#1447E6
+    style API fill:#D9EFBD,stroke:#161179,color:#1447E6
+    style MAILER fill:#D9EFBD,stroke:#161179,color:#1447E6
+    style MON fill:#D9EFBD,stroke:#161179,color:#1447E6
+    style INFRA fill:#D9EFBD,stroke:#161179,color:#1447E6
 
     %% Conectores en índigo oscuro — un rojo vivo se lee como alarma/error
     %% sobre una paleta fría, y son las aristas el elemento más repetido
