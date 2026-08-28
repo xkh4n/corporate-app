@@ -30,6 +30,7 @@ vía su propio NGINX) exponen puertos hacia la red corporativa; `corporate-maile
 saliente hacia el proveedor SMTP; ningún motor de base de datos publica puertos directamente al host.
 
 ```mermaid
+%%{init: {'themeVariables': {'edgeLabelBackground': '#FBE4D6'}}}%%
 flowchart TB
     subgraph Cliente["Red corporativa"]
         USR[Usuario / Frontend / Insomnia]
