@@ -16,7 +16,12 @@ export function createApp(): Express {
   const app = express();
 
   app.use(helmet());
-  app.use(express.json({ limit: "20mb" })); // adjunto PDF viaja en base64 dentro del body
+  // express.json() NO va aca a nivel global (hallazgo de auditoria de
+  // seguridad): montado antes del router, cualquiera que alcance mailer-net
+  // podia forzar el parseo de hasta 20mb por request contra CUALQUIER ruta
+  // -incluida una inexistente, que recien cae en 404 despues de parsear-,
+  // sin pasar "X-Mailer-Token". Ahora el limite grande (adjunto PDF en base64)
+  // solo se aplica DENTRO de send.routes.ts, despues de verifySharedSecret.
   // redact: mismo hallazgo/fix que corporate-api/api.ts (auditoria de
   // seguridad 2026-08-12), nunca aplicado aca hasta la auditoria 2026-08-17
   // -sin esto, el serializer default de pino-http vuelca req.headers
