@@ -1,0 +1,31 @@
+# Provisioning nativo de Grafana (leído automáticamente al arrancar, sin
+# entrypoint propio). Los placeholders "${VAR}" los resuelve el PROPIO
+# Grafana en runtime -soporta expansión de variables de entorno de fábrica en
+# archivos de provisioning desde hace varias versiones-, así que no hace
+# falta wrapper ni sed/envsubst acá (a diferencia de Prometheus). Las vars
+# PROMETHEUS_HOST/LOKI_HOST/SUFFIX se pasan como "environment:" del servicio
+# grafanadev en compose.dev.yml.
+apiVersion: 1
+
+datasources:
+    # "uid" fijo (no autogenerado por Grafana) a propósito: los dashboards
+    # provisionados en provisioning/dashboards/*.json referencian estos
+    # datasources por uid ("datasource": {"uid": "prometheus", ...}) -sin
+    # fijarlo acá, quedaría atado al hash interno que Grafana deriva del
+    # nombre, que no es un contrato documentado ni estable entre versiones-.
+    - name: Prometheus
+      uid: prometheus
+      type: prometheus
+      access: proxy
+      url: http://${PROMETHEUS_HOST}01${SUFFIX}:9090
+      isDefault: true
+      editable: false
+      jsonData:
+          timeInterval: 15s
+
+    - name: Loki
+      uid: loki
+      type: loki
+      access: proxy
+      url: http://${LOKI_HOST}01${SUFFIX}:3100
+      editable: false

@@ -1,0 +1,63 @@
+// Descubre TODOS los contenedores del host vía el socket de Docker -pero NO
+// montado directo acá, y NO hablándole directo a tecnativa/docker-socket-
+// proxy tampoco-. Hallazgo CRÍTICO de auditoría, dos vueltas:
+//
+// 1) Montar /var/run/docker.sock en un contenedor, aunque sea ":ro", NO
+//    limita qué métodos HTTP se pueden mandar por ese socket -el ":ro" es
+//    sobre el mount, no sobre la API-; se demostró crear un contenedor
+//    nuevo con un bind al filesystem del host vía POST /containers/create.
+//    Fix: dockerproxydev (tecnativa/docker-socket-proxy) como único
+//    componente que monta el socket real, con CONTAINERS=1 y todo lo que
+//    escribe (POST global, EXEC, BUILD, ALLOW_*) en 0.
+// 2) El fix de (1) alcanza contra escrituras, pero CONTAINERS=1 también deja
+//    pasar GET /containers/{id}/archive?path=... (lee cualquier archivo del
+//    filesystem de cualquier contenedor, incluidos secrets en
+//    /run/secrets/) y GET /containers/{id}/export (dump completo) -ninguno
+//    de los dos escribe, así que POST=0 no los toca-; tecnativa/docker-
+//    socket-proxy no tiene un toggle más fino que "CONTAINERS" completo.
+//    Fix: dockerproxyfilterdev, un filtro L7 propio (nginx, allowlist
+//    default-deny) DELANTE de dockerproxydev. Alloy le habla a ESTE filtro,
+//    nunca a dockerproxydev directo -ver compose.dev.yml-.
+//
+// Esto además es lo que permite que Alloy NO necesite conectarse a la red
+// externa de corpinfra (backend) para recolectar también los logs de sus
+// contenedores (Postgres, Mongo, Redis, MSSQL y sus 8 exporters): la lectura
+// de logs pasa por la API de Docker (vía el filtro y el proxy), no por una
+// conexión de red hacia cada contenedor.
+discovery.docker "containers" {
+    host = string.format("tcp://%s%s:2375", sys.env("DOCKERPROXY_FILTER_HOST"), sys.env("SUFFIX"))
+}
+
+// Los nombres de contenedor que devuelve discovery.docker vienen con un "/"
+// inicial (p.ej. "/betelgeuse01dev") -convención histórica de la API de
+// Docker-; esta regla lo pela y lo deja como label "service_name", legible
+// en las consultas de Loki/Grafana. Mismo patrón que la guía oficial de
+// Grafana ("Monitor Docker containers with Grafana Alloy").
+discovery.relabel "docker_containers" {
+    targets = []
+
+    rule {
+        source_labels = ["__meta_docker_container_name"]
+        regex         = "/(.*)"
+        target_label  = "service_name"
+    }
+}
+
+loki.source.docker "default" {
+    host          = string.format("tcp://%s%s:2375", sys.env("DOCKERPROXY_FILTER_HOST"), sys.env("SUFFIX"))
+    targets       = discovery.docker.containers.targets
+    labels        = {"platform" = "docker"}
+    relabel_rules = discovery.relabel.docker_containers.rules
+    forward_to    = [loki.write.local.receiver]
+}
+
+// URL armada con sys.env(): Alloy sí soporta variables de entorno nativamente
+// en su lenguaje de configuración (River/Alloy syntax), a diferencia de
+// Prometheus, así que acá no hace falta ningún wrapper con sed/envsubst -las
+// vars LOKI_HOST y SUFFIX se pasan como "environment:" del servicio en
+// compose.dev.yml y se leen directo acá.
+loki.write "local" {
+    endpoint {
+        url = string.format("http://%s01%s:3100/loki/api/v1/push", sys.env("LOKI_HOST"), sys.env("SUFFIX"))
+    }
+}

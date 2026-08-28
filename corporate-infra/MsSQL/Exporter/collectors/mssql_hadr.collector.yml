@@ -1,0 +1,114 @@
+# Collector propio (no viene en los ejemplos oficiales de sql_exporter):
+# estado del Availability Group "read-scale" armado en
+# MsSQL/scripts/setup-ag.sh. El collector estándar (mssql_standard) no cubre
+# nada de AlwaysOn -es justamente el motivo por el que se eligió sql_exporter
+# (queries custom) en vez de un exporter de métricas fijas como
+# awaragi/prometheus-mssql-exporter para este proyecto, que sí depende de la
+# salud del AG (mssql01dev/mssql02dev)-.
+#
+# Mismos permisos que mssql_standard: VIEW SERVER STATE + VIEW ANY DEFINITION
+# alcanzan para leer sys.dm_hadr_* y sys.availability_replicas (son DMVs de
+# servidor, no requieren permisos sobre la base de negocio replicada).
+collector_name: mssql_hadr
+
+metrics:
+  # Valores numéricos crudos de SQL Server (no las columnas *_desc), para que
+  # Prometheus/Grafana puedan graficar y alertar directamente sin parsear
+  # texto: role (1=PRIMARY, 2=SECONDARY), connected_state (0=DISCONNECTED,
+  # 1=CONNECTED), synchronization_health (0=NOT_HEALTHY, 1=PARTIALLY_HEALTHY,
+  # 2=HEALTHY). El *_desc correspondiente viaja como label para que igual sea
+  # legible en una consulta ad-hoc.
+  - metric_name: mssql_hadr_replica_role
+    type: gauge
+    help: 'AlwaysOn availability replica role (1=PRIMARY, 2=SECONDARY). Ver sys.dm_hadr_availability_replica_states.'
+    key_labels: [ag_name, replica_server, role_desc]
+    values: [role]
+    query: |
+      SELECT
+        ag.name AS ag_name,
+        ar.replica_server_name AS replica_server,
+        ars.role_desc,
+        ars.role
+      FROM sys.dm_hadr_availability_replica_states ars
+      JOIN sys.availability_replicas ar ON ars.replica_id = ar.replica_id
+      JOIN sys.availability_groups ag ON ars.group_id = ag.group_id
+
+  - metric_name: mssql_hadr_replica_connected_state
+    type: gauge
+    help: 'AlwaysOn availability replica connection state (0=DISCONNECTED, 1=CONNECTED).'
+    key_labels: [ag_name, replica_server, connected_state_desc]
+    values: [connected_state]
+    query: |
+      SELECT
+        ag.name AS ag_name,
+        ar.replica_server_name AS replica_server,
+        ars.connected_state_desc,
+        ars.connected_state
+      FROM sys.dm_hadr_availability_replica_states ars
+      JOIN sys.availability_replicas ar ON ars.replica_id = ar.replica_id
+      JOIN sys.availability_groups ag ON ars.group_id = ag.group_id
+
+  - metric_name: mssql_hadr_replica_synchronization_health
+    type: gauge
+    help: 'AlwaysOn availability replica synchronization health (0=NOT_HEALTHY, 1=PARTIALLY_HEALTHY, 2=HEALTHY).'
+    key_labels: [ag_name, replica_server, synchronization_health_desc]
+    values: [synchronization_health]
+    query: |
+      SELECT
+        ag.name AS ag_name,
+        ar.replica_server_name AS replica_server,
+        ars.synchronization_health_desc,
+        ars.synchronization_health
+      FROM sys.dm_hadr_availability_replica_states ars
+      JOIN sys.availability_replicas ar ON ars.replica_id = ar.replica_id
+      JOIN sys.availability_groups ag ON ars.group_id = ag.group_id
+
+  # Nivel base de datos (no solo réplica): esto es lo que realmente indica si
+  # la réplica secundaria está al día. log_send_queue/redo_queue en KB
+  # crecientes = la réplica se está atrasando.
+  - metric_name: mssql_hadr_database_replica_synchronization_state
+    type: gauge
+    help: 'AlwaysOn database replica sync state (0=NOT_SYNCHRONIZING, 1=SYNCHRONIZING, 2=SYNCHRONIZED, 3=REVERTING, 4=INITIALIZING).'
+    key_labels: [ag_name, replica_server, db, synchronization_state_desc]
+    values: [synchronization_state]
+    query_ref: mssql_hadr_database_replica_state
+
+  - metric_name: mssql_hadr_database_replica_is_suspended
+    type: gauge
+    help: 'Whether data movement for this database replica is suspended (1=suspended).'
+    key_labels: [ag_name, replica_server, db]
+    values: [is_suspended]
+    query_ref: mssql_hadr_database_replica_state
+
+  - metric_name: mssql_hadr_database_replica_log_send_queue_kb
+    type: gauge
+    help: 'Amount of log records (KB) not yet sent to this replica.'
+    key_labels: [ag_name, replica_server, db]
+    values: [log_send_queue_size]
+    query_ref: mssql_hadr_database_replica_state
+
+  - metric_name: mssql_hadr_database_replica_redo_queue_kb
+    type: gauge
+    help: 'Amount of log records (KB) received but not yet redone (replayed) on this replica.'
+    key_labels: [ag_name, replica_server, db]
+    values: [redo_queue_size]
+    query_ref: mssql_hadr_database_replica_state
+
+queries:
+  # Una sola query alimenta las cuatro métricas de arriba (sync state,
+  # is_suspended, log_send_queue, redo_queue): son todas columnas de la misma
+  # fila por (réplica, base), evita repetir el JOIN cuatro veces.
+  - query_name: mssql_hadr_database_replica_state
+    query: |
+      SELECT
+        ag.name AS ag_name,
+        ar.replica_server_name AS replica_server,
+        DB_NAME(drs.database_id) AS db,
+        drs.synchronization_state_desc,
+        drs.synchronization_state,
+        CAST(drs.is_suspended AS INT) AS is_suspended,
+        drs.log_send_queue_size,
+        drs.redo_queue_size
+      FROM sys.dm_hadr_database_replica_states drs
+      JOIN sys.availability_replicas ar ON drs.replica_id = ar.replica_id
+      JOIN sys.availability_groups ag ON drs.group_id = ag.group_id

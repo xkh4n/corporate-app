@@ -1,0 +1,11 @@
+corporate-secrets/
+.claude/
+claude/
+.vscode/
+vscode/
+agents/
+initial-data/
+*/node_modules/
+corporate-api/src/downloads/
+corporate-api/src/uploads/
+.env.test

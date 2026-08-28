@@ -1,0 +1,99 @@
+user nginx;
+worker_processes auto;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    sendfile on;
+    keepalive_timeout 65;
+
+    # No revelar la version de nginx en el header "Server" ni en paginas de
+    # error (hallazgo de auditoria de seguridad 2026-08-12).
+    server_tokens off;
+
+    # Mismo criterio que nginx.conf.template (dev): traduce "Upgrade" a
+    # "Connection: upgrade" solo para el websocket de Socket.IO atravesando
+    # "location /api/" hacia nginx-apidev.
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ""      close;
+    }
+
+    # Version de produccion de nginx.conf.template: a diferencia de esa
+    # plantilla (que proxea a "vite dev" con soporte de HMR por websocket),
+    # esta sirve el bundle estatico ya compilado (dist/, servido por "serve"
+    # dentro de frontendtest/prod -ver corporate-front/Dockerfile) detras del
+    # mismo proxy TLS. Se usa cuando NODE_ENV != development, ver
+    # entrypoint-wrapper.sh.
+    upstream front_static {
+        server ${APP_HOST}${SUFFIX}:${FRONT_INTERNAL_PORT};
+    }
+
+    # HTTP: solo redirige a HTTPS. $host NO incluye el puerto (a diferencia
+    # de $http_host) -por eso es seguro concatenarle ":${FRONT_SSL_PORT}" sin
+    # terminar con un "host:puerto:puerto" duplicado si el cliente ya
+    # mandó el puerto en el Host header.
+    server {
+        listen 80;
+        return 301 https://$host:${FRONT_SSL_PORT}$request_uri;
+    }
+
+    server {
+        listen 443 ssl;
+
+        # tls.crt/tls.key: autofirmados por defecto (ver
+        # corporate-scripts/ensure-front-tls-cert.ps1), montados read-only
+        # desde corporate-secrets/${SECRETS_ENV}/certs/front/ (ver
+        # compose.*.yml). Reemplazar por los de una CA real es cambiar
+        # SOLO esos dos archivos en el host -mismo nombre, misma ruta- y
+        # reiniciar este contenedor; nada de esta plantilla cambia.
+        ssl_certificate     /etc/nginx/certs/tls.crt;
+        ssl_certificate_key /etc/nginx/certs/tls.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+
+        # HSTS: hallazgo de auditoria de seguridad 2026-08-17 -faltaba en
+        # todo el stack. Sin "preload" hasta confirmar el dominio real de
+        # produccion (preload es pseudo-irreversible: listas publicas).
+        add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+
+        # Mismo proxy "/api/" que la plantilla de dev, ver ese archivo para
+        # el detalle de por que frontapi-net y no ALLOCATED_IP/host.docker.internal.
+        location /api/ {
+            proxy_pass https://${API_PROXY_HOST}${SUFFIX}:443;
+            proxy_ssl_verify off;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
+        }
+
+        location / {
+            proxy_pass http://front_static;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            add_header X-Frame-Options "DENY" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+            add_header Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=()" always;
+            # Sin unsafe-inline/unsafe-eval: el build de produccion de Vite
+            # no los necesita (ese relajo era solo para el cliente de HMR del
+            # dev server, ver nginx.conf.template). connect-src 'self' cubre
+            # las llamadas a /api/ (mismo origen, el navegador nunca le pega
+            # directo a corporate-api). frame-ancestors 'none' es la
+            # proteccion real anti-clickjacking.
+            add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+        }
+    }
+}

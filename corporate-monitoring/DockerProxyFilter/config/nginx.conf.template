@@ -1,0 +1,113 @@
+# Filtro L7 con allowlist EXPLÍCITA de paths, delante de dockerproxydev
+# (tecnativa/docker-socket-proxy). Motivo (hallazgo crítico de auditoría,
+# segunda vuelta): tecnativa/docker-socket-proxy no tiene un toggle más fino
+# que "CONTAINERS" completo -habilitarlo para poder listar contenedores y
+# leer logs (lo único que Alloy necesita) también deja pasar, sin querer,
+# GET /containers/{id}/archive?path=... (lee CUALQUIER archivo del
+# filesystem del contenedor, incluidos secrets montados en /run/secrets/) y
+# GET /containers/{id}/export (dump completo del filesystem). Confirmado con
+# datos reales por el auditor: exfiltró /etc/hostname de otro contenedor sin
+# ninguna escritura de por medio (POST=0 no protege esto, son GETs).
+#
+# Estrategia: default-deny. Solo los paths de la allowlist de abajo llegan a
+# dockerproxydev; todo lo demás corta acá con 403, sin siquiera reenviarse.
+# Esto es la ÚNICA superficie que Alloy toca ahora -dockerproxydev queda
+# interno incluso para Alloy, solo esta capa le habla-.
+#
+# Todos los regex de abajo empiezan con "(/v[0-9]+\.[0-9]+)?": el cliente
+# Docker de Alloy (moby-client, usado por discovery.docker/loki.source.docker)
+# antepone la versión de la API a cada ruta (ej. "/v1.55/containers/json", no
+# "/containers/json" pelado) -encontrado recién al desplegar el fix real
+# (los primeros locations, con "location =" exacto sin este prefijo opcional,
+# daban 403 para TODO, incluidas las rutas que debían permitirse: el propio
+# discovery.docker quedó bloqueado hasta corregir esto-.
+user nginx;
+worker_processes auto;
+
+events {
+    worker_connections 256;
+}
+
+http {
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    server {
+        listen 2375;
+
+        # --- Allowlist: exactamente lo que discovery.docker + loki.source.docker usan ---
+        # "limit_except GET HEAD { deny all; }" va DENTRO de cada location
+        # (nginx no admite ese directive a nivel server): cinturón y
+        # tirantes sobre el POST=0 de dockerproxydev -cualquier método que
+        # no sea lectura corta acá, antes de reenviar-.
+
+        location ~ ^(/v[0-9]+\.[0-9]+)?/_ping$ {
+            limit_except GET HEAD { deny all; }
+            set $upstream http://${DOCKERPROXY_HOST}${SUFFIX}:2375;
+            proxy_pass $upstream;
+        }
+
+        location ~ ^(/v[0-9]+\.[0-9]+)?/version$ {
+            limit_except GET HEAD { deny all; }
+            set $upstream http://${DOCKERPROXY_HOST}${SUFFIX}:2375;
+            proxy_pass $upstream;
+        }
+
+        location ~ ^(/v[0-9]+\.[0-9]+)?/events$ {
+            limit_except GET HEAD { deny all; }
+            set $upstream http://${DOCKERPROXY_HOST}${SUFFIX}:2375;
+            proxy_pass $upstream;
+        }
+
+        # GET /containers/json (con o sin query string de filtros)
+        location ~ ^(/v[0-9]+\.[0-9]+)?/containers/json$ {
+            limit_except GET HEAD { deny all; }
+            set $upstream http://${DOCKERPROXY_HOST}${SUFFIX}:2375;
+            proxy_pass $upstream;
+        }
+
+        # GET /containers/{id}/json (inspect): request/response corto,
+        # sin streaming, no necesita ningún ajuste especial de proxy.
+        location ~ ^(/v[0-9]+\.[0-9]+)?/containers/[^/]+/json$ {
+            limit_except GET HEAD { deny all; }
+            set $upstream http://${DOCKERPROXY_HOST}${SUFFIX}:2375;
+            proxy_pass $upstream;
+        }
+
+        # GET /containers/{id}/logs?follow=true -Alloy (loki.source.docker)
+        # usa "follow" para tailear logs en vivo: es un stream HTTP chunked
+        # de larga duración, no una respuesta corta como /json. Separado en
+        # su propio location (antes compartía uno con /json) porque el
+        # comportamiento default de nginx para proxies -bufferear la
+        # respuesta completa antes de reenviarla, y timeouts de lectura
+        # cortos- corta streams así de forma intermitente. Encontrado por el
+        # auditor: el streaming se cortaba esporádicamente al pasar por este
+        # filtro (no en /json, que sí volvía siempre completo).
+        location ~ ^(/v[0-9]+\.[0-9]+)?/containers/[^/]+/logs$ {
+            limit_except GET HEAD { deny all; }
+            set $upstream http://${DOCKERPROXY_HOST}${SUFFIX}:2375;
+            proxy_pass $upstream;
+            proxy_http_version 1.1;
+            proxy_buffering off;
+            # "follow" deja la conexión abierta indefinidamente: sin esto,
+            # el timeout de lectura por defecto (60s) cortaría el stream en
+            # cuanto pasara un rato sin líneas nuevas de log.
+            proxy_read_timeout 1h;
+        }
+
+        # GET /networks y /networks/{id} (metadata de red que discovery.docker
+        # necesita para poblar labels -sin esto, discovery.docker falla en
+        # runtime, ver nota en compose.dev.yml-).
+        location ~ ^(/v[0-9]+\.[0-9]+)?/networks(/[^/]+)?$ {
+            limit_except GET HEAD { deny all; }
+            set $upstream http://${DOCKERPROXY_HOST}${SUFFIX}:2375;
+            proxy_pass $upstream;
+        }
+
+        # Default-deny: cualquier otra ruta -incluidas /containers/{id}/archive,
+        # /export, /changes, /top, /stats, /exec, /build, /images/*, etc.- se
+        # corta acá. No se reenvía nada que no matcheó arriba.
+        location / {
+            return 403;
+        }
+    }
+}

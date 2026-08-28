@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+.env
+*.log
+
+# Almacenamiento de archivos subidos/generados en runtime (multer,
+# pdfkit) -gitignoreados en la raiz del monorepo por el mismo motivo:
+# no son codigo fuente, son datos que la app escribe en runtime.
+# Bakearlos en la imagen shippea datos de prueba de un ambiente a otro y
+# no sirve de nada -en produccion necesitan un volumen persistente
+# compartido entre las 3 replicas, no vivir dentro de la imagen (ver
+# compose.*.yml).
+src/uploads
+src/downloads

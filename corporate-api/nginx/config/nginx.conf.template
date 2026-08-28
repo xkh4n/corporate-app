@@ -1,0 +1,159 @@
+user nginx;
+worker_processes auto;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    sendfile on;
+    keepalive_timeout 65;
+
+    # No revelar la version de nginx en el header "Server" ni en paginas de
+    # error (hallazgo de auditoria de seguridad 2026-08-12).
+    server_tokens off;
+
+    # Default de nginx es 1m: los adjuntos de cotizacion/autorizacion/recepcion
+    # (multer, ver middlewares/upload.ts) permiten hasta 15MB, asi que sin esto
+    # cualquier adjunto real (PDF/foto) mayor a 1MB se rechazaba en el proxy
+    # antes de llegar a la app (413), aunque la app lo hubiera aceptado
+    # (hallazgo de auditoria de seguridad 2026-08-07 -inconsistencia funcional,
+    # no vulnerabilidad: fallaba de forma segura).
+    client_max_body_size 16m;
+
+    # Traduce el header "Upgrade" del cliente a "Connection: upgrade" solo
+    # cuando realmente hay un upgrade de protocolo (websocket de Socket.IO,
+    # ver location /api/socket.io/ mas abajo) -si $http_upgrade viene vacio
+    # (cualquier request REST normal), "Connection" queda en "close" para no
+    # romper el keep-alive normal de esas requests.
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ""      close;
+    }
+
+    # Balanceo entre las 3 réplicas (round-robin, algoritmo default de
+    # nginx). max_fails/fail_timeout = health check PASIVO: tras 3 fallos en
+    # 10s, nginx marca esa réplica "down" y deja de mandarle tráfico durante
+    # esos 10s, sin necesitar ningún watcher externo -esto es lo que permite
+    # que las 3 réplicas puedan estar siempre activas en vez de "dormidas"-.
+    #
+    # Limitación aceptada a propósito: a diferencia del proxy L4 de
+    # corporate-infra (que resuelve el hostname del upstream POR CONEXIÓN
+    # via "resolver" + "proxy_pass" a variable, ver corporate-infra/NGINX/
+    # config/nginx.conf.template), un bloque "upstream {}" resuelve los
+    # hostnames de sus "server" UNA sola vez al arrancar/recargar nginx -no
+    # hay forma de balancear carga entre varios targets con re-resolución
+    # dinámica en nginx open-source, eso es exclusivo de nginx-plus
+    # ("server ... resolve;")-. Funciona igual para "una réplica cae y
+    # vuelve" (docker stop/start conserva la IP del contenedor); NO
+    # sobrevive a que una réplica se RECREE con otra IP sin recargar/
+    # reiniciar nginx-apidev.
+    upstream api_backend {
+        server ${API_HOST}01${SUFFIX}:${API_INTERNAL_PORT} max_fails=3 fail_timeout=10s;
+        server ${API_HOST}02${SUFFIX}:${API_INTERNAL_PORT} max_fails=3 fail_timeout=10s;
+        server ${API_HOST}03${SUFFIX}:${API_INTERNAL_PORT} max_fails=3 fail_timeout=10s;
+    }
+
+    # HTTP: solo redirige a HTTPS. $host NO incluye el puerto (a diferencia
+    # de $http_host) -por eso es seguro concatenarle ":${API_SSL_PORT}" sin
+    # terminar con un "host:puerto:puerto" duplicado si el cliente ya
+    # mandó el puerto en el Host header.
+    server {
+        listen 80;
+        return 301 https://$host:${API_SSL_PORT}$request_uri;
+    }
+
+    server {
+        listen 443 ssl;
+
+        # tls.crt/tls.key: autofirmados por defecto (ver
+        # corporate-scripts/ensure-api-tls-cert.ps1), montados read-only
+        # desde corporate-secrets/${SECRETS_ENV}/certs/api/ (ver
+        # compose.*.yml). Reemplazar por los de una CA real es cambiar
+        # SOLO esos dos archivos en el host -mismo nombre, misma ruta- y
+        # reiniciar este contenedor; nada de esta plantilla cambia.
+        ssl_certificate     /etc/nginx/certs/tls.crt;
+        ssl_certificate_key /etc/nginx/certs/tls.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+
+        location /health {
+            access_log off;
+            proxy_pass http://api_backend/health;
+        }
+
+        # Bloqueado EXPLICITAMENTE, no solo "no enrutado": la app expone
+        # /metrics (prom-client, sin auth) en el MISMO puerto que el resto
+        # de sus rutas -a diferencia de los exporters de corporate-infra,
+        # que son procesos aparte en su propio puerto-, así que sin este
+        # "return 404" el "location /" de más abajo lo proxearía igual que
+        # cualquier otra ruta, exponiendo métricas internas al público en el
+        # puerto publicado del host. Prometheus sigue llegando sin problema:
+        # scrapea cada réplica directo por la red "api-exporters", nunca a
+        # través de este proxy.
+        location /metrics {
+            return 404;
+        }
+
+        # Socket.IO (notificaciones push en tiempo real, ver
+        # library/realtime/socketServer.ts): bloque DEDICADO, separado de
+        # "location /" de abajo -sumarle Upgrade/Connection a ESE bloque
+        # rompería el keep-alive de las requests REST normales (hoy no
+        # tiene ningun header de Upgrade/Connection, a proposito).
+        # proxy_read_timeout largo: es una conexion persistente de larga
+        # duracion, no una request REST normal que termina en milisegundos.
+        location /api/socket.io/ {
+            proxy_pass http://api_backend;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_set_header Host $host;
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
+        }
+
+        location / {
+            proxy_pass http://api_backend;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            # $remote_addr, NO $proxy_add_x_forwarded_for -hallazgo de
+            # auditoria de seguridad 2026-08-17: este puerto tambien se
+            # publica directo a ALLOCATED_IP (uso legitimo: Insomnia/API
+            # testing sin pasar por el front), y ahi un cliente externo puede
+            # mandar su propio header "X-Forwarded-For" con un valor distinto
+            # en cada request; $proxy_add_x_forwarded_for APILA ese valor
+            # spoofeado en vez de reemplazarlo, y corporate-api confia en el
+            # (trust proxy=1, ver api.ts) para armar req.ip -el rate-limiter
+            # de /auth/login (rateLimit.ts) usa ese req.ip como clave, asi
+            # que sin este fix, cambiar el XFF en cada intento evade por
+            # completo el limite de fuerza bruta en ESE camino.
+            #
+            # Trade-off aceptado, no resuelto del todo: cuando el trafico
+            # llega via nginx-frontdev (proxy_pass a este mismo host desde
+            # "frontapi-net", ver corporate-front/nginx/config/nginx.conf*.
+            # template), $remote_addr aca pasa a ser la IP interna de
+            # nginx-frontdev, no la del navegador real -nginx-frontdev SI
+            # arma bien el XFF real antes de reenviar, pero esta linea lo
+            # descarta igual. Efecto: todos los usuarios que entran por el
+            # front comparten un mismo bucket de rate-limit en vez de uno por
+            # IP real (peor UX bajo trafico legitimo alto, pero no un
+            # agujero de seguridad). Solucion completa: "set_real_ip_from"
+            # (ngx_http_realip_module) confiando SOLO en la subred de
+            # frontapi-net para recien ahi tomar su X-Forwarded-For -no
+            # aplicado aca porque esa subred la asigna Docker
+            # automaticamente (no esta pineada en la creacion de la red,
+            # root run.ps1) y hardcodearla in aumentaria el acoplamiento sin
+            # garantia de que se mantenga estable entre ambientes.
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            # Default de nginx (incluye "error" y "timeout"): si la réplica
+            # elegida no responde -p.ej. justo la que acabamos de "docker
+            # stop"-, nginx reintenta transparentemente contra otra réplica
+            # sana de "api_backend" antes de devolverle un error al cliente.
+            proxy_next_upstream error timeout;
+        }
+    }
+}

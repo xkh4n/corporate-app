@@ -1,0 +1,212 @@
+{
+    "uid": "redis-overview",
+    "title": "Redis - Overview",
+    "tags": ["corpinfra", "redis"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "editable": true,
+    "time": { "from": "now-6h", "to": "now" },
+    "refresh": "30s",
+    "panels": [
+        {
+            "id": 1,
+            "type": "stat",
+            "title": "Redis UP (por instancia)",
+            "description": "redis_up: 1 = instancia responde, 0 = caida.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 0, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": {
+                "defaults": {
+                    "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] },
+                    "mappings": [ { "type": "value", "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } } } ]
+                },
+                "overrides": []
+            },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value_and_name",
+                "colorMode": "background"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "redis_up",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "type": "stat",
+            "title": "Link de replicacion (master_link_up)",
+            "description": "redis_master_link_up: solo lo expone la replica. 1 = link activo hacia el primario.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 6, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": {
+                "defaults": {
+                    "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] },
+                    "mappings": [ { "type": "value", "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } } } ]
+                },
+                "overrides": []
+            },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value_and_name",
+                "colorMode": "background"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "redis_master_link_up",
+                    "legendFormat": "replica",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 3,
+            "type": "stat",
+            "title": "Clientes conectados (total)",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 12, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value",
+                "colorMode": "value"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "sum(redis_connected_clients)",
+                    "legendFormat": "clientes",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 4,
+            "type": "stat",
+            "title": "Replicas conectadas (primario)",
+            "description": "redis_connected_slaves reportado por el primario.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 18, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value",
+                "colorMode": "value"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "redis_connected_slaves{role=\"primary\"}",
+                    "legendFormat": "replicas",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 5,
+            "type": "timeseries",
+            "title": "Memoria usada por nodo",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "redis_memory_used_bytes",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 6,
+            "type": "timeseries",
+            "title": "Clientes conectados por nodo",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "redis_connected_clients",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 7,
+            "type": "timeseries",
+            "title": "Replication offset (primario vs replica)",
+            "description": "redis_master_repl_offset: ambos nodos lo exponen (es el offset del backlog de replicacion). Si divergen de forma sostenida, la replica se esta atrasando.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 0, "y": 14, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "redis_master_repl_offset",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 8,
+            "type": "timeseries",
+            "title": "Keyspace hits vs misses por segundo",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 12, "y": 14, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "sum by (role) (rate(redis_keyspace_hits_total[5m]))",
+                    "legendFormat": "{{role}} hits",
+                    "refId": "A"
+                },
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "sum by (role) (rate(redis_keyspace_misses_total[5m]))",
+                    "legendFormat": "{{role}} misses",
+                    "refId": "B"
+                }
+            ]
+        },
+        {
+            "id": 9,
+            "type": "logs",
+            "title": "Logs recientes (Redis, ambos nodos)",
+            "description": "Loki, contenedores sirius* (primario, replica y sus exporters).",
+            "datasource": { "type": "loki", "uid": "loki" },
+            "gridPos": { "x": 0, "y": 22, "w": 24, "h": 9 },
+            "options": {
+                "showTime": true,
+                "wrapLogMessage": true,
+                "sortOrder": "Descending",
+                "dedupStrategy": "none"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "loki", "uid": "loki" },
+                    "expr": "{service_name=~\"sirius.*\"}",
+                    "refId": "A"
+                }
+            ]
+        }
+    ]
+}
