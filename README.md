@@ -109,7 +109,7 @@ flowchart TB
     %% como convención propia), independiente del color de sus nodos.
     classDef exterior fill:#7BF1A8,stroke:#1591DC,color:#0C0950
     classDef borde fill:#261FB3,stroke:#161179,color:#FBE4D6
-    classDef aplicacion fill:#DC1515,stroke:#1591DC,color:#FBE4D6
+    classDef aplicacion fill:#2C5EAD,stroke:#1591DC,color:#FBE4D6
     classDef datos fill:#1591DC,stroke:#261FB3,stroke-width:2px,color:#FBE4D6
 
     class USR,Internet exterior
