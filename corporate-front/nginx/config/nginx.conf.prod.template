@@ -83,6 +83,18 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
 
+            # HSTS repetido acá: "add_header" en nginx NO hereda del bloque
+            # "server" (linea 61) cuando el bloque "location" define sus
+            # propios "add_header" -que es exactamente este caso-, asi que
+            # sin esta linea el header desaparecia en la respuesta real para
+            # "/" (la SPA que carga cualquier browser primero), aunque SI
+            # llegaba a "/api/" (esa location no tiene "add_header" propio,
+            # hereda normal). Confirmado en vivo con curl -D contra
+            # Testing/Production el 2026-08-28 -era un hallazgo real, no
+            # solo teorico: la verificacion estatica (nginx -t, config
+            # render) no lo detecta porque la sintaxis es valida, solo el
+            # comportamiento de herencia de "add_header" la esconde.
+            add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
             add_header X-Frame-Options "DENY" always;
             add_header X-Content-Type-Options "nosniff" always;
             add_header Referrer-Policy "strict-origin-when-cross-origin" always;

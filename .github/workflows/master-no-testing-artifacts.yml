@@ -1,0 +1,86 @@
+name: Guardia de master contra artefactos de testing
+
+# Bloquea cualquier Pull Request hacia "master" que traiga tests unitarios/de
+# integración, compose.dev.yml/compose.test.yml o configs de test runner —
+# ver corporate-scripts/master-excluded-paths.txt (fuente única de verdad,
+# la usa también corporate-scripts/promote-to-master.ps1). Este workflow es
+# el respaldo real: aunque alguien abra el PR a mano sin pasar por el script
+# de promoción, esto lo detiene antes del merge.
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Verificar rutas prohibidas en el diff
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Comparar contra la base del PR y validar contra la lista de rutas excluidas
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          PATTERNS_FILE="corporate-scripts/master-excluded-paths.txt"
+
+          if [[ ! -f "$PATTERNS_FILE" ]]; then
+            echo "::error::No se encontro $PATTERNS_FILE — sin esta lista no se puede validar el PR."
+            exit 1
+          fi
+
+          mapfile -t CHANGED < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          echo "Archivos modificados en este PR:"
+          printf '%s\n' "${CHANGED[@]}"
+          echo ""
+
+          # Comparacion por glob NATIVA de bash (shopt nullglob evita que un
+          # patron sin coincidencias se filtre literal) -- deliberadamente
+          # NO se usa sed/grep -E para convertir el glob a regex: el patron
+          # "[.[\*^$]" para escapar metacaracteres choca con la sintaxis de
+          # "collating symbol" ([. .]) de las expresiones de corchetes POSIX
+          # y produce coincidencias basura segun la implementacion de sed/grep
+          # (confirmado localmente antes de usar este workflow). "[[ == ]]"
+          # de bash no tiene ese problema.
+          shopt -s nullglob
+
+          FAIL=0
+          while IFS= read -r pattern; do
+            [[ -z "$pattern" || "$pattern" == \#* ]] && continue
+
+            for f in "${CHANGED[@]}"; do
+              [[ -z "$f" ]] && continue
+              if [[ "$pattern" != */* ]]; then
+                # Patron sin "/": coincide por NOMBRE de archivo en cualquier carpeta.
+                base="${f##*/}"
+                matched=0
+                [[ "$base" == $pattern ]] && matched=1
+              else
+                # Patron con "/": coincide por RUTA EXACTA.
+                matched=0
+                [[ "$f" == "$pattern" ]] && matched=1
+              fi
+              if [[ "$matched" -eq 1 ]]; then
+                echo "::error file=$f::Este archivo no debe llegar a master (patron prohibido: $pattern)"
+                FAIL=1
+              fi
+            done
+          done < "$PATTERNS_FILE"
+
+          if [[ "$FAIL" -eq 1 ]]; then
+            echo ""
+            echo "Este PR trae archivos que nunca deben vivir en master (tests, compose.dev/test.yml, config de test runner)."
+            echo "Usa corporate-scripts/promote-to-master.ps1 para generar la rama de promocion con estas rutas ya excluidas,"
+            echo "o sacalas de este PR a mano si lo abriste directo."
+            exit 1
+          fi
+
+          echo "OK: ningun path prohibido en este PR."
