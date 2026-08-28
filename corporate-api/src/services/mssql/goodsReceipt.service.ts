@@ -1,4 +1,5 @@
-import { Op } from "sequelize";
+import { Op, Transaction } from "sequelize";
+import { mssql } from "../../databases/mssql/connection";
 import { GoodsReceiptModel } from "../../models/mssql/goodsReceipt.model";
 import { AuthorizationModel } from "../../models/mssql/authorization.model";
 import { PurchaseRequestLineModel } from "../../models/mssql/purchaseRequestLine.model";
@@ -8,7 +9,7 @@ import { getPurchaseRequestByIdOrThrow, updatePurchaseRequestStatus } from "./pu
 import { createAssetsFromReceipt } from "../postgres/asset.service";
 import { getAcquisitionFolder, saveBuffer, sanitizeFilenameSegment } from "../../library/documentStorage";
 import { getSafeExtension } from "../../middlewares/upload";
-import { BadRequestError, ConflictError, NotFoundError } from "../../library/errors";
+import { BadRequestError, ConflictError, NotFoundError, isUniqueConstraintError } from "../../library/errors";
 import { logger } from "../../library/logger";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
@@ -126,30 +127,66 @@ export async function createGoodsReceipt(input: GoodsReceiptCreationInput): Prom
     );
   }
 
-  const authorization = await AuthorizationModel.findOne({ where: { quoteId: quote.id } });
-  if (!authorization) {
-    throw new NotFoundError(`No existe una autorizacion para la cotizacion ${quote.id} -no se puede recepcionar`);
-  }
-  const alreadyReceived =
-    (await GoodsReceiptModel.sum("receivedQuantity", { where: { quoteId: quote.id } })) || 0;
-  if (alreadyReceived + input.receivedQuantity > authorization.approvedQuantity) {
-    throw new BadRequestError(
-      `La cantidad recibida (${alreadyReceived + input.receivedQuantity}) superaria la cantidad autorizada ` +
-        `(${authorization.approvedQuantity}) para esta cotizacion`,
-    );
-  }
+  // Lock explicito sobre la Authorization de esta cotizacion (WITH (UPDLOCK)
+  // via Transaction.LOCK.UPDATE): sin esto, dos recepciones casi simultaneas
+  // contra la MISMA cotizacion (doble clic, reintento de red, o abuso
+  // deliberado) pueden ambas leer "alreadyReceived" antes de que la primera
+  // commitee su INSERT, pasando las dos el check de abajo -deja Assets reales
+  // en Postgres respaldados por MAS unidades de las que la autorizacion
+  // permitio (hallazgo de auditoria de seguridad, condicion de carrera real,
+  // no solo teorica: misma clase de bug que ya se corrigio una vez en la
+  // migracion de MSSQL al arrancar 3 replicas). UPDLOCK alcanza (no hace
+  // falta HOLDLOCK): a diferencia de un lock compartido, uno de actualizacion
+  // se mantiene hasta el fin de la transaccion incluso bajo READ COMMITTED
+  // -es exactamente el hint que Microsoft documenta para este patron
+  // leer-decidir-escribir. La segunda transaccion queda bloqueada en este
+  // SELECT hasta que la primera termine (commit o rollback); recien ahi lee
+  // "alreadyReceived" ya actualizado con lo que la primera confirmo.
+  const receipt = await mssql.transaction(async (transaction) => {
+    const authorization = await AuthorizationModel.findOne({
+      where: { quoteId: quote.id },
+      transaction,
+      lock: Transaction.LOCK.UPDATE,
+    });
+    if (!authorization) {
+      throw new NotFoundError(`No existe una autorizacion para la cotizacion ${quote.id} -no se puede recepcionar`);
+    }
+    const alreadyReceived =
+      (await GoodsReceiptModel.sum("receivedQuantity", { where: { quoteId: quote.id }, transaction })) || 0;
+    if (alreadyReceived + input.receivedQuantity > authorization.approvedQuantity) {
+      throw new BadRequestError(
+        `La cantidad recibida (${alreadyReceived + input.receivedQuantity}) superaria la cantidad autorizada ` +
+          `(${authorization.approvedQuantity}) para esta cotizacion`,
+      );
+    }
 
-  const receipt = await GoodsReceiptModel.create({
-    documentType: input.documentType,
-    documentNumber: input.documentNumber,
-    purchaseOrderId: order.id,
-    quoteId: quote.id,
-    requestId: quote.requestId,
-    productId: quote.productId,
-    supplierId: quote.supplierId,
-    purchaseValue: quote.purchaseValue,
-    receivedQuantity: input.receivedQuantity,
-    createdBy: input.createdBy ?? null,
+    try {
+      return await GoodsReceiptModel.create(
+        {
+          documentType: input.documentType,
+          documentNumber: input.documentNumber,
+          purchaseOrderId: order.id,
+          quoteId: quote.id,
+          requestId: quote.requestId,
+          productId: quote.productId,
+          supplierId: quote.supplierId,
+          purchaseValue: quote.purchaseValue,
+          receivedQuantity: input.receivedQuantity,
+          createdBy: input.createdBy ?? null,
+        },
+        { transaction },
+      );
+    } catch (err) {
+      // ux_goods_receipts_order_document (migrate.ts): mismo documento del
+      // proveedor (guia/boleta/factura) ya recepcionado contra esta orden.
+      // Sin este catch, el 500 crudo del driver no dice nada util al usuario.
+      if (isUniqueConstraintError(err)) {
+        throw new ConflictError(
+          `Ya existe una recepcion con el documento "${input.documentNumber}" para esta orden de compra`,
+        );
+      }
+      throw err;
+    }
   });
 
   try {

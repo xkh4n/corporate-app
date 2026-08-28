@@ -699,4 +699,17 @@ async function migratePurchasingFlow(): Promise<void> {
       CREATE INDEX ix_goods_receipts_purchase_order_id ON goods_receipts(purchase_order_id);
     END
   `);
+  // Evita recepcionar dos veces el mismo documento del proveedor (guia/
+  // boleta/factura) contra la misma orden -sin esto, nada impedia duplicar
+  // una recepcion mientras la cantidad total siguiera bajo lo autorizado
+  // (hallazgo de auditoria de seguridad, relacionado con la condicion de
+  // carrera de createGoodsReceipt). document_number es texto libre del
+  // proveedor, por eso la unicidad es compuesta con purchase_order_id +
+  // document_type, no solo el numero.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_goods_receipts_order_document' AND object_id = OBJECT_ID('goods_receipts'))
+    BEGIN
+      CREATE UNIQUE INDEX ux_goods_receipts_order_document ON goods_receipts(purchase_order_id, document_type, document_number);
+    END
+  `);
 }
