@@ -128,7 +128,7 @@ flowchart TB
     %% Todos los subgrafos con el mismo fill claro (#FBE4D6) — son el
     %% "contenedor Compose", una sola convención visual, con el color ya
     %% resuelto por los nodos que agrupan adentro.
-    style Cliente fill:#D9EFBD,stroke:#7BF1A8,color:#0C0950
+    style Cliente fill:#D9EFBD,stroke:#7BF1A8,color:#7BF1A8
     style FRONT fill:#D9EFBD,stroke:#161179,color:#0C0950
     style API fill:#D9EFBD,stroke:#161179,color:#0C0950
     style MAILER fill:#D9EFBD,stroke:#161179,color:#0C0950
