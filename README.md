@@ -98,6 +98,35 @@ flowchart TB
     ALLOY -.->|logs de contenedores| LOKI
 
     NGINXDB -.->|solo trafico interno,\nsin publicar al host| PG & MSSQL & MONGO & REDIS
+
+    %% Un color por tecnología/motor — no por stack, para que se distinga
+    %% cada motor de BD dentro de corporate-infra. NGINX y exporters
+    %% comparten un gris neutro (son plomería, no el servicio en sí).
+    classDef frontend fill:#218DAE,stroke:#155E75,color:#fff
+    classDef api fill:#FF788D,stroke:#C23B52,color:#1a1a1a
+    classDef mssql fill:#007979,stroke:#004F4F,color:#fff
+    classDef postgres fill:#525EA7,stroke:#374080,color:#fff
+    classDef mongo fill:#2196F3,stroke:#1565C0,color:#fff
+    classDef redis fill:#E63946,stroke:#A5222C,color:#fff
+    classDef mailer fill:#F4D35E,stroke:#C9A227,color:#1a1a1a
+    classDef infraGlue fill:#6C757D,stroke:#495057,color:#fff
+    classDef grafana fill:#F46800,stroke:#B94E00,color:#fff
+    classDef prometheus fill:#DC4E29,stroke:#A5391D,color:#fff
+    classDef loki fill:#3DB56D,stroke:#2A8050,color:#fff
+    classDef alloy fill:#F2A900,stroke:#B87F00,color:#1a1a1a
+
+    class NGINXFRONT,REACT frontend
+    class NGINXAPI,API1,API2,API3 api
+    class MSSQL mssql
+    class PG postgres
+    class MONGO mongo
+    class REDIS redis
+    class MAILERAPI,SMTPGW mailer
+    class EXP,NGINXDB,NGINXMON infraGlue
+    class GRAFANA grafana
+    class PROM prometheus
+    class LOKI loki
+    class ALLOY alloy
 ```
 
 **Cómo se levanta** (orquestador `run.ps1` en la raíz, dispatch a `corporate-scripts/*.ps1`):
