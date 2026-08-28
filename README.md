@@ -105,8 +105,8 @@ flowchart TB
     %% iteración anterior). Cliente/Internet = afuera de la infra (claro),
     %% proxies = borde, cómputo/observabilidad = aplicación, motores de BD
     %% = el dato en reposo, el más protegido → el tono más oscuro.
-    %% Un solo sistema de color (nodos); los subgrafos no repiten fill
-    %% (evita doble-codificación) salvo Cliente/Internet, que SON la capa.
+    %% Los subgrafos comparten un mismo fill claro (el "contenedor Compose"
+    %% como convención propia), independiente del color de sus nodos.
     classDef exterior fill:#FBE4D6,stroke:#0C0950,color:#0C0950
     classDef borde fill:#261FB3,stroke:#161179,color:#FBE4D6
     classDef aplicacion fill:#161179,stroke:#0C0950,color:#FBE4D6
@@ -125,14 +125,15 @@ flowchart TB
     style MONGO stroke:#FBE4D6,stroke-width:2px
     style REDIS stroke:#261FB3,stroke-width:2px,stroke-dasharray:4 3
 
-    %% Cliente/Internet son la capa "exterior" en sí (fill sólido); el
-    %% resto de subgrafos va sin fill, solo un borde fino para agrupar.
+    %% Todos los subgrafos con el mismo fill claro (#FBE4D6) — son el
+    %% "contenedor Compose", una sola convención visual, con el color ya
+    %% resuelto por los nodos que agrupan adentro.
     style Cliente fill:#FBE4D6,stroke:#0C0950,color:#0C0950
-    style FRONT stroke:#161179,stroke-width:1px
-    style API stroke:#161179,stroke-width:1px
-    style MAILER stroke:#161179,stroke-width:1px
-    style MON stroke:#161179,stroke-width:1px
-    style INFRA stroke:#161179,stroke-width:1px
+    style FRONT fill:#FBE4D6,stroke:#161179,color:#0C0950
+    style API fill:#FBE4D6,stroke:#161179,color:#0C0950
+    style MAILER fill:#FBE4D6,stroke:#161179,color:#0C0950
+    style MON fill:#FBE4D6,stroke:#161179,color:#0C0950
+    style INFRA fill:#FBE4D6,stroke:#161179,color:#0C0950
 
     %% Conectores en índigo oscuro — un rojo vivo se lee como alarma/error
     %% sobre una paleta fría, y son las aristas el elemento más repetido
