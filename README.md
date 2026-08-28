@@ -127,6 +127,18 @@ flowchart TB
     class PROM prometheus
     class LOKI loki
     class ALLOY alloy
+
+    %% Fondo por subgrafo (contenedor Compose) + nodo suelto Internet.
+    style Cliente fill:#E8F5E9,stroke:#6FA37A,color:#1a1a1a
+    style FRONT fill:#FF9D9D,stroke:#C24F4F,color:#1a1a1a
+    style MON fill:#D9FFF4,stroke:#4FBFA0,color:#1a1a1a
+    style API fill:#FFFCE1,stroke:#D9C86B,color:#1a1a1a
+    style INFRA fill:#827148,stroke:#5C4E2E,color:#fff
+    style MAILER fill:#AA1C41,stroke:#6E1029,color:#fff
+    style Internet fill:#00C68D,stroke:#00875F,color:#fff
+
+    %% Todos los conectores del mismo color (no distingue tipo de arista).
+    linkStyle default stroke:#FF0052,stroke-width:1.5px
 ```
 
 **Cómo se levanta** (orquestador `run.ps1` en la raíz, dispatch a `corporate-scripts/*.ps1`):
