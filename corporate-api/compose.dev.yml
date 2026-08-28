@@ -1,0 +1,312 @@
+name: ${PROJECT_NAME_BACKEND}${SUFFIX}
+
+secrets:
+    pg_user_password:
+        file: ../corporate-secrets/${SECRETS_ENV}/pg_user_password.txt
+    mssql_app_password:
+        file: ../corporate-secrets/${SECRETS_ENV}/mssql_app_password.txt
+    redis_password:
+        file: ../corporate-secrets/${SECRETS_ENV}/redis_password.txt
+    jwt_access_secret:
+        file: ../corporate-secrets/${SECRETS_ENV}/jwt_access_secret.txt
+    jwt_refresh_secret:
+        file: ../corporate-secrets/${SECRETS_ENV}/jwt_refresh_secret.txt
+    session_secret:
+        file: ../corporate-secrets/${SECRETS_ENV}/session_secret.txt
+    bootstrap_admin_password:
+        file: ../corporate-secrets/${SECRETS_ENV}/bootstrap_admin_password.txt
+    default_user_password:
+        file: ../corporate-secrets/${SECRETS_ENV}/default_user_password.txt
+    mongo_user_password:
+        file: ../corporate-secrets/${SECRETS_ENV}/db_mongo_user_password.txt
+    mailer_shared_secret:
+        file: ../corporate-secrets/${SECRETS_ENV}/mailer_shared_secret.txt
+
+networks:
+    # Red del OTRO proyecto Compose (corporate-infra), declarada "external"
+    # porque ya existe (la crea "corpinfra dev" al levantar ese stack). A
+    # diferencia de corporate-monitoring (que solo se conecta a "exporters",
+    # nunca a "backend": ver el hallazgo de auditoría en corporate-infra/
+    # compose.dev.yml), esta API SI necesita ruta directa a los motores de BD
+    # -es justamente para lo que existe-, así que se conecta a "backend" en
+    # vez de a "exporters".
+    infra-backend:
+        external: true
+        name: ${PROJECT_NAME}_backend${SUFFIX}
+    # Red propia de este stack: viven acá las 3 réplicas de la API y su proxy NGINX.
+    # internal: true -hallazgo CRITICO de auditoria: ninguna red custom del
+    # monorepo tenia esto, asi que cualquier replica de la API tenia egreso
+    # NAT real a internet igual que corporate-mailer. Las réplicas solo
+    # necesitan hablar con nginx-apidev (misma red) y con las BD/mailer (otras
+    # redes, ver abajo) -nunca con el exterior directamente-.
+    internal:
+        name: ${PROJECT_NAME_BACKEND}_internal${SUFFIX}
+        internal: true
+        ipam:
+            config:
+                - subnet: 172.16.4.0/24
+    # Red pre-creada por "run.ps1 backend <ambiente>" (ver root run.ps1),
+    # externa a este stack. Solo el proxy NGINX se conecta acá -mismo patrón
+    # de "un solo punto de entrada" que el resto del proyecto-, nunca las
+    # réplicas de la API directamente.
+    #
+    # DELIBERADAMENTE sigue SIN "internal: true" (se probó en la práctica,
+    # como pedía la auditoría, y NO se asumió): con un contenedor conectado a
+    # una red "internal: true" en ESTE host (Docker Desktop/WSL2, Windows),
+    # "docker port"/"docker inspect" muestran el binding vacío -Docker NO
+    # llega a publicar el puerto al host en absoluto, aunque el compose
+    # declare "ports:"-. Confirmado con un contenedor nginx de prueba propio:
+    # en una red "--internal" el puerto publicado no respondia (curl al host
+    # daba connection refused / sin binding), en una red normal si. Esto es
+    # justo lo opuesto a lo que decia el lineamiento original de la auditoria
+    # ("verificar en la practica, no asumir" -se asumio que internal no
+    # afectaba el port-publish, y la practica lo contradijo). Por eso "public"
+    # se queda como la ÚNICA red de corporate-api con egreso NAT real, pero
+    # con un solo miembro posible (nginx-apidev, ver x-api-common: las 3
+    # réplicas NUNCA se conectan acá) -mismo patrón de "un solo consumidor"
+    # que "mailer-egress" en corporate-mailer-. nginx-apidev es un proxy L7
+    # puro (TLS termination + balanceo, sin código de aplicación ni datos de
+    # negocio): el radio de explosión de que ESTE contenedor puntual tenga
+    # egreso real es muchisimo menor que el de las 3 réplicas de la API o
+    # cualquier motor de BD, que es lo que de verdad importaba cerrar.
+    public:
+        external: true
+        name: backend-net-${SUFFIX}
+    # Equivalente a "exporters" en corporate-infra: cada réplica expone su
+    # propio /metrics (prom-client, sin auth) SOLO alcanzable desde acá, no
+    # desde "public" ni desde "infra-backend". corporate-monitoring (otro
+    # proyecto Compose) declara esta misma red como external para que su
+    # Prometheus pueda scrapear -mismo patrón dual-homed que ya usan los 8
+    # exporters de corporate-infra-.
+    # internal: true -mismo motivo que "internal" arriba: Prometheus
+    # (corporate-monitoring) solo necesita alcanzar /metrics de las 3
+    # réplicas por esta red, y las réplicas nunca necesitan egreso real acá.
+    api-exporters:
+        name: ${PROJECT_NAME_BACKEND}_exporters${SUFFIX}
+        internal: true
+        ipam:
+            config:
+                - subnet: 172.16.5.0/24
+    # Red compartida con corporate-mailer (otro proyecto Compose, el UNICO
+    # con salida a internet -ver corporate-mailer/compose.dev.yml). Creada
+    # por root run.ps1 (mismo patron que "public"/backend-net-${SUFFIX}), no
+    # importa si "run.ps1 mailer" o "run.ps1 backend" se corrio primero.
+    # internal: true -asignado en la creación real (root run.ps1), no acá.
+    # Con esto, compartir esta red con corporate-mailer YA NO le da a las
+    # réplicas de la API egreso "gratis" a internet -el egreso real de
+    # mailerdev vive en una segunda red propia de ese stack (ver
+    # corporate-mailer/compose.dev.yml, "mailer-egress"), no en esta.
+    mailer-net:
+        external: true
+        name: mailer-net-${SUFFIX}
+    # Red compartida con corporate-front (otro proyecto Compose), creada por
+    # root run.ps1 (mismo patron idempotente que mailer-net). Reemplaza el
+    # intento inicial de que nginx-frontdev le pegara a este stack via
+    # ALLOCATED_IP (hairpin NAT, intermitente en Docker Desktop/Windows) -ver
+    # nginx-frontdev en corporate-front/compose.dev.yml. Solo nginx-apidev se
+    # conecta aca (mismo criterio de "unico punto de entrada" que "public":
+    # las 3 replicas nunca quedan expuestas a otro stack, ni siquiera por una
+    # red internal). "internal: true" -asignado en la creacion real (root
+    # run.ps1), no aca: este es solo el camino de ENTRADA desde
+    # corporate-front, nginx-apidev no gana egreso NAT real por compartirla.
+    frontapi-net:
+        external: true
+        name: frontapi-net-${SUFFIX}
+
+# Definición común a las 3 réplicas (YAML anchor, no una feature propia de
+# Compose): mismo binario/imagen/config, solo cambia la identidad
+# (container_name/hostname) de cada una. 3 réplicas SIEMPRE activas -no
+# "sleep"- para que NGINX pueda dejar de enviarles tráfico con un simple
+# passive health check (max_fails/fail_timeout) en vez de necesitar un
+# watcher propio que las despierte.
+x-api-common: &api-common
+    # Las 3 réplicas son la MISMA imagen (build context idéntico): "image:"
+    # explícito e igual en las 3 hace que Compose la construya una sola vez
+    # y la reutilice, en vez de 3 builds redundantes en paralelo (que además
+    # sobrecargan la red -tres "npm install" concurrentes contra el registry
+    # llegaron a gatillar errores TLS intermitentes en este host-).
+    image: ${PROJECT_NAME_BACKEND}-apidev:${SUFFIX}
+    build:
+        context: ./
+        dockerfile: Dockerfile.dev
+    restart: ${RESTART_POLICY}
+    # Corre como el usuario "node" (no root) de la imagen oficial desde
+    # el Dockerfile, sin ninguna operación que requiera privilegios en
+    # runtime: cap_drop:[ALL] sin cap_add alcanza, mismo criterio que los
+    # exporters de corporate-infra.
+    security_opt:
+        - no-new-privileges:true
+    cap_drop:
+        - ALL
+    deploy:
+        resources:
+            limits:
+                memory: 512M
+                cpus: "1.0"
+    environment:
+        # NODE_ENV/CORS_ORIGIN vienen del .env de CADA ambiente (Development/
+        # Testing/Production), no hardcodeados aca -hallazgo de auditoria:
+        # antes, este valor literal se aplicaba SIEMPRE sin importar que
+        # dijera el .env cargado, asi que "development" hardcodeado rompia
+        # silenciosamente cookie.secure (ver api.ts) el dia que este mismo
+        # compose se reusara para test/prod.
+        NODE_ENV: ${NODE_ENV}
+        PORT: ${API_INTERNAL_PORT}
+        SUFFIX: ${SUFFIX}
+        # Docker Desktop (Windows) no siempre propaga eventos inotify del
+        # bind mount al watcher de tsx (chokidar): sin polling, "pnpm dev"
+        # no detecta cambios de archivo y hay que reiniciar el contenedor
+        # a mano -confirmado en este host, ver corporate-api/compose.dev.yml-.
+        CHOKIDAR_USEPOLLING: "true"
+        CHOKIDAR_INTERVAL: "300"
+        CORS_ORIGIN: ${CORS_ORIGIN}
+        # Hosts ya resueltos al nodo PRIMARIO de cada motor, mismo criterio
+        # que los exporters de corporate-infra (la concatenación
+        # "${HOST}01${SUFFIX}" se hace acá, no en el código de la app).
+        POSTGRES_HOST: "${POSTGRES_HOST}01${SUFFIX}"
+        POSTGRES_DATABASE: ${POSTGRES_DATABASE}
+        PG_APP_USER: ${PG_APP_USER}${SUFFIX}
+        PG_APP_USER_PASSWORD_FILE: /run/secrets/pg_user_password
+        MSSQL_HOST: "${MSSQL_HOST}01${SUFFIX}"
+        MSSQL_DBNAME: ${MSSQL_DBNAME}
+        MSSQL_APP_USER: ${MSSQL_APP_USER}${SUFFIX}
+        MSSQL_APP_USER_PASSWORD_FILE: /run/secrets/mssql_app_password
+        REDIS_HOST: "${REDIS_HOST}01${SUFFIX}"
+        REDIS_PASSWORD_FILE: /run/secrets/redis_password
+        MONGO_HOST: "${MONGO_HOST}01${SUFFIX}"
+        MONGO_DATABASE: ${MPONGO_DB_NAME}
+        MONGO_USER: ${MONGO_USER}${SUFFIX}
+        MONGO_USER_PASSWORD_FILE: /run/secrets/mongo_user_password
+        SESSION_NAME: ${SESSION_NAME}
+        SESSION_TTL_HOURS: ${SESSION_TTL_HOURS}
+        SESSION_SECRET_FILE: /run/secrets/session_secret
+        JWT_ACCESS_TTL: ${JWT_ACCESS_TTL}
+        JWT_REFRESH_TTL: ${JWT_REFRESH_TTL}
+        JWT_ACCESS_SECRET_FILE: /run/secrets/jwt_access_secret
+        JWT_REFRESH_SECRET_FILE: /run/secrets/jwt_refresh_secret
+        ADMIN_BOOTSTRAP_PASSWORD_FILE: /run/secrets/bootstrap_admin_password
+        DEFAULT_USER_PASSWORD_FILE: /run/secrets/default_user_password
+        PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH}
+        PASSWORD_HISTORY_LIMIT: ${PASSWORD_HISTORY_LIMIT}
+        DISABLE_AUTH: ${DISABLE_AUTH}
+        DISABLE_PERMISSIONS: ${DISABLE_PERMISSIONS}
+        DISABLE_VALIDATION: ${DISABLE_VALIDATION}
+        MAX_POOL: ${MAX_POOL}
+        MIN_POOL: ${MIN_POOL}
+        # corporate-mailer, alcanzable por nombre en "mailer-net" (mismo host
+        # resuelto por Docker DNS que su container_name/hostname).
+        MAILER_URL: "http://${MAILER_HOST}${SUFFIX}:${MAILER_INTERNAL_PORT}/send"
+        MAILER_SHARED_SECRET_FILE: /run/secrets/mailer_shared_secret
+    secrets:
+        - pg_user_password
+        - mssql_app_password
+        - redis_password
+        - jwt_access_secret
+        - jwt_refresh_secret
+        - session_secret
+        - bootstrap_admin_password
+        - default_user_password
+        - mongo_user_password
+        - mailer_shared_secret
+    # Bind mount del código + volumen anónimo sobre node_modules (evita que
+    # el bind mount tape los node_modules ya instalados en la imagen con
+    # los del host, que pueden no existir o ser de otro SO): hot reload
+    # real con "pnpm dev" (tsx watch) sin tener que rebuildear la imagen
+    # en cada cambio. Volumen anónimo independiente por réplica (no
+    # compartido): cada una tiene su propia copia de node_modules.
+    volumes:
+        - ./:/app
+        - /app/node_modules
+    networks:
+        - infra-backend
+        - internal
+        - api-exporters
+        - mailer-net
+    healthcheck:
+        test: ["CMD-SHELL", "wget -qO- http://localhost:${API_INTERNAL_PORT}/health >/dev/null 2>&1 || exit 1"]
+        interval: 10s
+        timeout: 5s
+        retries: 10
+        start_period: 20s
+
+services:
+    # *********************        API (Express/TypeScript) — 3 réplicas *********************
+    apidev01:
+        <<: *api-common
+        container_name: ${API_HOST}01${SUFFIX}
+        hostname: ${API_HOST}01${SUFFIX}
+
+    apidev02:
+        <<: *api-common
+        container_name: ${API_HOST}02${SUFFIX}
+        hostname: ${API_HOST}02${SUFFIX}
+
+    apidev03:
+        <<: *api-common
+        container_name: ${API_HOST}03${SUFFIX}
+        hostname: ${API_HOST}03${SUFFIX}
+    # **************************    FIN API **************************
+
+    # *********************        Proxy único: NGINX (HTTP/L7, balanceo de carga) *********************
+    # Único servicio de este stack con puertos publicados al host, mismo
+    # criterio que corporate-infra/corporate-monitoring: las réplicas de la
+    # API nunca se conectan a "public" directamente. Balancea entre las 3
+    # réplicas (round-robin, ver nginx/config/nginx.conf.template) con
+    # health checks pasivos: si una réplica cae, NGINX deja de mandarle
+    # tráfico apenas falla, sin necesitar ningún watcher externo.
+    nginx-apidev:
+        build:
+            context: ./nginx
+        container_name: ${API_PROXY_HOST}${SUFFIX}
+        hostname: ${API_PROXY_HOST}${SUFFIX}
+        restart: ${RESTART_POLICY}
+        # Mismo criterio que nginxdev en corporate-infra: el master process
+        # necesita quedarse root, pero CHOWN+SETUID+SETGID alcanza para que
+        # baje los workers (los que manejan trafico real) a "nginx" sin
+        # privilegios.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        cap_add:
+            - CHOWN
+            - SETUID
+            - SETGID
+        deploy:
+            resources:
+                limits:
+                    memory: 128M
+                    cpus: "0.25"
+        environment:
+            API_HOST: ${API_HOST}
+            API_INTERNAL_PORT: ${API_INTERNAL_PORT}
+            SUFFIX: ${SUFFIX}
+            # Puerto HTTPS publicado al host: nginx necesita el numero exacto
+            # para armar el redirect 80->443 con el puerto correcto (ver
+            # nginx/config/nginx.conf.template) -no lo puede inferir solo,
+            # "listen 443" adentro del contenedor no tiene relacion con el
+            # puerto publicado afuera-.
+            API_SSL_PORT: ${API_SSL_PORT}
+        # Bindeado a ALLOCATED_IP, no a 0.0.0.0 -mismo criterio que
+        # corporate-infra/compose.dev.yml, ver comentario ahi.
+        ports:
+            - "${ALLOCATED_IP}:${API_PORT}:80"
+            - "${ALLOCATED_IP}:${API_SSL_PORT}:443"
+        volumes:
+            # tls.crt/tls.key: autofirmados por defecto (ver
+            # corporate-scripts/ensure-api-tls-cert.ps1), reemplazables por
+            # los de una CA real con el mismo nombre de archivo sin tocar
+            # este compose ni nginx.conf.template. Solo lectura.
+            - ../corporate-secrets/${SECRETS_ENV}/certs/api:/etc/nginx/certs:ro
+        networks:
+            - internal
+            - public
+            - frontapi-net
+        depends_on:
+            apidev01:
+                condition: service_healthy
+            apidev02:
+                condition: service_healthy
+            apidev03:
+                condition: service_healthy
+    # **************************    FIN Proxy NGINX **************************

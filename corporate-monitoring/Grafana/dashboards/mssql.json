@@ -1,0 +1,253 @@
+{
+    "uid": "mssql-overview",
+    "title": "MSSQL - Overview (Availability Group)",
+    "tags": ["corpinfra", "mssql"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "editable": true,
+    "time": { "from": "now-6h", "to": "now" },
+    "refresh": "30s",
+    "panels": [
+        {
+            "id": 1,
+            "type": "stat",
+            "title": "MSSQL UP (por instancia)",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 0, "y": 0, "w": 6, "h": 6 },
+            "fieldConfig": {
+                "defaults": {
+                    "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] },
+                    "mappings": [ { "type": "value", "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } } } ]
+                },
+                "overrides": []
+            },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value_and_name",
+                "colorMode": "background"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "up{job=\"mssql\"}",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "type": "stat",
+            "title": "Rol en el Availability Group",
+            "description": "mssql_hadr_replica_role, deduplicado por replica_server (cada exporter reporta sobre TODAS las replicas del AG, no solo la propia -sys.dm_hadr_availability_replica_states es una vista de servidor completa-, 'max by' colapsa el reporte de ambos exportersa una fila por replica real). 1=PRIMARY, 2=SECONDARY.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 6, "y": 0, "w": 9, "h": 6 },
+            "fieldConfig": {
+                "defaults": {
+                    "mappings": [
+                        { "type": "value", "options": { "1": { "text": "PRIMARY", "color": "green" }, "2": { "text": "SECONDARY", "color": "blue" } } }
+                    ],
+                    "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] }
+                },
+                "overrides": []
+            },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value_and_name",
+                "colorMode": "background"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "max by (replica_server) (mssql_hadr_replica_role)",
+                    "legendFormat": "{{replica_server}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 3,
+            "type": "stat",
+            "title": "Salud de sincronizacion del AG",
+            "description": "mssql_hadr_replica_synchronization_health deduplicado: 0=NOT_HEALTHY, 1=PARTIALLY_HEALTHY, 2=HEALTHY.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 15, "y": 0, "w": 9, "h": 6 },
+            "fieldConfig": {
+                "defaults": {
+                    "mappings": [
+                        {
+                            "type": "value",
+                            "options": {
+                                "0": { "text": "NOT HEALTHY", "color": "red" },
+                                "1": { "text": "PARTIAL", "color": "yellow" },
+                                "2": { "text": "HEALTHY", "color": "green" }
+                            }
+                        }
+                    ],
+                    "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] }
+                },
+                "overrides": []
+            },
+            "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "orientation": "horizontal",
+                "textMode": "value_and_name",
+                "colorMode": "background"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "max by (replica_server) (mssql_hadr_replica_synchronization_health)",
+                    "legendFormat": "{{replica_server}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 4,
+            "type": "timeseries",
+            "title": "Estado de sincronizacion de la base por replica",
+            "description": "mssql_hadr_database_replica_synchronization_state, deduplicado por replica_server. 0=NOT_SYNCHRONIZING, 1=SYNCHRONIZING, 2=SYNCHRONIZED.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "short",
+                    "min": 0,
+                    "max": 2,
+                    "mappings": [
+                        { "type": "value", "options": { "0": { "text": "NOT_SYNCHRONIZING" }, "1": { "text": "SYNCHRONIZING" }, "2": { "text": "SYNCHRONIZED" } } }
+                    ]
+                },
+                "overrides": []
+            },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "max by (replica_server, db) (mssql_hadr_database_replica_synchronization_state)",
+                    "legendFormat": "{{replica_server}} / {{db}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 5,
+            "type": "timeseries",
+            "title": "Log send / redo queue (KB) por replica",
+            "description": "mssql_hadr_database_replica_log_send_queue_kb / redo_queue_kb, deduplicados. Crecientes de forma sostenida = la replica se esta atrasando.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "deckbytes" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "max by (replica_server) (mssql_hadr_database_replica_log_send_queue_kb)",
+                    "legendFormat": "{{replica_server}} send queue",
+                    "refId": "A"
+                },
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "max by (replica_server) (mssql_hadr_database_replica_redo_queue_kb)",
+                    "legendFormat": "{{replica_server}} redo queue",
+                    "refId": "B"
+                }
+            ]
+        },
+        {
+            "id": 6,
+            "type": "timeseries",
+            "title": "Buffer cache hit ratio (contador crudo)",
+            "description": "mssql_buffer_cache_hit_ratio: en SQL Server este es un perf counter tipo 'ratio' que en rigor necesita su contador 'base' companero para dar un porcentaje exacto 0-100 -el collector (mssql_standard.collector.yml, adaptado del ejemplo oficial de sql_exporter) expone el valor crudo sin esa correccion-. Se deja igual para ver la TENDENCIA (subidas/bajadas), no como porcentaje literal.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 0, "y": 14, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "mssql_buffer_cache_hit_ratio",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 7,
+            "type": "timeseries",
+            "title": "Batch requests / segundo",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 12, "y": 14, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "rate(mssql_batch_requests[5m])",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 8,
+            "type": "timeseries",
+            "title": "Conexiones por base",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 0, "y": 22, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "mssql_connections",
+                    "legendFormat": "{{role}} / {{db}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 9,
+            "type": "timeseries",
+            "title": "Page life expectancy (segundos)",
+            "description": "Cuanto tiempo se espera que una pagina se mantenga en el buffer pool sin ser referenciada. Valores bajos y en caida sostenida indican presion de memoria.",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "gridPos": { "x": 12, "y": 22, "w": 12, "h": 8 },
+            "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+            "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+            "targets": [
+                {
+                    "datasource": { "type": "prometheus", "uid": "prometheus" },
+                    "expr": "mssql_page_life_expectancy_seconds",
+                    "legendFormat": "{{role}}",
+                    "refId": "A"
+                }
+            ]
+        },
+        {
+            "id": 10,
+            "type": "logs",
+            "title": "Logs recientes (MSSQL, ambos nodos)",
+            "description": "Loki, contenedores centaury* (primario, replica y sus exporters).",
+            "datasource": { "type": "loki", "uid": "loki" },
+            "gridPos": { "x": 0, "y": 30, "w": 24, "h": 9 },
+            "options": {
+                "showTime": true,
+                "wrapLogMessage": true,
+                "sortOrder": "Descending",
+                "dedupStrategy": "none"
+            },
+            "targets": [
+                {
+                    "datasource": { "type": "loki", "uid": "loki" },
+                    "expr": "{service_name=~\"centaury.*\"}",
+                    "refId": "A"
+                }
+            ]
+        }
+    ]
+}

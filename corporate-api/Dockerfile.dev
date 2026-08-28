@@ -1,0 +1,24 @@
+FROM node:22-alpine
+
+LABEL org.opencontainers.image.authors="osvaldorojasg@gmail.com"
+LABEL maintainer="Osvaldo Rojas G."
+
+WORKDIR /app
+
+# npm en vez de pnpm para esta imagen a proposito: con Docker Desktop (Windows
+# + WSL2) pnpm generó symlinks de node_modules con el TARGET absoluto en
+# formato Windows ("D:/Proyectos/.../node_modules/.pnpm/...") en vez de
+# relativo -symlink roto dentro del contenedor Linux, "Cannot find module
+# tsx/dist/cli.mjs"-, incluso con node-linker=hoisted. pnpm sigue siendo el
+# package manager del proyecto (pnpm-lock.yaml manda fuera de Docker); npm
+# install acá solo resuelve contra package.json, sin symlinks, para esta
+# imagen especificamente.
+COPY package.json ./
+RUN npm install
+
+COPY --chown=node:node . .
+RUN chown -R node:node /app
+
+USER node
+
+CMD ["node_modules/.bin/tsx", "watch", "index.ts"]

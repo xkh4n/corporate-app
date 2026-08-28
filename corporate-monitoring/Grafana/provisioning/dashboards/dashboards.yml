@@ -1,0 +1,23 @@
+# Dashboard provisioning: mismo mecanismo que datasources.yml (un YAML que
+# Grafana lee solo al arrancar), pero acá el YAML no lleva los dashboards
+# adentro -solo apunta a una carpeta con los .json-, ver dashboards/*.json
+# copiados a /etc/grafana/dashboards en el Dockerfile.
+apiVersion: 1
+
+providers:
+    - name: corpinfra
+      orgId: 1
+      folder: "Corporate Infra"
+      type: file
+      disableDeletion: false
+      # Reescanea la carpeta cada 30s: permite iterar un dashboard (editarlo
+      # en el JSON, reconstruir la imagen) sin tener que reiniciar Grafana a mano.
+      updateIntervalSeconds: 30
+      # Permite editar/guardar cambios hechos desde la UI de Grafana -si se
+      # deja en false, cualquier ajuste manual de un panel se pierde en el
+      # próximo reescaneo-. Los JSON de este repo siguen siendo la fuente de
+      # verdad versionada; esto solo afecta la conveniencia de iterar en vivo.
+      allowUiUpdates: true
+      options:
+          path: /etc/grafana/dashboards
+          foldersFromFilesStructure: false

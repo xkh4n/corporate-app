@@ -1,0 +1,19 @@
+FROM node:22-alpine
+
+LABEL org.opencontainers.image.authors="osvaldorojasg@gmail.com"
+LABEL maintainer="Osvaldo Rojas G."
+
+WORKDIR /app
+
+# npm en vez de pnpm por el mismo motivo que corporate-api/Dockerfile.dev:
+# symlinks de pnpm rotos en este host (Docker Desktop + WSL2). Ver memoria
+# feedback_pnpm_docker_windows_symlinks.
+COPY package.json ./
+RUN npm install
+
+COPY --chown=node:node . .
+RUN chown -R node:node /app
+
+USER node
+
+CMD ["node_modules/.bin/tsx", "watch", "index.ts"]

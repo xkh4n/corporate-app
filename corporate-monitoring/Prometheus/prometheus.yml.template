@@ -1,0 +1,79 @@
+# Plantilla resuelta en runtime por entrypoint-wrapper.sh (sustitución con
+# "sed", ver ese archivo para el porqué no se usa "envsubst" -no viene
+# instalado en la imagen oficial de Prometheus, a diferencia de la imagen de
+# NGINX que sí lo trae de fábrica-). Placeholders con la misma sintaxis
+# "${VAR}" que ya usa corporate-infra/NGINX/config/streams.dev.conf, para
+# mantener el mismo estilo visual aunque el mecanismo de resolución sea otro.
+global:
+    scrape_interval: 15s
+    evaluation_interval: 15s
+    external_labels:
+        environment: ${SUFFIX}
+
+scrape_configs:
+    # El propio Prometheus (métricas de auto-monitoreo: scrape duration,
+    # samples ingeridos, etc.)
+    - job_name: prometheus
+      static_configs:
+          - targets: ["localhost:9090"]
+
+    # Un target por nodo (primario/réplica) para que Grafana pueda distinguir
+    # el estado de cada uno por separado, no un promedio ciego de ambos -label
+    # "role" hecho a mano por target, no autodescubierto-.
+    - job_name: postgres
+      static_configs:
+          - targets: ["${POSTGRES_HOST}-exporter01${SUFFIX}:9187"]
+            labels:
+                engine: postgres
+                role: primary
+          - targets: ["${POSTGRES_HOST}-exporter02${SUFFIX}:9187"]
+            labels:
+                engine: postgres
+                role: replica
+
+    - job_name: mongodb
+      static_configs:
+          - targets: ["${MONGO_HOST}-exporter01${SUFFIX}:9216"]
+            labels:
+                engine: mongodb
+                role: primary
+          - targets: ["${MONGO_HOST}-exporter02${SUFFIX}:9216"]
+            labels:
+                engine: mongodb
+                role: replica
+
+    - job_name: redis
+      static_configs:
+          - targets: ["${REDIS_HOST}-exporter01${SUFFIX}:9121"]
+            labels:
+                engine: redis
+                role: primary
+          - targets: ["${REDIS_HOST}-exporter02${SUFFIX}:9121"]
+            labels:
+                engine: redis
+                role: replica
+
+    - job_name: mssql
+      static_configs:
+          - targets: ["${MSSQL_HOST}-exporter01${SUFFIX}:9399"]
+            labels:
+                engine: mssql
+                role: primary
+          - targets: ["${MSSQL_HOST}-exporter02${SUFFIX}:9399"]
+            labels:
+                engine: mssql
+                role: replica
+
+    # corporate-api: 3 réplicas SIEMPRE activas detrás de NGINX (round-robin
+    # + health check pasivo, ver corporate-api/nginx/config/nginx.conf.template)
+    # -no hay "primary"/"replica" acá, las 3 son equivalentes-, cada una
+    # expone su propio /metrics (prom-client, sin auth) en el mismo puerto
+    # que usa la app para servir HTTP.
+    - job_name: corporate-api
+      static_configs:
+          - targets:
+                - "${API_HOST}01${SUFFIX}:${API_INTERNAL_PORT}"
+                - "${API_HOST}02${SUFFIX}:${API_INTERNAL_PORT}"
+                - "${API_HOST}03${SUFFIX}:${API_INTERNAL_PORT}"
+            labels:
+                service: corporate-api

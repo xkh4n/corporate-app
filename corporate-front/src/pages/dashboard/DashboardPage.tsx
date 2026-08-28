@@ -1,0 +1,31 @@
+import { Link } from "react-router-dom";
+import { useAuth } from "../../auth/useAuth";
+import { flattenMenuLinks } from "../../lib/menu";
+
+export function DashboardPage() {
+  const { menu } = useAuth();
+  const shortcuts = flattenMenuLinks(menu);
+
+  return (
+    <div className="space-y-6">
+      {shortcuts.length === 0 ? (
+        <p className="text-sm text-slate-500">
+          Su rol todavia no tiene modulos asignados. Contacte a un administrador.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {shortcuts.map((item) => (
+            <Link
+              key={item.link}
+              to={item.link}
+              className="rounded-lg border border-slate-200 bg-white p-4 text-sm font-medium text-slate-700
+                shadow-sm transition-colors hover:border-brand-300 hover:text-brand-800"
+            >
+              {item.label}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,69 @@
+# Proxy HTTP (capa 7) hacia Grafana -a diferencia del NGINX de corporate-infra,
+# que es un proxy TCP puro (stream) hacia las bases de datos, este SÍ entiende
+# HTTP: reescribe headers, agrega soporte de WebSocket (Grafana Live) y es el
+# único componente de todo corporate-monitoring con un puerto publicado al
+# host (misma postura de seguridad que corporate-infra: nada más expone
+# puertos).
+user nginx;
+worker_processes auto;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    # 127.0.0.11 es el DNS embebido de Docker: sin esto, nginx resolvería el
+    # hostname de Grafana UNA sola vez al arrancar el worker y lo dejaría
+    # cacheado -si el contenedor de Grafana se recrea con otra IP, el proxy
+    # quedaría apuntando a una IP muerta-. Mismo motivo/patrón que
+    # corporate-infra/NGINX/config/nginx.conf.template.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    # Upgrade de conexión para WebSockets (Grafana Live usa uno para
+    # actualizaciones de paneles en tiempo real): si el cliente no pide
+    # upgrade, Connection queda en "close" (comportamiento HTTP normal).
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+
+    # HTTP: solo redirige a HTTPS -mismo criterio que corporate-api/nginx
+    # (hallazgo de auditoría: Grafana se servía sobre HTTP plano, cookie de
+    # sesión sin flag Secure).
+    server {
+        listen 3333;
+        return 301 https://$host:${MONITORING_SSL_PORT}$request_uri;
+    }
+
+    server {
+        listen 3334 ssl;
+
+        # tls.crt/tls.key: autofirmados por defecto (ver
+        # corporate-scripts/ensure-monitoring-tls-cert.ps1), montados
+        # read-only desde corporate-secrets/<Ambiente>/certs/monitoring/.
+        # Reemplazar por los de una CA real es cambiar SOLO esos dos
+        # archivos en el host y reiniciar este contenedor.
+        ssl_certificate     /etc/nginx/certs/tls.crt;
+        ssl_certificate_key /etc/nginx/certs/tls.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+
+        # HSTS: hallazgo de auditoria de seguridad 2026-08-17 -faltaba en
+        # todo el stack (corporate-front y aca). corporate-api ya lo cubre
+        # via helmet() por defecto; corporate-infra no aplica, es TCP puro.
+        # Sin "preload" hasta confirmar el dominio real de produccion.
+        add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+
+        location / {
+            set $grafana_upstream ${GRAFANA_HOST}01${SUFFIX}:3000;
+            proxy_pass http://$grafana_upstream;
+
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+        }
+    }
+}

@@ -1,0 +1,96 @@
+import type { NextFunction, Request, Response } from "express";
+import { env } from "../library/env";
+import { verifyAccessToken } from "../library/jwt";
+import { UnauthorizedError } from "../library/errors";
+import { getUserInvalidation, type InvalidationReason } from "../services/redis/session.service";
+import type { AuthenticatedUser } from "../types/auth.types";
+
+interface ResolvedAuth {
+  user: AuthenticatedUser;
+  issuedAt: number; // epoch seconds - momento en que se emitio el token/sesion
+}
+
+function fromSession(req: Request): ResolvedAuth | undefined {
+  const sessionUser = req.session?.user;
+  if (!sessionUser) return undefined;
+  return {
+    user: {
+      userId: sessionUser.userId,
+      personId: sessionUser.personId,
+      username: sessionUser.username,
+      roleId: sessionUser.roleId,
+      roleName: sessionUser.roleName,
+    },
+    issuedAt: Math.floor(new Date(sessionUser.loginAt).getTime() / 1000),
+  };
+}
+
+function fromBearerToken(req: Request): ResolvedAuth | undefined {
+  const header = req.headers.authorization;
+  if (!header?.startsWith("Bearer ")) return undefined;
+
+  const token = header.slice("Bearer ".length).trim();
+  const payload = verifyAccessToken(token);
+  return {
+    user: {
+      userId: payload.sub,
+      personId: payload.personId,
+      username: payload.username,
+      roleId: payload.roleId,
+      roleName: payload.roleName,
+    },
+    issuedAt: payload.iat ?? 0,
+  };
+}
+
+// Mensaje especifico solo para los motivos que el usuario final debe poder
+// distinguir en el frontend (para decidir si notificarle o no -ver
+// controllers/user.controller.ts). "deactivated" queda deliberadamente
+// afuera: se devuelve el 401 generico de siempre, sin pista adicional, para
+// no darle a un usuario deshabilitado detalle sobre su propio estado.
+const INVALIDATION_MESSAGES: Partial<Record<InvalidationReason, string>> = {
+  role_changed: "Su sesion expiro porque se actualizo su rol. Inicie sesion nuevamente.",
+  password_changed: "Su sesion expiro porque se actualizo su contraseña. Inicie sesion nuevamente.",
+};
+
+// Acepta sesion Redis (cookie) O JWT access token (Authorization: Bearer),
+// en ese orden -clientes con cookie (front web) y clientes stateless
+// (mobile/integraciones) conviven con el mismo guard.
+export async function authenticate(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  if (env.flags.disableAuth) {
+    next();
+    return;
+  }
+
+  try {
+    const resolved = fromSession(req) ?? fromBearerToken(req);
+    if (!resolved) {
+      throw new UnauthorizedError("Se requiere sesion o token de acceso");
+    }
+
+    // Watermark: si el usuario cambio de rol/contraseña o fue desactivado
+    // DESPUES de que este token/sesion se emitio, se rechaza aunque el JWT
+    // en si todavia no haya expirado -ver invalidateUserSessions en
+    // services/redis/session.service.ts para el detalle de por que hace
+    // falta esto ademas de revokeAllRefreshTokens.
+    // "<=" y no "<": iat/validAfter son epoch SECONDS (granularidad de 1s),
+    // asi que un login y una invalidacion que caen en el mismo segundo son
+    // indistinguibles en orden -se prefiere fallar cerrado (rechazar ese
+    // caso raro) a dejar pasar un token que en teoria debia caer.
+    const invalidation = await getUserInvalidation(resolved.user.userId);
+    if (invalidation && resolved.issuedAt <= invalidation.validAfter) {
+      if (invalidation.reason === "deactivated") {
+        throw new UnauthorizedError();
+      }
+      throw new UnauthorizedError(
+        INVALIDATION_MESSAGES[invalidation.reason] ?? "Su sesion ha expirado. Inicie sesion nuevamente.",
+        { reason: invalidation.reason },
+      );
+    }
+
+    req.user = resolved.user;
+    next();
+  } catch (err) {
+    next(err instanceof UnauthorizedError ? err : new UnauthorizedError("Token invalido o expirado"));
+  }
+}

@@ -1,0 +1,53 @@
+# Config estática (sin templating): Loki no necesita saber nada específico
+# del ambiente (hosts, SUFFIX) -solo escucha en 3100 y guarda en disco local-,
+# a diferencia de Prometheus/Alloy que sí necesitan resolver hostnames de
+# otros contenedores. Modo single-binary, almacenamiento en filesystem:
+# alcanza para dev, no pensado para múltiples réplicas ni alta escala.
+auth_enabled: false
+
+server:
+    http_listen_port: 3100
+    grpc_listen_port: 9096
+
+common:
+    path_prefix: /loki
+    storage:
+        filesystem:
+            chunks_directory: /loki/chunks
+            rules_directory: /loki/rules
+    replication_factor: 1
+    ring:
+        kvstore:
+            store: inmemory
+
+schema_config:
+    configs:
+        - from: 2024-01-01
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+              prefix: index_
+              period: 24h
+
+# Sin Alertmanager en este stack: el ruler queda con un valor de referencia
+# pero inactivo (no se define ninguna regla de alerta todavía).
+ruler:
+    alertmanager_url: http://localhost:9093
+
+limits_config:
+    # Retención razonable para dev: 7 días. En corporate-infra los volúmenes
+    # ya son locales y descartables; no tiene sentido guardar logs por más
+    # tiempo del que dura un ciclo normal de desarrollo/pruebas.
+    retention_period: 168h
+    allow_structured_metadata: true
+    volume_enabled: true
+
+compactor:
+    working_directory: /loki/compactor
+    retention_enabled: true
+    # Loki 3.x exige esto apenas se habilita retention_enabled (validado con
+    # un arranque real: sin esto el proceso ni siquiera levanta, aborta en
+    # "validating config"). Reutiliza el mismo backend filesystem que ya usa
+    # el resto del storage, no hace falta un object store aparte para dev.
+    delete_request_store: filesystem

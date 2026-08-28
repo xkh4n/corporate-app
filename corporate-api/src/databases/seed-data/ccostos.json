@@ -1,0 +1,282 @@
+[
+  {
+    "codigo": 1030,
+    "nombre": "GCIA GENERAL",
+    "descripcion": "Gestión general de la organización, supervisión estratégica y administrativa."
+  },
+  {
+    "codigo": 1037,
+    "nombre": "GCIA DE GESTIÓN DE OPERACIONES Y PRODUCTIVIDAD",
+    "descripcion": "Supervisión de procesos operativos y mejora continua de la productividad."
+  },
+  {
+    "codigo": 1070,
+    "nombre": "GCIA ADM Y FINANZAS",
+    "descripcion": "Administración financiera y contable de la organización."
+  },
+  {
+    "codigo": 1072,
+    "nombre": "CONTABILIDAD",
+    "descripcion": "Registro y control de transacciones financieras y contables."
+  },
+  {
+    "codigo": 1085,
+    "nombre": "CONTROL DE GESTIÓN",
+    "descripcion": "Monitoreo y análisis del desempeño organizacional."
+  },
+  {
+    "codigo": 1110,
+    "nombre": "SISTEMAS",
+    "descripcion": "Gestión de tecnologías de la información y sistemas informáticos."
+  },
+  {
+    "codigo": 1150,
+    "nombre": "GERENCIA PLANIF. Y CONTROL DE COMPRAS",
+    "descripcion": "Planificación y control de compras estratégicas y operativas."
+  },
+  {
+    "codigo": 1236,
+    "nombre": "GERENCIA DE SERVICIOS",
+    "descripcion": "Supervisión de servicios prestados a clientes internos y externos."
+  },
+  {
+    "codigo": 1310,
+    "nombre": "FINANZAS",
+    "descripcion": "Gestión de recursos financieros, inversiones y flujo de caja."
+  },
+  {
+    "codigo": 1360,
+    "nombre": "MARKETING",
+    "descripcion": "Estrategias de mercadeo, promoción y posicionamiento de productos/servicios."
+  },
+  {
+    "codigo": 1390,
+    "nombre": "SEGURIDAD Y PREVENCION",
+    "descripcion": "Implementación de políticas de seguridad laboral y prevención de riesgos."
+  },
+  {
+    "codigo": 1419,
+    "nombre": "INTERNET VENTA A DISTANCIA",
+    "descripcion": "Canales digitales para ventas en línea y comercio electrónico."
+  },
+  {
+    "codigo": 1466,
+    "nombre": "RECURSOS HUMANOS",
+    "descripcion": "Gestión del talento humano, capacitación y desarrollo organizacional."
+  },
+  {
+    "codigo": 1546,
+    "nombre": "GESTIÓN PAGO",
+    "descripcion": "Procesamiento de pagos a proveedores y empleados."
+  },
+  {
+    "codigo": 1550,
+    "nombre": "CREDITO Y COBRANZA",
+    "descripcion": "Administración de créditos otorgados y gestión de cobranzas."
+  },
+  {
+    "codigo": 1564,
+    "nombre": "CONTRALORIA",
+    "descripcion": "Auditoría interna y control de cumplimiento normativo."
+  },
+  {
+    "codigo": 1901,
+    "nombre": "GCIA OPERACIONES",
+    "descripcion": "Dirección de actividades operativas y logísticas."
+  },
+  {
+    "codigo": 1906,
+    "nombre": "GCIA. NEG. FIERRO, TABIQUERÍA Y TECHUMBRE",
+    "descripcion": "Gestión comercial de productos relacionados con fierro, tabiquería y techumbre."
+  },
+  {
+    "codigo": 1917,
+    "nombre": "GCIA. NEG. MADERAS Y TABLEROS, AGLOM.",
+    "descripcion": "Gestión comercial de maderas, tableros aglomerados y derivados."
+  },
+  {
+    "codigo": 1946,
+    "nombre": "GCIA COMERCIAL",
+    "descripcion": "Dirección estratégica de actividades comerciales y ventas."
+  },
+  {
+    "codigo": 1952,
+    "nombre": "GCIA. NEG. PINTURAS Y ACCESORIOS",
+    "descripcion": "Gestión comercial de pinturas, barnices y accesorios relacionados."
+  },
+  {
+    "codigo": 1970,
+    "nombre": "GCIA. NEG. HERRAMIENTAS, FERRETERIA, AUT",
+    "descripcion": "Gestión comercial de herramientas, ferretería y productos automotrices."
+  },
+  {
+    "codigo": 2126,
+    "nombre": "TIENDA SERENA",
+    "descripcion": "Operación de la tienda ubicada en La Serena."
+  },
+  {
+    "codigo": 4000,
+    "nombre": "GCIA DE TIENDAS",
+    "descripcion": "Dirección general de todas las tiendas de la organización."
+  },
+  {
+    "codigo": 4031,
+    "nombre": "GERENCIA DE LOGÍSTICA",
+    "descripcion": "Coordinación de la cadena de suministro y distribución."
+  },
+  {
+    "codigo": 4244,
+    "nombre": "BODEGA MATERIALES PELIGROSOS",
+    "descripcion": "Almacenamiento seguro de materiales peligrosos."
+  },
+  {
+    "codigo": 4526,
+    "nombre": "TIENDA PUERTO MONTT",
+    "descripcion": "Operación de la tienda ubicada en Puerto Montt."
+  },
+  {
+    "codigo": 5802,
+    "nombre": "TIENDA STA ROSA MADERAS",
+    "descripcion": "Tienda especializada en productos de madera en Santa Rosa."
+  },
+  {
+    "codigo": 5803,
+    "nombre": "TIENDA MAPOCHO",
+    "descripcion": "Operación de la tienda ubicada en Mapocho."
+  },
+  {
+    "codigo": 5804,
+    "nombre": "TIENDA MAIPU",
+    "descripcion": "Operación de la tienda ubicada en Maipú."
+  },
+  {
+    "codigo": 5805,
+    "nombre": "TIENDA VESPUCIO",
+    "descripcion": "Operación de la tienda ubicada en Vespucio."
+  },
+  {
+    "codigo": 5807,
+    "nombre": "TIENDA VALPARAISO",
+    "descripcion": "Operación de la tienda ubicada en Valparaíso."
+  },
+  {
+    "codigo": 5808,
+    "nombre": "TIENDA CONCEPCION",
+    "descripcion": "Operación de la tienda ubicada en Concepción."
+  },
+  {
+    "codigo": 5809,
+    "nombre": "TIENDA HUECHURABA",
+    "descripcion": "Operación de la tienda ubicada en Huechuraba."
+  },
+  {
+    "codigo": 5810,
+    "nombre": "TIENDA TEMUCO",
+    "descripcion": "Operación de la tienda ubicada en Temuco."
+  },
+  {
+    "codigo": 5811,
+    "nombre": "TIENDA HUALPEN",
+    "descripcion": "Operación de la tienda ubicada en Hualpén."
+  },
+  {
+    "codigo": 5812,
+    "nombre": "TIENDA RANCAGUA",
+    "descripcion": "Operación de la tienda ubicada en Rancagua."
+  },
+  {
+    "codigo": 5813,
+    "nombre": "TIENDA TALCA",
+    "descripcion": "Operación de la tienda ubicada en Talca."
+  },
+  {
+    "codigo": 5814,
+    "nombre": "TIENDA REÑACA ALTO",
+    "descripcion": "Operación de la tienda ubicada en Reñaca Alto."
+  },
+  {
+    "codigo": 5816,
+    "nombre": "TIENDA SAN BERNARDO",
+    "descripcion": "Operación de la tienda ubicada en San Bernardo."
+  },
+  {
+    "codigo": 5821,
+    "nombre": "UNIDAD SUBDISTRIBUCION",
+    "descripcion": "Gestión de subdistribución y entrega de productos."
+  },
+  {
+    "codigo": 5822,
+    "nombre": "UNIDAD CONSTRUCTORAS",
+    "descripcion": "Atención comercial a constructoras y grandes proyectos."
+  },
+  {
+    "codigo": 5823,
+    "nombre": "UNIDAD MUEBLISTAS",
+    "descripcion": "Atención comercial a mueblistas y fabricantes de muebles."
+  },
+  {
+    "codigo": 5824,
+    "nombre": "UNIDAD VENTA TELEFONICA",
+    "descripcion": "Ventas realizadas a través de canales telefónicos."
+  },
+  {
+    "codigo": 5831,
+    "nombre": "DESPACHO DISTRIBUCION",
+    "descripcion": "Coordinación y despacho de productos desde centros de distribución."
+  },
+  {
+    "codigo": 5833,
+    "nombre": "C.DISTRIB C07 MADERAS",
+    "descripcion": "Centro de distribución especializado en productos de madera."
+  },
+  {
+    "codigo": 5843,
+    "nombre": "UNIDAD MECANIZADO LINARES",
+    "descripcion": "Servicios de mecanizado en Linares."
+  },
+  {
+    "codigo": 5845,
+    "nombre": "UNIDAD CENTRO DE CORTE LINARES",
+    "descripcion": "Centro de corte de materiales en Linares."
+  },
+  {
+    "codigo": 5846,
+    "nombre": "UNIDAD FABRICA RTA",
+    "descripcion": "Producción de componentes RTA (Ready to Assemble)."
+  },
+  {
+    "codigo": 5849,
+    "nombre": "BODEGA PUDAHUEL C-20",
+    "descripcion": "Almacén ubicado en Pudahuel."
+  },
+  {
+    "codigo": 5851,
+    "nombre": "UNIDAD ZINC",
+    "descripcion": "Gestión de productos relacionados con zinc."
+  },
+  {
+    "codigo": 5882,
+    "nombre": "COBRANZA",
+    "descripcion": "Gestión de cobros y recuperación de cartera vencida."
+  },
+  {
+    "codigo": 7560,
+    "nombre": "RIESGO",
+    "descripcion": "Evaluación y gestión de riesgos financieros y operativos."
+  },
+  {
+    "codigo": 7878,
+    "nombre": "GCIA. NEGOCIOS PROCESO COMERCIALES",
+    "descripcion": "Dirección de procesos comerciales y estrategias de negocio."
+  },
+  {
+    "codigo": 7879,
+    "nombre": "CENTRO DE EXPERIENCIA DEL MUEBLE",
+    "descripcion": "Espacio dedicado a la experiencia del cliente en productos de mueblería."
+  },
+  {
+    "codigo": 9996,
+    "nombre": "RESPONSABILIDAD SOCIAL EMPRESARIAL 1",
+    "descripcion": "Programas y actividades relacionadas con la responsabilidad social."
+  }
+]

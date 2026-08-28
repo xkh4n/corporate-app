@@ -1,0 +1,135 @@
+user nginx;
+worker_processes auto;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    sendfile on;
+    keepalive_timeout 65;
+
+    # No revelar la version de nginx en el header "Server" ni en paginas de
+    # error (hallazgo de auditoria de seguridad 2026-08-12).
+    server_tokens off;
+
+    # Mismo criterio que corporate-api/nginx/config/nginx.conf.template:
+    # traduce "Upgrade" a "Connection: upgrade" solo cuando el cliente pide
+    # un upgrade real (el websocket de Socket.IO atravesando "location
+    # /api/" hacia nginx-apidev, ver mas abajo) -las requests REST normales
+    # no se ven afectadas.
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ""      close;
+    }
+
+    # Una sola instancia de "vite dev" (seraphinedev): a diferencia de
+    # api_backend en corporate-api (3 replicas, round-robin), acá no hay
+    # balanceo -el websocket de HMR tiene estado por conexion, repartirlo
+    # entre replicas rompe el hot-reload (ver compose.dev.yml).
+    upstream vite_dev {
+        server ${APP_HOST}${SUFFIX}:${FRONT_INTERNAL_PORT};
+    }
+
+    # HTTP: solo redirige a HTTPS. $host NO incluye el puerto (a diferencia
+    # de $http_host) -por eso es seguro concatenarle ":${FRONT_SSL_PORT}" sin
+    # terminar con un "host:puerto:puerto" duplicado si el cliente ya
+    # mandó el puerto en el Host header.
+    server {
+        listen 80;
+        return 301 https://$host:${FRONT_SSL_PORT}$request_uri;
+    }
+
+    server {
+        listen 443 ssl;
+
+        # tls.crt/tls.key: autofirmados por defecto (ver
+        # corporate-scripts/ensure-front-tls-cert.ps1), montados read-only
+        # desde corporate-secrets/Development/certs/front/ (ver
+        # compose.dev.yml). Reemplazar por los de una CA real es cambiar
+        # SOLO esos dos archivos en el host -mismo nombre, misma ruta- y
+        # reiniciar este contenedor; nada de esta plantilla cambia.
+        ssl_certificate     /etc/nginx/certs/tls.crt;
+        ssl_certificate_key /etc/nginx/certs/tls.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+
+        # Proxy a nginx-apidev de corporate-api por nombre de contenedor
+        # (Docker DNS), via la red compartida "frontapi-net" -ver comentario
+        # en compose.dev.yml. Este stack Compose sigue siendo independiente
+        # del de corporate-api (mismo criterio que corporate-mailer): no
+        # comparte SUS redes internas, solo esta red dedicada de un solo
+        # consumidor por lado (mismo patron que mailer-net).
+        #
+        # Se probaron y descartaron dos alternativas antes de esta: (1)
+        # ALLOCATED_IP (la IP LAN del host) -un contenedor volviendo a salir
+        # por la IP LAN que el propio host tiene publicada es hairpin NAT,
+        # confirmado intermitente en Docker Desktop para Windows (andaba un
+        # rato y despues los requests quedaban colgados hasta 504 sin que
+        # nada de la app cambiara); (2) host.docker.internal -resuelve
+        # siempre, pero nginx-apidev esta bindeado especificamente a
+        # ALLOCATED_IP (no a 0.0.0.0) por diseño de seguridad del proyecto,
+        # asi que la conexion daba "connection refused". El puerto interno
+        # (443) es fijo -es el "listen 443 ssl" de nginx-apidev, no tiene
+        # relacion con el puerto publicado al host (API_SSL_PORT)-.
+        #
+        # El proxy de Vite en host bare-metal (vite.config.ts) SI sigue
+        # usando ALLOCATED_IP: ahi no hay contenedor de por medio, el proceso
+        # corre directo en el host, no hay hairpin NAT posible.
+        # proxy_ssl_verify off: certificado autofirmado de dev en el destino
+        # (mismo criterio que "secure:false" en el proxy de Vite).
+        # proxy_http_version 1.1 + Upgrade/Connection: sin esto el websocket
+        # de Socket.IO (notificaciones push, /api/socket.io) no atraviesa
+        # este proxy hacia nginx-apidev -mismo motivo que "location /" mas
+        # abajo lo necesita para el HMR de Vite. proxy_read_timeout largo:
+        # es una conexion persistente, no una request REST que termina en
+        # milisegundos.
+        location /api/ {
+            proxy_pass https://${API_PROXY_HOST}${SUFFIX}:443;
+            proxy_ssl_verify off;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
+        }
+
+        # Upgrade/Connection: sin esto, el websocket de HMR de Vite no
+        # atraviesa el proxy -el navegador queda con el modulo viejo hasta
+        # un F5 manual, sin ningun error visible salvo en la consola.
+        location / {
+            proxy_pass http://vite_dev;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Cabeceras de seguridad del documento/JS (hallazgo de auditoria
+            # de seguridad 2026-08-12): helmet() en corporate-api SOLO cubre
+            # las respuestas JSON de "/api/" -este es el unico lugar que
+            # sirve el HTML/JS que el navegador ejecuta, asi que van aca, no
+            # en "/api/" (evita duplicar/chocar con los headers que ya pone
+            # el backend en esa ruta).
+            add_header X-Frame-Options "DENY" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+            add_header Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=()" always;
+            # unsafe-eval/unsafe-inline: los necesita el propio Vite dev
+            # server para el cliente de HMR y la inyeccion de <style> en
+            # caliente -no aplica al futuro build de produccion servido
+            # como estatico, que puede (y deberia) usar una CSP mas
+            # estricta con nonces. connect-src 'self' ya cubre el websocket
+            # de HMR (mismo origen). frame-ancestors 'none' es la proteccion
+            # real anti-clickjacking (mas fuerte que X-Frame-Options, que se
+            # deja igual por compatibilidad con navegadores viejos).
+            add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' wss:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+        }
+    }
+}
