@@ -109,7 +109,7 @@ flowchart TB
     %% como convención propia), independiente del color de sus nodos.
     classDef exterior fill:#7BF1A8,stroke:#1591DC,color:#0C0950
     classDef borde fill:#261FB3,stroke:#161179,color:#FBE4D6
-    classDef aplicacion fill:#161179,stroke:#1591DC,color:#FBE4D6
+    classDef aplicacion fill:#DC1515,stroke:#1591DC,color:#FBE4D6
     classDef datos fill:#1591DC,stroke:#261FB3,stroke-width:2px,color:#FBE4D6
 
     class USR,Internet exterior
@@ -138,7 +138,7 @@ flowchart TB
     %% Conectores en índigo oscuro — un rojo vivo se lee como alarma/error
     %% sobre una paleta fría, y son las aristas el elemento más repetido
     %% del diagrama (no conviene que compitan visualmente con los nodos).
-    linkStyle default stroke:#D90000,stroke-width:1.25px
+    linkStyle default stroke:#07F04D,stroke-width:1.25px
 ```
 
 **Cómo se levanta** (orquestador `run.ps1` en la raíz, dispatch a `corporate-scripts/*.ps1`):
