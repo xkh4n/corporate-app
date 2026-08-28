@@ -85,7 +85,7 @@ flowchart TB
     API1 & API2 & API3 --> MONGO
     API1 & API2 & API3 --> REDIS
 
-    API1 & API2 & API3 -->|mailer-net (interno)| MAILERAPI
+    API1 & API2 & API3 -->|mailer-net, red interna| MAILERAPI
     MAILERAPI --> SMTPGW
     SMTPGW -->|salida internet| Internet["Internet\n(proveedor SMTP)"]
 
