@@ -121,7 +121,7 @@ flowchart TB
     %% distinguen por FORMA de nodo (cilindro/doble-borde/hexágono/stadium,
     %% ya asignada arriba en el subgrafo INFRA) y por stroke, no por color.
     style PG stroke:#261FB3,stroke-width:2px
-    style MSSQL stroke:#161179,stroke-width:2px
+    style MSSQL stroke:#1B4EF5,stroke-width:2px
     style MONGO stroke:#FBE4D6,stroke-width:2px
     style REDIS stroke:#261FB3,stroke-width:2px,stroke-dasharray:4 3
 
