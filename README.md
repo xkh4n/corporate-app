@@ -37,10 +37,10 @@ flowchart TB
 
     subgraph INFRA["corporate-infra (Compose: bases de datos)"]
         direction TB
-        PG["PostgreSQL\nprimario + réplica\n(RBAC, activos)"]
-        MSSQL["MSSQL Availability Group\nprimario + secundario\n(PII, flujo de compras)"]
-        MONGO["MongoDB replica set (PSA)\n(catálogo de productos)"]
-        REDIS["Redis primario + réplica\n(sesiones, refresh tokens)"]
+        PG[("PostgreSQL\nprimario + réplica\n(RBAC, activos)")]
+        MSSQL[["MSSQL Availability Group\nprimario + secundario\n(PII, flujo de compras)"]]
+        MONGO{{"MongoDB replica set (PSA)\n(catálogo de productos)"}}
+        REDIS(["Redis primario + réplica\n(sesiones, refresh tokens)"])
         EXP["Exporters de cada motor\n(Postgres/Mongo/MSSQL/Redis)"]
         NGINXDB["NGINX (proxy L4/stream)"]
     end
@@ -99,46 +99,45 @@ flowchart TB
 
     NGINXDB -.->|solo trafico interno,\nsin publicar al host| PG & MSSQL & MONGO & REDIS
 
-    %% Un color por tecnología/motor — no por stack, para que se distinga
-    %% cada motor de BD dentro de corporate-infra. NGINX y exporters
-    %% comparten un gris neutro (son plomería, no el servicio en sí).
-    classDef frontend fill:#218DAE,stroke:#155E75,color:#fff
-    classDef api fill:#FF788D,stroke:#C23B52,color:#1a1a1a
-    classDef mssql fill:#007979,stroke:#004F4F,color:#fff
-    classDef postgres fill:#525EA7,stroke:#374080,color:#fff
-    classDef mongo fill:#2196F3,stroke:#1565C0,color:#fff
-    classDef redis fill:#E63946,stroke:#A5222C,color:#fff
-    classDef mailer fill:#F4D35E,stroke:#C9A227,color:#1a1a1a
-    classDef infraGlue fill:#6C757D,stroke:#495057,color:#fff
-    classDef grafana fill:#F46800,stroke:#B94E00,color:#fff
-    classDef prometheus fill:#DC4E29,stroke:#A5391D,color:#fff
-    classDef loki fill:#3DB56D,stroke:#2A8050,color:#fff
-    classDef alloy fill:#F2A900,stroke:#B87F00,color:#1a1a1a
+    %% Paleta de marca (4 tonos) aplicada por CAPA/profundidad, no por
+    %% servicio — con 4 colores no alcanza para "un color por tecnología"
+    %% sin repetir tonos sin criterio (eso fue el efecto "arcoíris" de la
+    %% iteración anterior). Cliente/Internet = afuera de la infra (claro),
+    %% proxies = borde, cómputo/observabilidad = aplicación, motores de BD
+    %% = el dato en reposo, el más protegido → el tono más oscuro.
+    %% Un solo sistema de color (nodos); los subgrafos no repiten fill
+    %% (evita doble-codificación) salvo Cliente/Internet, que SON la capa.
+    classDef exterior fill:#FBE4D6,stroke:#0C0950,color:#0C0950
+    classDef borde fill:#261FB3,stroke:#161179,color:#FBE4D6
+    classDef aplicacion fill:#161179,stroke:#0C0950,color:#FBE4D6
+    classDef datos fill:#0C0950,stroke:#261FB3,stroke-width:2px,color:#FBE4D6
 
-    class NGINXFRONT,REACT frontend
-    class NGINXAPI,API1,API2,API3 api
-    class MSSQL mssql
-    class PG postgres
-    class MONGO mongo
-    class REDIS redis
-    class MAILERAPI,SMTPGW mailer
-    class EXP,NGINXDB,NGINXMON infraGlue
-    class GRAFANA grafana
-    class PROM prometheus
-    class LOKI loki
-    class ALLOY alloy
+    class USR,Internet exterior
+    class NGINXFRONT,NGINXAPI,NGINXMON,NGINXDB borde
+    class REACT,API1,API2,API3,MAILERAPI,SMTPGW,GRAFANA,PROM,LOKI,ALLOY,EXP aplicacion
+    class PG,MSSQL,MONGO,REDIS datos
 
-    %% Fondo por subgrafo (contenedor Compose) + nodo suelto Internet.
-    style Cliente fill:#E8F5E9,stroke:#6FA37A,color:#1a1a1a
-    style FRONT fill:#FF9D9D,stroke:#C24F4F,color:#1a1a1a
-    style MON fill:#D9FFF4,stroke:#4FBFA0,color:#1a1a1a
-    style API fill:#FFFCE1,stroke:#D9C86B,color:#1a1a1a
-    style INFRA fill:#827148,stroke:#5C4E2E,color:#fff
-    style MAILER fill:#AA1C41,stroke:#6E1029,color:#fff
-    style Internet fill:#00C68D,stroke:#00875F,color:#fff
+    %% Los 4 motores comparten capa/color (misma criticidad) — se
+    %% distinguen por FORMA de nodo (cilindro/doble-borde/hexágono/stadium,
+    %% ya asignada arriba en el subgrafo INFRA) y por stroke, no por color.
+    style PG stroke:#261FB3,stroke-width:2px
+    style MSSQL stroke:#161179,stroke-width:2px
+    style MONGO stroke:#FBE4D6,stroke-width:2px
+    style REDIS stroke:#261FB3,stroke-width:2px,stroke-dasharray:4 3
 
-    %% Todos los conectores del mismo color (no distingue tipo de arista).
-    linkStyle default stroke:#FF0052,stroke-width:1.5px
+    %% Cliente/Internet son la capa "exterior" en sí (fill sólido); el
+    %% resto de subgrafos va sin fill, solo un borde fino para agrupar.
+    style Cliente fill:#FBE4D6,stroke:#0C0950,color:#0C0950
+    style FRONT stroke:#161179,stroke-width:1px
+    style API stroke:#161179,stroke-width:1px
+    style MAILER stroke:#161179,stroke-width:1px
+    style MON stroke:#161179,stroke-width:1px
+    style INFRA stroke:#161179,stroke-width:1px
+
+    %% Conectores en índigo oscuro — un rojo vivo se lee como alarma/error
+    %% sobre una paleta fría, y son las aristas el elemento más repetido
+    %% del diagrama (no conviene que compitan visualmente con los nodos).
+    linkStyle default stroke:#161179,stroke-width:1.25px
 ```
 
 **Cómo se levanta** (orquestador `run.ps1` en la raíz, dispatch a `corporate-scripts/*.ps1`):
