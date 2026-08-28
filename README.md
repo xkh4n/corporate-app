@@ -327,12 +327,49 @@ Cada script resuelve por su cuenta las credenciales/certificados que necesita (v
 `corporate-scripts/`); no requieren configuración manual adicional más allá de tener
 `corporate-secrets/` poblado para el ambiente elegido.
 
+## Validación por ambiente
+
+Los tres ambientes (`dev`/`test`/`prod`) están levantados y verificados **simultáneamente, en vivo,
+sin colisión entre ellos** (redes/puertos/volúmenes/secrets aislados por ambiente) — última
+verificación end-to-end: 2026-08-28. Para cada uno se confirmó, con `curl` real contra el puerto TLS
+publicado (no solo `docker compose ps`):
+
+| Chequeo | dev | test | prod |
+|---|---|---|---|
+| `GET /health` vía NGINX → 3 réplicas de API | ✅ 200 | ✅ 200 | ✅ 200 |
+| Frontend (SPA compilada) sirve `index.html` | ✅ 200 | ✅ 200 | ✅ 200 |
+| Proxy `front → api` sin sesión (`/api/auth/me`) | ✅ 401 | ✅ 401 | ✅ 401 |
+| Grafana alcanzable a través de su NGINX | ✅ 302 | ✅ 302 | ✅ 302 |
+| Headers de seguridad (CSP/X-Frame-Options) en la SPA | ✅ | ✅ | ✅ |
+| HSTS en la SPA (solo aplica a `test`/`prod`, `dev` no lo envía a propósito) | n/a | ✅ | ✅ |
+
+`test` se levantó por primera vez de punta a punta en esta pasada (antes solo estaba validado con
+`docker compose config`/`docker build`, nunca un `up` real); `prod` ya se había levantado una vez el
+2026-08-18, pero el stack de `monitoring` había quedado bloqueado ese día por agotamiento del pool de
+redes de Docker Desktop — hoy, con menos redes activas en el host, `monitoring prod` subió sin ese
+problema, así que los 5 stacks de `prod` están confirmados completos por primera vez.
+
+**Hallazgo real encontrado y corregido durante esta verificación**: el header `Strict-Transport-Security`
+no llegaba a la SPA (`location /` en `nginx.conf.prod.template`) aunque sí estaba declarado en el
+`server {}` — `add_header` en NGINX no hereda de un bloque superior cuando el bloque interno define
+sus propios `add_header` (que es el caso de `location /`), así que el HSTS solo llegaba a `/api/`
+(que no declara los suyos propios) y nunca a la página que carga cualquier navegador. Este tipo de bug
+no lo detecta `nginx -t` ni la validación de sintaxis — solo se ve pegándole con `curl -D` a la
+respuesta real. Corregido repitiendo el `add_header` de HSTS dentro de `location /`; reconstruido y
+reverificado en vivo en `test` y `prod`.
+
+**Nota operativa**: el primer `run.ps1 backend test`/`run.ps1 backend prod` contra una base de datos
+recién creada puede devolver código de salida 1 por agotar el presupuesto de `--wait-timeout 300`
+mientras las 3 réplicas de la API compiten por el lock de migración de MSSQL (la misma condición de
+carrera ya documentada, mitigada por `restart: always`) — un segundo `docker compose up --wait`
+inmediatamente después converge limpio, sin intervención adicional. No es un fallo del stack, es el
+timeout de espera siendo corto para un arranque en frío.
+
 ## Limitaciones conocidas y notas de desarrollo
 
-- **Ambientes `prod`/`test`**: existen archivos `compose.prod.yml` y `compose.test.yml` en todos los
-  stacks, pero **solo `dev` ha sido validado en una instalación limpia real**. Verificar el estado
-  de `prod`/`test` en cada stack antes de usar en producción; pueden requerir ajustes de configuración
-  específicos del ambiente (redes, credenciales, volúmenes).
+- **Ambientes `prod`/`test`**: `compose.prod.yml`/`compose.test.yml` existen en los 5 stacks y ya se
+  verificaron en vivo (ver "Validación por ambiente" arriba) — ya no es solo `dev` el validado. Sigue
+  siendo cierto que el uso continuo/prolongado (no solo un boot puntual) está mejor probado en `dev`.
 - **Frontend**: `corporate-front` está en desarrollo activo; el layout y páginas cubren activos,
   adquisiciones, solicitudes, personas y permissions. Pueden existir placeholders o páginas no
   totalmente implementadas en módulos específicos.
