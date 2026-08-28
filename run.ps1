@@ -2,13 +2,71 @@ param(
     [Parameter(Mandatory=$true, Position=0)]
     [string]$Servicio,
     [Parameter(Position=1)]
-    [string]$Ambiente
+    [string]$Ambiente,
+    [Parameter(Position=2)]
+    [string]$Arg2,
+    [Parameter(ValueFromRemainingArguments=$true)]
+    [string[]]$Rest
 )
 
 # Comando especial que no requiere ambiente
 if ($Servicio -eq 'fixendline') {
     & ./corporate-scripts/fix-line-endings.ps1
     exit $LASTEXITCODE
+}
+
+# ---------------------------------------------------------------------------
+# Comandos de git/GitHub: commit+push y creacion de Pull Requests del modelo
+# de ramas develop -> testing -> master. Centralizan el flujo para no olvidar
+# pasos. Requieren GitHub CLI (gh) con sesion iniciada -ver README, seccion
+# "Promocion entre ramas".
+#
+#   .\run.ps1 gitpush dev ["mensaje"]     commit (si hay cambios) + push de develop
+#   .\run.ps1 gitpush testing ["mensaje"] idem sobre testing
+#   .\run.ps1 gitpr testing dev           PR  develop -> testing
+#   .\run.ps1 pre testing                 atajo: actualiza develop y abre el PR -> testing
+#   .\run.ps1 pre prod   ["motivo"]       promociona testing -> master (rama limpia) y abre el PR
+# ---------------------------------------------------------------------------
+if ($Servicio -in @('gitpush', 'gitpr', 'pre')) {
+    switch ($Servicio) {
+        'gitpush' {
+            if ($Ambiente -notin @('dev', 'testing')) {
+                Write-Host "❌ Uso: .\run.ps1 gitpush <dev|testing> [`"mensaje de commit`"]" -ForegroundColor Red
+                Write-Host "   master no recibe push directo; promocioná con:  .\run.ps1 pre prod" -ForegroundColor Yellow
+                exit 1
+            }
+            & ./corporate-scripts/git-push.ps1 $Ambiente $Arg2 @Rest
+            exit $LASTEXITCODE
+        }
+        'gitpr' {
+            if ([string]::IsNullOrEmpty($Ambiente) -or [string]::IsNullOrEmpty($Arg2)) {
+                Write-Host "❌ Uso: .\run.ps1 gitpr <destino> <origen>   (ej: .\run.ps1 gitpr testing dev)" -ForegroundColor Red
+                exit 1
+            }
+            & ./corporate-scripts/git-pr.ps1 -Destino $Ambiente -Origen $Arg2
+            exit $LASTEXITCODE
+        }
+        'pre' {
+            switch ($Ambiente) {
+                'testing' {
+                    & ./corporate-scripts/git-pr.ps1 -Destino testing -Origen dev
+                    exit $LASTEXITCODE
+                }
+                'prod' {
+                    if ([string]::IsNullOrEmpty($Arg2)) {
+                        & ./corporate-scripts/promote-to-master.ps1
+                    } else {
+                        & ./corporate-scripts/promote-to-master.ps1 -Reason $Arg2
+                    }
+                    exit $LASTEXITCODE
+                }
+                default {
+                    Write-Host "❌ Uso: .\run.ps1 pre <testing|prod> [`"motivo`"]" -ForegroundColor Red
+                    exit 1
+                }
+            }
+        }
+    }
 }
 
 # Lista de comandos válidos que requieren ambiente
@@ -26,6 +84,12 @@ if ($Servicio -notin $validServices) {
     Write-Host "  • backend <ambiente>    - Levantar servicios backend" -ForegroundColor Yellow
     Write-Host "  • mailer <ambiente>     - Levantar servicio de envio de correo" -ForegroundColor Yellow
     Write-Host "  • frontend <ambiente>   - Levantar servicios frontend" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "📋 Git / Pull Requests (requieren gh con sesion, ver README):" -ForegroundColor Cyan
+    Write-Host "  • gitpush <dev|testing> [msg] - commit (si hay cambios) + push de esa rama" -ForegroundColor Yellow
+    Write-Host "  • gitpr <destino> <origen>    - crear PR (ej: gitpr testing dev)" -ForegroundColor Yellow
+    Write-Host "  • pre testing                 - actualizar develop y abrir PR -> testing" -ForegroundColor Yellow
+    Write-Host "  • pre prod [motivo]           - promocionar testing -> master y abrir el PR" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "💡 Ambientes disponibles: dev, prod, test" -ForegroundColor Cyan
     exit 1
