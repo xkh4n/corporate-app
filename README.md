@@ -138,7 +138,7 @@ flowchart TB
     %% Conectores en índigo oscuro — un rojo vivo se lee como alarma/error
     %% sobre una paleta fría, y son las aristas el elemento más repetido
     %% del diagrama (no conviene que compitan visualmente con los nodos).
-    linkStyle default stroke:#161179,stroke-width:1.25px
+    linkStyle default stroke:#D90000,stroke-width:1.25px
 ```
 
 **Cómo se levanta** (orquestador `run.ps1` en la raíz, dispatch a `corporate-scripts/*.ps1`):
