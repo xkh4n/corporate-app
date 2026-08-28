@@ -17,9 +17,10 @@ rango de red y sus propios secretos — ver `.claude/specs/flujo-de-trabajo-e-in
 
 ## 2. Flujo normal
 
-```
-feature/* → PR → develop → PR → testing → (script de promoción) → PR → master
-```
+`feature/* → PR → develop → PR → testing → (promoción) → PR → master`
+
+> Diagrama del flujo completo (ramas, comandos `run.ps1` en cada paso y el check de CI):
+> **[`README.md` § "Promoción entre ramas"](README.md#promoción-entre-ramas-gitpush--gitpr--pre)**.
 
 1. Todo cambio nuevo se rama de `develop` (o se commitea directo ahí si el equipo lo permite) y se
    integra vía Pull Request normal.
@@ -29,6 +30,18 @@ feature/* → PR → develop → PR → testing → (script de promoción) → P
 3. Cuando lo validado en `testing` está listo para producción, **no se abre un PR directo
    `testing` → `master`**. Primero se corre el script de promoción (sección 3), que arma una rama
    intermedia ya limpia; el PR real es `release/master` → `master`.
+
+Todo el flujo está envuelto en `run.ps1` (raíz del repo) para no olvidar pasos — requiere
+[GitHub CLI (`gh`)](https://cli.github.com/) con sesión iniciada (`gh auth login`, una vez):
+
+| Comando | Hace |
+|---|---|
+| `.\run.ps1 gitpush dev "mensaje"` | commit de lo pendiente (si hay) + `git push origin develop`. Igual con `testing`. |
+| `.\run.ps1 gitpr testing dev` | PR `develop → testing` (etiquetas + checklist), reusa el PR abierto si ya existe. |
+| `.\run.ps1 pre testing` | `git checkout develop` + pull + push + PR `develop → testing`. |
+| `.\run.ps1 pre prod "motivo"` | corre `promote-to-master.ps1` y abre el PR `release/master → master`. |
+
+`gitpush` solo acepta `dev` y `testing`: `master` nunca recibe push ni PR directo.
 
 ## 3. Qué nunca debe llegar a `master`, y cómo se garantiza
 
@@ -41,11 +54,14 @@ Esto se garantiza en dos capas independientes, no solo con disciplina de revisi�
 
 1. **[`corporate-scripts/promote-to-master.ps1`](corporate-scripts/promote-to-master.ps1)** — arma la
    rama `release/master` mezclando `testing` sobre `master`, quita automáticamente del merge cualquier
-   ruta de la lista antes de commitear, y publica `release/master` en origin. Uso:
+   ruta de la lista antes de commitear, publica `release/master` en origin y —si `gh` tiene sesión—
+   abre el PR `release/master → master`. Uso normal:
    ```powershell
-   .\corporate-scripts\promote-to-master.ps1 -Reason "sprint 12"
+   .\run.ps1 pre prod "sprint 12"
    ```
-   Al terminar imprime el link para abrir el Pull Request `release/master → master`.
+   Equivale a `.\corporate-scripts\promote-to-master.ps1 -Reason "sprint 12"`. Pasá `-NoPr` (o no
+   tengas `gh` logueado) para que solo deje `release/master` publicada e imprima el link del compare
+   y abrir el PR a mano.
 2. **[`.github/workflows/master-no-testing-artifacts.yml`](.github/workflows/master-no-testing-artifacts.yml)**
    — corre en todo PR hacia `master` (venga o no del script) y **falla el chequeo** si el diff toca
    alguna ruta de la lista. Esta es la capa que de verdad bloquea el merge, no el script — el script
@@ -71,7 +87,7 @@ GitHub Enterprise). El modelo elegido para este repo es:
 
 ### 4.1 Cómo configurarlo en GitHub (una vez, por quien administra el repo)
 
-No hay `gh` CLI instalado en este host, así que esto se configura a mano en la UI
+Branch protection no tiene un comando cómodo en `gh`, así que esto se configura a mano en la UI
 (`Settings` del repo en GitHub):
 
 1. **Agregar colaboradores** (`Settings → Collaborators and teams`, o `Settings → Teams` si el repo

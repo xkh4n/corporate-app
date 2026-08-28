@@ -6,19 +6,26 @@
     configs de test runner — ver master-excluded-paths.txt).
 
     .DESCRIPTION
-    Este script NO empuja directo a master ni abre el Pull Request por vos
-    (no hay "gh" CLI instalado en este host) — solo deja "release/master"
-    publicada y lista en origin, con el diff ya limpio, para que abras el PR
-    "release/master -> master" a mano. El PR sigue pasando por revisión y por
-    el chequeo de CI (.github/workflows/master-no-testing-artifacts.yml), que
-    es quien realmente bloquea si algo prohibido se coló igual.
+    Este script empuja "release/master" a origin con el diff ya limpio y —si
+    "gh" está disponible y con sesión— abre el Pull Request
+    "release/master -> master" por vos (pasá -NoPr para saltarte ese paso y
+    abrirlo a mano con el link que imprime al final). El PR sigue pasando por
+    revisión y por el chequeo de CI
+    (.github/workflows/master-no-testing-artifacts.yml), que es quien realmente
+    bloquea si algo prohibido se coló igual.
+
+    Se invoca normalmente via  .\run.ps1 pre prod  ["motivo"].
 
     .PARAMETER Reason
     Texto libre que se agrega al mensaje de commit de la promoción (por
     ejemplo, referencia al PR o milestone que se está promoviendo).
+
+    .PARAMETER NoPr
+    No abrir el Pull Request con gh; solo dejar "release/master" publicada.
 #>
 param(
-    [string]$Reason = "promocion de rutina"
+    [string]$Reason = "promocion de rutina",
+    [switch]$NoPr
 )
 
 $ErrorActionPreference = 'Stop'
@@ -130,6 +137,74 @@ Write-Host "Publicando '$releaseBranch' en origin..." -ForegroundColor Cyan
 git push origin $releaseBranch --force-with-lease
 
 $compareUrl = "https://github.com/xkh4n/corporate-app/compare/master...$releaseBranch`?expand=1"
+
+# 6. Abrir el Pull Request 'release/master -> master' con gh (best-effort: si gh
+#    no está o no tiene sesión, se cae al link de compare para hacerlo a mano).
+#    El chequeo de CI vuelve a validar que no haya rutas prohibidas igual.
+$prOpened = $false
+if (-not $NoPr) {
+    . "$PSScriptRoot\gh-common.ps1"
+    $gh = Get-GhCli
+    if (-not $gh) {
+        Write-Warning "gh no encontrado; abrí el PR a mano (link abajo)."
+    }
+    elseif (-not (Test-GhAuth $gh)) {
+        Write-Warning "gh sin sesión ('gh auth login'); abrí el PR a mano (link abajo)."
+    }
+    else {
+        Set-GhLabel -GhPath $gh -Name 'release' -Color 'BFD4F2'
+        Set-GhLabel -GhPath $gh -Name 'production' -Color 'D93F0B'
+        $existing = & $gh pr list --base master --head $releaseBranch --state open --json number --jq '.[0].number'
+        if ($existing) {
+            Write-Host "Ya existe un PR abierto '$releaseBranch -> master' (#$existing). Abriéndolo..." -ForegroundColor Yellow
+            & $gh pr view $existing --web
+            $prOpened = $true
+        }
+        else {
+            $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm'
+            $prBody = @"
+## Release a Producción
+
+- **Fecha:** $stamp
+- **Rama origen:** $releaseBranch (armada desde testing, ya sin rutas de solo-testing)
+- **Rama destino:** master (producción)
+- **Motivo:** $Reason
+
+### Validaciones previas
+- [ ] Pruebas en ambiente testing completadas
+- [ ] Aprobación de QA
+- [ ] Aprobación de negocio
+- [ ] Sin regresiones detectadas
+
+### Rollback
+En caso de incidente, revertir este PR o hacer rollback al commit anterior.
+
+---
+**IMPORTANTE:** Este PR despliega a PRODUCCIÓN. Requiere aprobación obligatoria.
+El chequeo de CI 'Guardia de master' bloquea el merge si se coló alguna ruta de
+solo-testing.
+"@
+            & $gh pr create --base master --head $releaseBranch `
+                --title "Production Release: $releaseBranch -> master ($(Get-Date -Format 'yyyy-MM-dd'))" `
+                --body $prBody `
+                --label "release,production" `
+                --assignee "@me"
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "PR '$releaseBranch -> master' creado." -ForegroundColor Green
+                $prOpened = $true
+            }
+            else {
+                Write-Warning "Fallo 'gh pr create'; abrí el PR a mano (link abajo)."
+            }
+        }
+    }
+}
+
 Write-Host ""
-Write-Host "Listo. Abrí el Pull Request '$releaseBranch -> master' acá (el chequeo de CI vuelve a validar que no haya rutas prohibidas):" -ForegroundColor Green
-Write-Host $compareUrl -ForegroundColor Green
+if (-not $prOpened) {
+    Write-Host "Abrí el Pull Request '$releaseBranch -> master' acá (el chequeo de CI vuelve a validar que no haya rutas prohibidas):" -ForegroundColor Green
+    Write-Host $compareUrl -ForegroundColor Green
+}
+else {
+    Write-Host "Compare/diff por si lo necesitás: $compareUrl" -ForegroundColor DarkGray
+}
