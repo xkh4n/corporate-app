@@ -272,6 +272,57 @@ async function migrateGeography(): Promise<void> {
       );
     END
   `);
+
+  // Ni cities.iata_codes ni states.territorial_code tenian constraint UNIQUE
+  // -a diferencia de countries.iso_code (arriba)-, pese a que seedCities/
+  // seedStates ya asumian que lo eran (Map keyed por ese codigo). Sin el
+  // constraint, el guard "count() > 0" de esos seeds no es atomico: con las
+  // 3 replicas de la API arrancando en paralelo contra una base recien
+  // creada, mas de una podia pasar el chequeo antes de que la primera
+  // terminara de insertar, y bulkCreate() no tenia nada contra que chocar
+  // -duplicaba la tabla entera en vez de fallar con isUniqueConstraintError/
+  // isDuplicateMssqlObjectError como esta pensado (hallazgo: combo "Ciudad"
+  // del frontend con cada region repetida). Filtrado con "WHERE ... IS NOT
+  // NULL" (no UNIQUE simple) porque ambas columnas son nullable y SQL Server,
+  // a diferencia de Postgres, solo permite un NULL en un indice UNIQUE
+  // comun -filtrado permite varias filas sin codigo sin chocar entre si.
+  //
+  // El UPDATE+DELETE de abajo corre solo la primera vez (dentro del mismo
+  // guard IF NOT EXISTS que crea el indice): reasigna cities/states que ya
+  // hubieran quedado duplicadas hacia la fila mas antigua (MIN(id)) ANTES de
+  // borrar las copias, para no romper las FK de states.city_id/addresses.
+  // state_id que ya apuntaran a una de las copias.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_cities_iata_codes' AND object_id = OBJECT_ID('cities'))
+    BEGIN
+      ;WITH keep AS (
+        SELECT iata_codes, MIN(id) AS keep_id
+        FROM cities
+        WHERE iata_codes IS NOT NULL
+        GROUP BY iata_codes
+      )
+      UPDATE s
+      SET s.city_id = keep.keep_id
+      FROM states s
+      JOIN cities dup ON dup.id = s.city_id
+      JOIN keep ON keep.iata_codes = dup.iata_codes
+      WHERE dup.id <> keep.keep_id;
+
+      ;WITH keep AS (
+        SELECT iata_codes, MIN(id) AS keep_id
+        FROM cities
+        WHERE iata_codes IS NOT NULL
+        GROUP BY iata_codes
+      )
+      DELETE c
+      FROM cities c
+      JOIN keep ON keep.iata_codes = c.iata_codes
+      WHERE c.id <> keep.keep_id;
+
+      CREATE UNIQUE INDEX ux_cities_iata_codes ON cities(iata_codes) WHERE iata_codes IS NOT NULL;
+    END
+  `);
+
 }
 
 // business_partners es la entidad base (razonSocial/rut/giro compartidos);
@@ -450,6 +501,47 @@ async function migrateBusinessPartners(): Promise<void> {
         CONSTRAINT fk_addresses_created_by FOREIGN KEY (created_by) REFERENCES users(id),
         CONSTRAINT fk_addresses_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
       );
+    END
+  `);
+
+  // Va aca (no en migrateGeography, junto al de ux_cities_iata_codes) porque
+  // el remapeo de FKs necesita que addresses ya exista -en una base nueva,
+  // migrateGeography corre antes de que esta funcion cree la tabla de arriba.
+  // Mismo hallazgo/razonamiento que el comentario de ux_cities_iata_codes:
+  // states.territorial_code tampoco tenia UNIQUE, y por la misma condicion de
+  // carrera entre las 3 replicas de la API terminaba duplicando la tabla
+  // completa. El UPDATE+DELETE reasigna addresses.state_id que ya hubiera
+  // quedado apuntando a una copia, hacia la fila mas antigua (MIN(id)), antes
+  // de borrar las copias -corre una sola vez, dentro del mismo guard IF NOT
+  // EXISTS que crea el indice.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_states_territorial_code' AND object_id = OBJECT_ID('states'))
+    BEGIN
+      ;WITH keep AS (
+        SELECT territorial_code, MIN(id) AS keep_id
+        FROM states
+        WHERE territorial_code IS NOT NULL
+        GROUP BY territorial_code
+      )
+      UPDATE a
+      SET a.state_id = keep.keep_id
+      FROM addresses a
+      JOIN states dup ON dup.id = a.state_id
+      JOIN keep ON keep.territorial_code = dup.territorial_code
+      WHERE dup.id <> keep.keep_id;
+
+      ;WITH keep AS (
+        SELECT territorial_code, MIN(id) AS keep_id
+        FROM states
+        WHERE territorial_code IS NOT NULL
+        GROUP BY territorial_code
+      )
+      DELETE s
+      FROM states s
+      JOIN keep ON keep.territorial_code = s.territorial_code
+      WHERE s.id <> keep.keep_id;
+
+      CREATE UNIQUE INDEX ux_states_territorial_code ON states(territorial_code) WHERE territorial_code IS NOT NULL;
     END
   `);
 }
