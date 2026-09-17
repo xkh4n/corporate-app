@@ -30,6 +30,21 @@ HADR_LOGIN_PASSWORD="$SA_PASSWORD"
 EXPORTER_PASSWORD="$(cat "$MSSQL_EXPORTER_PASSWORD_FILE")"
 APP_USER_PASSWORD="$(cat "$MSSQL_APP_USER_PASSWORD_FILE")"
 
+# sqlcmd no tiene un equivalente nativo a la sustitucion :'var' de psql (que
+# ya escapa el valor como literal SQL) -sin esto, un secreto con una comilla
+# simple rompia el literal T-SQL (N'${VAR}') y el resto se ejecutaba como
+# codigo con privilegio de bootstrap (hallazgo de auditoria de seguridad
+# 2026-09-17). Se duplica cada comilla simple ANTES de interpolar, mismo
+# mecanismo que quote_literal, aplicado a mano porque sqlcmd no lo ofrece.
+sql_quote() {
+    local value="$1"
+    printf '%s' "${value//\'/\'\'}"
+}
+CERT_PASSWORD_SQL="$(sql_quote "$CERT_PASSWORD")"
+HADR_LOGIN_PASSWORD_SQL="$(sql_quote "$HADR_LOGIN_PASSWORD")"
+EXPORTER_PASSWORD_SQL="$(sql_quote "$EXPORTER_PASSWORD")"
+APP_USER_PASSWORD_SQL="$(sql_quote "$APP_USER_PASSWORD")"
+
 # Sin marker file: cada paso de abajo ya es idempotente por su cuenta (guards
 # "IF NOT EXISTS" contra el estado real de cada instancia). Un marker file
 # aparte (p.ej. en el bind-mount de certs) puede quedar desincronizado del
@@ -63,7 +78,7 @@ rm -f /certs/dbm_certificate.cer /certs/dbm_certificate.pvk
 echo "[setup-ag] Master key + certificado HADR en el primario..."
 run_primary "
 IF NOT EXISTS (SELECT 1 FROM sys.symmetric_keys WHERE name = '##MS_DatabaseMasterKey##')
-    CREATE MASTER KEY ENCRYPTION BY PASSWORD = N'${CERT_PASSWORD}';
+    CREATE MASTER KEY ENCRYPTION BY PASSWORD = N'${CERT_PASSWORD_SQL}';
 IF NOT EXISTS (SELECT 1 FROM sys.certificates WHERE name = 'dbm_certificate')
     CREATE CERTIFICATE dbm_certificate WITH SUBJECT = 'dbm_certificate';
 "
@@ -74,7 +89,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.certificates WHERE name = 'dbm_certificate')
 run_primary "
 BEGIN TRY
     BACKUP CERTIFICATE dbm_certificate TO FILE = '/var/opt/mssql/certs/dbm_certificate.cer'
-        WITH PRIVATE KEY (FILE = '/var/opt/mssql/certs/dbm_certificate.pvk', ENCRYPTION BY PASSWORD = N'${CERT_PASSWORD}');
+        WITH PRIVATE KEY (FILE = '/var/opt/mssql/certs/dbm_certificate.pvk', ENCRYPTION BY PASSWORD = N'${CERT_PASSWORD_SQL}');
 END TRY
 BEGIN CATCH
     PRINT 'BACKUP CERTIFICATE omitido: ' + ERROR_MESSAGE();
@@ -87,10 +102,10 @@ until [ -f /certs/dbm_certificate.cer ]; do sleep 1; done
 echo "[setup-ag] Importando certificado en el secundario..."
 run_secondary "
 IF NOT EXISTS (SELECT 1 FROM sys.symmetric_keys WHERE name = '##MS_DatabaseMasterKey##')
-    CREATE MASTER KEY ENCRYPTION BY PASSWORD = N'${CERT_PASSWORD}';
+    CREATE MASTER KEY ENCRYPTION BY PASSWORD = N'${CERT_PASSWORD_SQL}';
 IF NOT EXISTS (SELECT 1 FROM sys.certificates WHERE name = 'dbm_certificate')
     CREATE CERTIFICATE dbm_certificate FROM FILE = '/var/opt/mssql/certs/dbm_certificate.cer'
-        WITH PRIVATE KEY (FILE = '/var/opt/mssql/certs/dbm_certificate.pvk', DECRYPTION BY PASSWORD = N'${CERT_PASSWORD}');
+        WITH PRIVATE KEY (FILE = '/var/opt/mssql/certs/dbm_certificate.pvk', DECRYPTION BY PASSWORD = N'${CERT_PASSWORD_SQL}');
 "
 
 for pair in "primary:run_primary" "secondary:run_secondary"; do
@@ -104,7 +119,7 @@ for pair in "primary:run_primary" "secondary:run_secondary"; do
             FOR DATABASE_MIRRORING (ROLE = ALL, AUTHENTICATION = CERTIFICATE dbm_certificate, ENCRYPTION = REQUIRED ALGORITHM AES);
     IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = 'hadr_login')
     BEGIN
-        CREATE LOGIN hadr_login WITH PASSWORD = N'${HADR_LOGIN_PASSWORD}';
+        CREATE LOGIN hadr_login WITH PASSWORD = N'${HADR_LOGIN_PASSWORD_SQL}';
         CREATE USER hadr_user FOR LOGIN hadr_login;
         GRANT CONNECT ON ENDPOINT::hadr_endpoint TO hadr_login;
     END
@@ -127,7 +142,7 @@ for pair in "primary:run_primary" "secondary:run_secondary"; do
     "$fn" "
     IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = '${MSSQL_EXPORTER_USER}')
     BEGIN
-        CREATE LOGIN [${MSSQL_EXPORTER_USER}] WITH PASSWORD = N'${EXPORTER_PASSWORD}';
+        CREATE LOGIN [${MSSQL_EXPORTER_USER}] WITH PASSWORD = N'${EXPORTER_PASSWORD_SQL}';
     END
     GRANT VIEW SERVER STATE TO [${MSSQL_EXPORTER_USER}];
     GRANT VIEW ANY DEFINITION TO [${MSSQL_EXPORTER_USER}];
@@ -147,7 +162,7 @@ for pair in "primary:run_primary" "secondary:run_secondary"; do
     "$fn" "
     IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = '${MSSQL_APP_USER}')
     BEGIN
-        CREATE LOGIN [${MSSQL_APP_USER}] WITH PASSWORD = N'${APP_USER_PASSWORD}';
+        CREATE LOGIN [${MSSQL_APP_USER}] WITH PASSWORD = N'${APP_USER_PASSWORD_SQL}';
     END
     "
 done

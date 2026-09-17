@@ -28,14 +28,29 @@ PG_REPLICATOR_PASSWORD="$(cat "$PG_REPLICATOR_PASSWORD_FILE")"
 # Postgres no soporta "CREATE ROLE IF NOT EXISTS": cada rol se envuelve en un
 # bloque DO $$ ... END $$ que verifica pg_roles antes de crear, así que
 # además de transaccional el script queda protegido ante reintentos manuales.
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+# Los passwords van como variables psql (-v), sustituidas en el SQL via
+# :'nombre' (comilla simple) -esa sintaxis le pide a psql que las escape
+# como literal SQL (equivalente a quote_literal), a diferencia de
+# interpolarlas directo en el heredoc bash ('${PG_ADMIN_PASSWORD}'), donde
+# una comilla simple dentro del archivo de secreto rompia el literal y el
+# resto se ejecutaba como SQL con privilegio de bootstrap (hallazgo de
+# auditoria de seguridad 2026-09-17). Los nombres de rol siguen interpolados
+# por bash (":${PG_ADMIN}"): son valores de configuracion del deployment, no
+# contenido de un archivo de secreto.
+psql -v ON_ERROR_STOP=1 \
+    -v pg_admin_password="$PG_ADMIN_PASSWORD" \
+    -v pg_app_user_password="$PG_APP_USER_PASSWORD" \
+    -v pg_logger_user_password="$PG_LOGGER_USER_PASSWORD" \
+    -v pg_exporter_user_password="$PG_EXPORTER_USER_PASSWORD" \
+    -v pg_replicator_password="$PG_REPLICATOR_PASSWORD" \
+    --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
     BEGIN;
 
     -- Administrador de la app (superusuario propio, distinto del bootstrap "postgres")
     DO \$\$
     BEGIN
         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${PG_ADMIN}') THEN
-            CREATE ROLE "${PG_ADMIN}" LOGIN SUPERUSER PASSWORD '${PG_ADMIN_PASSWORD}';
+            CREATE ROLE "${PG_ADMIN}" LOGIN SUPERUSER PASSWORD :'pg_admin_password';
         END IF;
     END
     \$\$;
@@ -44,7 +59,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     DO \$\$
     BEGIN
         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${PG_APP_USER}') THEN
-            CREATE ROLE "${PG_APP_USER}" LOGIN PASSWORD '${PG_APP_USER_PASSWORD}';
+            CREATE ROLE "${PG_APP_USER}" LOGIN PASSWORD :'pg_app_user_password';
         END IF;
     END
     \$\$;
@@ -54,7 +69,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     DO \$\$
     BEGIN
         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${PG_LOGGER_USER}') THEN
-            CREATE ROLE "${PG_LOGGER_USER}" LOGIN PASSWORD '${PG_LOGGER_USER_PASSWORD}';
+            CREATE ROLE "${PG_LOGGER_USER}" LOGIN PASSWORD :'pg_logger_user_password';
         END IF;
     END
     \$\$;
@@ -64,7 +79,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     DO \$\$
     BEGIN
         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${PG_EXPORTER_USER}') THEN
-            CREATE ROLE "${PG_EXPORTER_USER}" LOGIN PASSWORD '${PG_EXPORTER_USER_PASSWORD}' IN ROLE pg_monitor;
+            CREATE ROLE "${PG_EXPORTER_USER}" LOGIN PASSWORD :'pg_exporter_user_password' IN ROLE pg_monitor;
         END IF;
     END
     \$\$;
@@ -73,7 +88,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     DO \$\$
     BEGIN
         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${PG_REPLICATOR}') THEN
-            CREATE ROLE "${PG_REPLICATOR}" LOGIN REPLICATION PASSWORD '${PG_REPLICATOR_PASSWORD}';
+            CREATE ROLE "${PG_REPLICATOR}" LOGIN REPLICATION PASSWORD :'pg_replicator_password';
         END IF;
     END
     \$\$;

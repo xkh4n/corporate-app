@@ -4,6 +4,7 @@ import { Server as SocketIOServer } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { redis } from "../../databases/redis/connection";
 import { getUserInvalidation } from "../../services/redis/session.service";
+import { env } from "../env";
 import { logger } from "../logger";
 import type { SessionUserData } from "../../types/redis/session.types";
 
@@ -47,10 +48,16 @@ export async function initSocketServer(
   const subClient = redis.duplicate();
   await Promise.all([pubClient.connect(), subClient.connect()]);
 
+  // Mismo allowlist CORS_ORIGIN que Express (ver api.ts) -sin esto,
+  // engine.io deja su default inseguro (cors:false, sin validar Origin) para
+  // el unico endpoint de upgrade WebSocket del servidor (hallazgo de
+  // auditoria de seguridad 2026-09-17, CSWSH).
+  const allowedOrigins = env.corsOrigin === "*" ? "*" : env.corsOrigin.split(",").map((origin) => origin.trim());
   io = new SocketIOServer(httpServer, {
     path: "/api/socket.io",
     transports: ["websocket"],
     adapter: createAdapter(pubClient, subClient),
+    cors: { origin: allowedOrigins, credentials: env.corsOrigin !== "*" },
   });
 
   io.engine.use(sessionMiddleware);

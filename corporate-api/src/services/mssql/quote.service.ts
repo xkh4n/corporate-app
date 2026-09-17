@@ -6,7 +6,7 @@ import { getSupplierByIdOrThrow } from "./supplier.service";
 import { getBusinessPartnerByIdOrThrow } from "./businessPartner.service";
 import { getProductByIdOrThrow } from "../mongo/product.service";
 import { archiveQuoteRequestPdf, renderQuoteRequestPdf } from "../../library/pdf/quoteRequestPdf";
-import { getQuoteRequestFolder, saveBuffer } from "../../library/documentStorage";
+import { getQuoteRequestFolder, sanitizeFilenameSegment, saveBuffer } from "../../library/documentStorage";
 import { getSafeExtension } from "../../middlewares/upload";
 import { generateDocumentNumber } from "../../library/documentNumbering";
 import { ConflictError, NotFoundError } from "../../library/errors";
@@ -99,7 +99,7 @@ export async function attachQuoteDocument(quoteId: number, file: Express.Multer.
   const businessPartner = await getBusinessPartnerByIdOrThrow(supplier.businessPartnerId);
 
   const extension = getSafeExtension(file);
-  const filename = `COT-${businessPartner.nationalId}${extension}`;
+  const filename = `COT-${sanitizeFilenameSegment(businessPartner.nationalId)}${extension}`;
   saveBuffer(getQuoteRequestFolder(request.requestNumber), filename, file.buffer);
   return filename;
 }

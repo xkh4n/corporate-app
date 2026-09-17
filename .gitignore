@@ -9,3 +9,4 @@ initial-data/
 corporate-api/src/downloads/
 corporate-api/src/uploads/
 .env.test
+.security-gate/

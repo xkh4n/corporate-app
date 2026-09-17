@@ -704,6 +704,24 @@ async function migratePurchasingFlow(): Promise<void> {
     END
   `);
 
+  // UNIQUE sobre request_line_id: mismo motivo y mismo patron que
+  // uq_purchase_order_quotes_quote mas abajo en este archivo -el chequeo
+  // "la linea ya tiene Authorization" en authorization.service.ts no es
+  // atomico con 2+ replicas/llamadas concurrentes del aprobador asignado.
+  // El guard NOT EXISTS de duplicados hace que el ALTER sea no-op (en vez
+  // de fallar) si una instalacion ya arrastraba dos Authorization para la
+  // misma linea antes de este fix -se reintenta en el proximo arranque una
+  // vez que esos datos se reconcilien a mano.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = 'uq_authorizations_request_line')
+    AND NOT EXISTS (
+      SELECT request_line_id FROM authorizations GROUP BY request_line_id HAVING COUNT(*) > 1
+    )
+    BEGIN
+      ALTER TABLE authorizations ADD CONSTRAINT uq_authorizations_request_line UNIQUE (request_line_id);
+    END
+  `);
+
   await runDdl(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'purchase_orders')
     BEGIN

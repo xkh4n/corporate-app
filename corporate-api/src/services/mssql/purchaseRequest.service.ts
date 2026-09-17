@@ -17,7 +17,7 @@ import { listAllContactsBySupplier } from "./supplierContact.service";
 import { getProductsByIds } from "../mongo/product.service";
 import { getProductCategoriesByIds } from "../mongo/productCategory.service";
 import { generateDocumentNumber } from "../../library/documentNumbering";
-import { getQuoteRequestFolder } from "../../library/documentStorage";
+import { getQuoteRequestFolder, sanitizeFilenameSegment } from "../../library/documentStorage";
 import { sendMailViaMailer } from "../../library/mailerClient";
 import { notifyPendingQuoteApproval, notifyPendingRequestApproval } from "../../library/realtime/notify";
 import { NotFoundError, BadRequestError, ForbiddenError } from "../../library/errors";
@@ -296,7 +296,10 @@ export async function sendQuoteRequestEmail(
   const supplier = await getSupplierByIdOrThrow(supplierId);
   const businessPartner = await getBusinessPartnerByIdOrThrow(supplier.businessPartnerId);
 
-  const pdfPath = path.join(getQuoteRequestFolder(request.requestNumber), `SOLCOT-${businessPartner.nationalId}.pdf`);
+  const pdfPath = path.join(
+    getQuoteRequestFolder(request.requestNumber),
+    `SOLCOT-${sanitizeFilenameSegment(businessPartner.nationalId)}.pdf`,
+  );
   if (!fs.existsSync(pdfPath)) {
     throw new NotFoundError(
       `No existe todavia la solicitud de cotizacion para el proveedor ${supplierId} en la solicitud ${request.requestNumber} -crea el Quote primero`,

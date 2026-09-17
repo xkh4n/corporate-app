@@ -92,13 +92,21 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "employees", action: "update", description: "Editar colaboradores" },
 
   { resource: "products", action: "create", description: "Crear productos" },
-  { resource: "products", action: "read", description: "Listar productos" },
+  // grantToUser: CreateRequest.tsx llama productService.list() para el
+  // selector de productos al crear una solicitud de compra -mismo flujo
+  // operativo que purchase-request-lines:create, sin el "user" base no
+  // podria ni empezar a cargar una solicitud. El Product model no expone
+  // PII/precio/costo (solo catalogo basico), asi que el riesgo de dejarlo
+  // abierto es bajo -corrige el hallazgo de auditoria (GET /products sin
+  // authorize()) sin repetir la revocacion admin-only que si aplico a
+  // purchase-requests:read (ese SI exponia PII).
+  { resource: "products", action: "read", description: "Listar productos", grantToUser: true },
   { resource: "products", action: "update", description: "Editar productos" },
   { resource: "products", action: "delete", description: "Desactivar productos" },
-  
+
   { resource: "product-categories", action: "create", description: "Crear categorias de producto" },
   { resource: "product-categories", action: "update", description: "Editar categorias de producto" },
-  { resource: "product-categories", action: "read", description: "Listar categorias de producto" },
+  { resource: "product-categories", action: "read", description: "Listar categorias de producto", grantToUser: true },
   
   { resource: "asset-statuses", action: "create", description: "Crear estados de activo" },
   { resource: "asset-statuses", action: "update", description: "Editar estados de activo" },
@@ -111,7 +119,18 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "addresses", action: "update", description: "Editar direcciones", grantToUser: true },
 
   { resource: "purchase-requests",action: "create",description: "Crear solicitudes de compra",grantToUser: true,},
-  { resource: "purchase-requests",action: "read",description: "Consultar solicitudes de compra",grantToUser: true,},
+  // PII (requester/beneficiary via PersonModel completo: RUT, email,
+  // telefono, fecha nacimiento): admin-only por defecto, mismo criterio que
+  // employees:read -corrige el hallazgo de auditoria donde list()/getById()
+  // exponian PII cruzando departamentos a cualquier autenticado con el rol
+  // "user" base. Revocado explicitamente del rol "user" ya sembrado, ver
+  // seedPermissions() en seed.ts (el seed de permisos es aditivo, no
+  // alcanza con sacar el flag aca). Sin esto, AttachPurchaseOrder.tsx/
+  // SendPurchaseOrder.tsx/ReceiveGoods.tsx/ApproveQuote.tsx dejan de poder
+  // refrescar la solicitud tras cada paso -hay que crear un rol dedicado
+  // (ej. "compras") y otorgarle este permiso explicitamente por
+  // PUT /roles/:id/permissions.
+  { resource: "purchase-requests",action: "read",description: "Consultar solicitudes de compra",},
   { resource: "purchase-requests",action: "update",description: "Editar solicitudes de compra (datos, no el estado)",grantToUser: true,},
   // Separado de "update" a proposito: aprobar/rechazar el estado de una
   // solicitud es una accion mas sensible que editar sus datos -mismo

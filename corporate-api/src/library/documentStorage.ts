@@ -63,10 +63,10 @@ export function listFiles(folder: string): string[] {
   return fs.readdirSync(folder).filter((name) => fs.statSync(path.join(folder, name)).isFile());
 }
 
-// Los identificadores de negocio (requestNumber, nationalId) ya son seguros
-// -unicos y con formato controlado-, pero documentNumber (guia/factura/
-// boleta) es texto libre del usuario: se sanea antes de usarlo en un nombre
-// de archivo para evitar separadores de ruta ("/", "\") o "..".
+// requestNumber es seguro -generado por el sistema, formato controlado.
+// nationalId y documentNumber (guia/factura/boleta) SON texto libre del
+// usuario: siempre pasar por aca antes de usarlos en un nombre de archivo,
+// para evitar separadores de ruta ("/", "\") o "..".
 export function sanitizeFilenameSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_");
 }

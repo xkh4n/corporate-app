@@ -70,6 +70,23 @@ export async function seedPermissions(): Promise<void> {
       userPermissions.map((permission) => ({ roleId: userRole.id, permissionId: permission.id })),
       { ignoreDuplicates: true },
     );
+
+    // Revocacion explicita, no solo "dejar de otorgar": este seed es
+    // aditivo (ignoreDuplicates arriba), asi que sacar grantToUser del
+    // catalogo NO alcanza para instalaciones que ya sembraron la fila
+    // RolePermission en un arranque anterior. purchase-requests:read salio
+    // de userGrantableKeys por el hallazgo de auditoria de PII
+    // cross-departamental (ver permission-catalog.ts) -sin este DELETE la
+    // vulnerabilidad seguia viva en cualquier ambiente ya desplegado antes
+    // de este fix. Idempotente: no-op si la fila ya no existe.
+    const revokedFromUser = allPermissions.filter(
+      (permission) => `${permission.resource}:${permission.action}` === "purchase-requests:read",
+    );
+    if (revokedFromUser.length > 0) {
+      await RolePermissionModel.destroy({
+        where: { roleId: userRole.id, permissionId: revokedFromUser.map((permission) => permission.id) },
+      });
+    }
   }
 }
 

@@ -99,6 +99,19 @@ export async function getAssetByIdOrThrow(id: number, transaction?: Transaction)
   return asset;
 }
 
+// SELECT...FOR UPDATE sin join (a diferencia de getAssetById, que incluye
+// status via belongsTo -Postgres rechaza FOR UPDATE sobre el lado nullable
+// de un LEFT JOIN). Bloquea la fila ANTES de re-leer el estado con join,
+// para serializar el guard de estado contra el UPDATE que lo sigue -mismo
+// patron que lockAndGetPreviousBalance en assetKardex.service.ts. Debe
+// llamarse dentro de la misma transaccion que el UPDATE de status.
+export async function lockAssetRow(id: number, transaction: Transaction): Promise<void> {
+  await postgres.query(`SELECT id FROM assets WHERE id = :id FOR UPDATE`, {
+    replacements: { id },
+    transaction,
+  });
+}
+
 // Se llama desde services/mssql/goodsReceipt.service.ts al confirmar una
 // recepcion -escritura cross-engine real (MSSQL ya confirmado -> Postgres),
 // no atomica entre los dos motores: si esto falla despues de confirmado el

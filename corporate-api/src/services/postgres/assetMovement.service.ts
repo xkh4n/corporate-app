@@ -1,7 +1,7 @@
 import { postgres } from "../../databases/postgres/connection";
 import { AssetMovementModel } from "../../models/postgres/assetMovement.model";
 import { AssetMovementUserModel } from "../../models/postgres/assetMovementUser.model";
-import { getAssetByIdOrThrow, setAssetStatus } from "./asset.service";
+import { getAssetByIdOrThrow, lockAssetRow, setAssetStatus } from "./asset.service";
 import { getAssetStatusByCodeOrThrow } from "./assetStatus.service";
 import { recordWriteOff } from "./assetKardex.service";
 import { getUserByIdOrThrow } from "../mssql/user.service";
@@ -53,8 +53,6 @@ export async function listMovementsByAsset(
 // -validada aca contra el service de MSSQL antes de insertar, mismo criterio
 // que el resto de las referencias cross-engine de este proyecto.
 export async function createAssetMovement(input: CreateAssetMovementInput): Promise<AssetMovementModel> {
-  const asset = await getAssetByIdOrThrow(input.assetId);
-
   const userIds = input.userIds ?? [];
   if (MOVEMENT_TYPES_REQUIRING_USERS.has(input.movementType) && userIds.length === 0) {
     throw new BadRequestError(`El movimiento '${input.movementType}' requiere al menos un usuario`);
@@ -63,22 +61,31 @@ export async function createAssetMovement(input: CreateAssetMovementInput): Prom
     await getUserByIdOrThrow(userId);
   }
 
-  // Guards nuevos (Fase E) -hoy no habia ninguno: se podia "asignar" un
-  // activo DECOMMISSIONED sin que nada lo impidiera.
-  if (input.movementType === "ASSIGNED" && asset.status?.code !== "AVAILABLE") {
-    throw new ConflictError(
-      `El activo ${asset.tag} no esta disponible para asignar (estado actual: ${asset.status?.code ?? "desconocido"})`,
-    );
-  }
-  if (input.movementType === "REASSIGNED" && asset.status?.code !== "ASSIGNED") {
-    throw new ConflictError(
-      `El activo ${asset.tag} no esta asignado, no se puede reasignar (estado actual: ${asset.status?.code ?? "desconocido"})`,
-    );
-  }
-
   const newStatus = await getAssetStatusByCodeOrThrow(STATUS_CODE_BY_MOVEMENT_TYPE[input.movementType]);
 
   const movement = await postgres.transaction(async (transaction) => {
+    // Bloquea la fila del activo ANTES de leer su estado y evaluar los
+    // guards -sin esto, dos requests casi simultaneas para el mismo
+    // assetId leian AVAILABLE antes de que cualquiera confirmara su
+    // UPDATE y terminaban asignando la misma unidad fisica a usuarios
+    // distintos (hallazgo de auditoria; mismo patron ya usado en
+    // assetKardex.service.ts#lockAndGetPreviousBalance).
+    await lockAssetRow(input.assetId, transaction);
+    const asset = await getAssetByIdOrThrow(input.assetId, transaction);
+
+    // Guards nuevos (Fase E) -hoy no habia ninguno: se podia "asignar" un
+    // activo DECOMMISSIONED sin que nada lo impidiera.
+    if (input.movementType === "ASSIGNED" && asset.status?.code !== "AVAILABLE") {
+      throw new ConflictError(
+        `El activo ${asset.tag} no esta disponible para asignar (estado actual: ${asset.status?.code ?? "desconocido"})`,
+      );
+    }
+    if (input.movementType === "REASSIGNED" && asset.status?.code !== "ASSIGNED") {
+      throw new ConflictError(
+        `El activo ${asset.tag} no esta asignado, no se puede reasignar (estado actual: ${asset.status?.code ?? "desconocido"})`,
+      );
+    }
+
     const created = await AssetMovementModel.create(
       {
         assetId: input.assetId,
