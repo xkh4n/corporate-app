@@ -710,7 +710,7 @@ async function migratePurchasingFlow(): Promise<void> {
       CREATE TABLE purchase_orders (
         id INT IDENTITY(1,1) PRIMARY KEY,
         order_number NVARCHAR(20) NOT NULL UNIQUE,
-        quote_id INT NOT NULL,
+        request_id INT NOT NULL,
         issued_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         payment_terms NVARCHAR(50) NULL,
         supplier_id INT NOT NULL,
@@ -719,7 +719,7 @@ async function migratePurchasingFlow(): Promise<void> {
         updated_by INT NULL,
         created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-        CONSTRAINT fk_purchase_orders_quote FOREIGN KEY (quote_id) REFERENCES quotes(id),
+        CONSTRAINT fk_purchase_orders_request FOREIGN KEY (request_id) REFERENCES purchase_requests(id),
         CONSTRAINT fk_purchase_orders_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
         CONSTRAINT fk_purchase_orders_created_by FOREIGN KEY (created_by) REFERENCES users(id),
         CONSTRAINT fk_purchase_orders_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
@@ -738,6 +738,169 @@ async function migratePurchasingFlow(): Promise<void> {
     )
     BEGIN
       ALTER TABLE purchase_orders ADD sent_at DATETIME2 NULL;
+    END
+  `);
+
+  // Retrofit multi-cotizacion: una OC pasa a cubrir VARIAS cotizaciones
+  // ganadoras del mismo proveedor dentro de la MISMA solicitud (antes 1:1 via
+  // quote_id) -asi que la solicitud deja de deducirse via la cotizacion y se
+  // guarda directo en la orden. 7 bloques guardados por ESTADO OBSERVABLE (no
+  // por version): en instalacion limpia el CREATE de arriba ya deja la forma
+  // final y los 7 quedan no-op; en una base que ya tenia quote_id, cada uno
+  // hace su parte y se auto-desactiva en el proximo arranque. No se confia en
+  // que runDdl()/isDuplicateMssqlObjectError se trague un choque de ADD/DROP
+  // COLUMN -esa funcion (ver library/errors.ts) solo cubre 2714/2627/1913, NO
+  // el 2705 (columna duplicada) ni el 4924 (drop de columna inexistente) que
+  // tirarian ADD/DROP COLUMN si dos replicas los corrieran a la vez sin este
+  // guard fino.
+
+  // Bloque 1: agregar la columna nueva, nullable (no se puede agregar NOT
+  // NULL sin default a una tabla con filas).
+  await runDdl(`
+    IF NOT EXISTS (
+      SELECT 1 FROM sys.columns
+      WHERE object_id = OBJECT_ID('purchase_orders') AND name = 'request_id'
+    )
+    BEGIN
+      ALTER TABLE purchase_orders ADD request_id INT NULL;
+    END
+  `);
+
+  // Bloque 2: backfill desde el quote_id viejo. Re-ejecutable (WHERE
+  // request_id IS NULL): la segunda corrida y las otras 2 replicas no tocan
+  // ninguna fila. No-op en instalacion limpia (ahi quote_id ya no existe).
+  // EXEC(N'...'): la resolucion diferida de nombres de SQL Server solo cubre
+  // TABLAS inexistentes, no columnas -un UPDATE que referencia po.quote_id
+  // falla en tiempo de COMPILACION del batch si la columna no existe en la
+  // tabla real, aunque el IF que lo envuelve de arriba sea falso en runtime
+  // (confirmado con "Invalid column name 'quote_id'" en una instalacion
+  // limpia). Con EXEC() el texto se compila recien cuando el IF es true.
+  await runDdl(`
+    IF EXISTS (
+      SELECT 1 FROM sys.columns
+      WHERE object_id = OBJECT_ID('purchase_orders') AND name = 'quote_id'
+    )
+    BEGIN
+      EXEC(N'
+        UPDATE po
+        SET po.request_id = q.request_id
+        FROM purchase_orders po
+        JOIN quotes q ON q.id = po.quote_id
+        WHERE po.request_id IS NULL;
+      ');
+    END
+  `);
+
+  // Bloque 3: tabla puente N:M orden<->cotizacion (compartida por instalacion
+  // limpia y retrofit). El UNIQUE sobre quote_id es lo que impide, a nivel de
+  // MOTOR, que dos OC cubran la misma cotizacion -el findOne({where:{quoteId}})
+  // que hacia ese guard en purchaseOrder.service.ts no era atomico con 3
+  // replicas corriendo, misma leccion que ux_cities_iata_codes/
+  // ux_states_territorial_code mas arriba en este archivo.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'purchase_order_quotes')
+    BEGIN
+      CREATE TABLE purchase_order_quotes (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        purchase_order_id INT NOT NULL,
+        quote_id INT NOT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT fk_purchase_order_quotes_order FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id),
+        CONSTRAINT fk_purchase_order_quotes_quote FOREIGN KEY (quote_id) REFERENCES quotes(id),
+        CONSTRAINT uq_purchase_order_quotes_quote UNIQUE (quote_id)
+      );
+    END
+  `);
+
+  // Bloque 4: backfill de una fila puente por cada OC vieja (1 quote_id -> 1
+  // fila). Idempotente por NOT EXISTS; si dos replicas insertaran a la vez,
+  // la perdedora choca contra uq_purchase_order_quotes_quote (2627) y
+  // runDdl() se lo traga -"la otra ya lo dejo en el estado correcto".
+  // EXEC(N'...'): mismo motivo que el bloque 2 -po.quote_id no compila si la
+  // columna no existe en la tabla real, IF envolvente aparte.
+  await runDdl(`
+    IF EXISTS (
+      SELECT 1 FROM sys.columns
+      WHERE object_id = OBJECT_ID('purchase_orders') AND name = 'quote_id'
+    )
+    BEGIN
+      EXEC(N'
+        INSERT INTO purchase_order_quotes (purchase_order_id, quote_id)
+        SELECT po.id, po.quote_id
+        FROM purchase_orders po
+        WHERE po.quote_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM purchase_order_quotes poq WHERE poq.quote_id = po.quote_id
+          );
+      ');
+    END
+  `);
+
+  // Bloque 5: recien endurece a NOT NULL cuando ya no queda ninguna fila sin
+  // backfillear.
+  await runDdl(`
+    IF EXISTS (
+      SELECT 1 FROM sys.columns
+      WHERE object_id = OBJECT_ID('purchase_orders') AND name = 'request_id' AND is_nullable = 1
+    )
+    AND NOT EXISTS (SELECT 1 FROM purchase_orders WHERE request_id IS NULL)
+    BEGIN
+      ALTER TABLE purchase_orders ALTER COLUMN request_id INT NOT NULL;
+    END
+  `);
+
+  // Bloque 6: agrega la FK por nombre (no-op en instalacion limpia, ya existe
+  // con este mismo nombre desde el CREATE TABLE de arriba).
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'fk_purchase_orders_request')
+    BEGIN
+      ALTER TABLE purchase_orders
+        ADD CONSTRAINT fk_purchase_orders_request FOREIGN KEY (request_id) REFERENCES purchase_requests(id);
+    END
+  `);
+
+  // Bloque 7: punto de no retorno -solo dropea quote_id cuando (a) ninguna OC
+  // quedo sin request_id y (b) ninguna OC quedo sin al menos una fila puente.
+  // Si el backfill de arriba todavia no alcanzo a correr en esta replica,
+  // esto simplemente no entra y se reintenta en el proximo arranque.
+  await runDdl(`
+    IF EXISTS (
+      SELECT 1 FROM sys.columns
+      WHERE object_id = OBJECT_ID('purchase_orders') AND name = 'quote_id'
+    )
+    AND NOT EXISTS (SELECT 1 FROM purchase_orders WHERE request_id IS NULL)
+    AND NOT EXISTS (
+      SELECT 1 FROM purchase_orders po
+      WHERE NOT EXISTS (SELECT 1 FROM purchase_order_quotes poq WHERE poq.purchase_order_id = po.id)
+    )
+    BEGIN
+      IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'fk_purchase_orders_quote')
+        ALTER TABLE purchase_orders DROP CONSTRAINT fk_purchase_orders_quote;
+
+      -- EXEC(): mismo motivo que los bloques 2 y 4 -por las dudas de que
+      -- DROP COLUMN tambien valide el nombre en tiempo de compilacion.
+      IF EXISTS (
+        SELECT 1 FROM sys.columns
+        WHERE object_id = OBJECT_ID('purchase_orders') AND name = 'quote_id'
+      )
+        EXEC(N'ALTER TABLE purchase_orders DROP COLUMN quote_id;');
+    END
+  `);
+
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_purchase_orders_request_id' AND object_id = OBJECT_ID('purchase_orders'))
+    BEGIN
+      CREATE INDEX ix_purchase_orders_request_id ON purchase_orders(request_id);
+    END
+  `);
+
+  // quote_id ya queda indexado por uq_purchase_order_quotes_quote; el lado
+  // purchase_order_id es el que se recorre al armar order.quotes.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_purchase_order_quotes_order_id' AND object_id = OBJECT_ID('purchase_order_quotes'))
+    BEGIN
+      CREATE INDEX ix_purchase_order_quotes_order_id ON purchase_order_quotes(purchase_order_id);
     END
   `);
 
@@ -798,10 +961,22 @@ async function migratePurchasingFlow(): Promise<void> {
   // carrera de createGoodsReceipt). document_number es texto libre del
   // proveedor, por eso la unicidad es compuesta con purchase_order_id +
   // document_type, no solo el numero.
+  //
+  // quote_id entra a la clave (indice con NOMBRE NUEVO, no se reusa
+  // ux_goods_receipts_order_document con otra definicion -el guard
+  // IF NOT EXISTS(name=...) nunca detectaria el cambio en una base ya
+  // migrada): con una OC multi-cotizacion, dos productos distintos de la
+  // MISMA orden pueden llegar en la misma guia/factura fisica, y sin
+  // quote_id en la clave la segunda recepcion chocaria contra la primera
+  // para siempre.
   await runDdl(`
-    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_goods_receipts_order_document' AND object_id = OBJECT_ID('goods_receipts'))
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_goods_receipts_order_quote_document' AND object_id = OBJECT_ID('goods_receipts'))
     BEGIN
-      CREATE UNIQUE INDEX ux_goods_receipts_order_document ON goods_receipts(purchase_order_id, document_type, document_number);
+      IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_goods_receipts_order_document' AND object_id = OBJECT_ID('goods_receipts'))
+        DROP INDEX ux_goods_receipts_order_document ON goods_receipts;
+
+      CREATE UNIQUE INDEX ux_goods_receipts_order_quote_document
+        ON goods_receipts(purchase_order_id, quote_id, document_type, document_number);
     END
   `);
 }

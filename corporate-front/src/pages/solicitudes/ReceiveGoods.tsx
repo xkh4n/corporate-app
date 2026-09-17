@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { RequirePermissions } from "../../components/RequirePermissions";
 import { Spinner, Field, Select, Button, Input, EmptyState } from "../../components/ui";
@@ -17,6 +17,7 @@ import type {
   GoodsReceiptDocumentType,
   PurchaseOrder,
   PurchaseRequest,
+  Quote,
   Supplier,
 } from "../../types";
 
@@ -43,8 +44,22 @@ const DOCUMENT_TYPE_OPTIONS: { value: GoodsReceiptDocumentType; label: string }[
   { value: "FACTURA", label: "Factura" },
 ];
 
-interface OrderDetail {
+function quoteLabel(quote: Quote): string {
+  return quote.productCode ?? quote.model ?? quote.productId;
+}
+
+function lineKey(orderId: number, quoteId: number): string {
+  return `${orderId}:${quoteId}`;
+}
+
+// Una tarjeta por (orden, cotizacion): recibir es por producto/cotizacion,
+// aunque varias cotizaciones ganadoras puedan compartir una misma OC
+// consolidada (mismo proveedor). La autorizacion, lo ya recibido y el tope
+// aprobado son todos por cotizacion -ver authorization.service.ts/
+// isRequestFullyReceived en el backend, que nunca fueron por-orden.
+interface ReceiptLine {
   order: PurchaseOrder;
+  quote: Quote;
   authorization: Authorization | null;
   approvedQuantity: number;
   alreadyReceived: number;
@@ -67,8 +82,18 @@ export default function ReceiveGoods() {
 
   const [selectedRequest, setSelectedRequest] = useState<PurchaseRequest | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [orderDetails, setOrderDetails] = useState<OrderDetail[]>([]);
+  const [lines, setLines] = useState<ReceiptLine[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+
+  const linesByOrder = useMemo(() => {
+    const map = new Map<number, { order: PurchaseOrder; lines: ReceiptLine[] }>();
+    for (const line of lines) {
+      const bucket = map.get(line.order.id);
+      if (bucket) bucket.lines.push(line);
+      else map.set(line.order.id, { order: line.order, lines: [line] });
+    }
+    return [...map.values()];
+  }, [lines]);
 
   async function loadList(): Promise<void> {
     setLoading(true);
@@ -104,34 +129,41 @@ export default function ReceiveGoods() {
       ]);
       setSuppliers(suppliersRes.items);
 
-      const details = await Promise.all(
-        ordersRes.items.map(async (order): Promise<OrderDetail> => {
-          const [authRes, receiptsRes] = await Promise.all([
-            authorizationService.listByQuote(order.quoteId, { limit: 1 }),
-            goodsReceiptService.list(order.id, { limit: 1000 }),
-          ]);
-          const authorization = authRes.items[0] ?? null;
-          const approvedQuantity = authorization?.approvedQuantity ?? 0;
-          const alreadyReceived = receiptsRes.items.reduce((sum, item) => sum + item.receivedQuantity, 0);
-          const remaining = Math.max(approvedQuantity - alreadyReceived, 0);
-          return {
-            order,
-            authorization,
-            approvedQuantity,
-            alreadyReceived,
-            remaining,
-            receipts: receiptsRes.items,
-            documentType: "GUIA_DESPACHO",
-            documentNumber: "",
-            receivedQuantity: remaining > 0 ? String(remaining) : "",
-            serialNumbers: remaining > 0 ? Array(remaining).fill("") : [],
-            receiptFile: null,
-            authorizationFile: null,
-            submitting: false,
-          };
+      const perOrder = await Promise.all(
+        ordersRes.items.map(async (order) => {
+          const receiptsRes = await goodsReceiptService.list(order.id, { limit: 1000 });
+          const quotes = order.quotes ?? [];
+          return Promise.all(
+            quotes.map(async (quote): Promise<ReceiptLine> => {
+              const authRes = await authorizationService.listByQuote(quote.id, { limit: 1 });
+              const authorization = authRes.items[0] ?? null;
+              const approvedQuantity = authorization?.approvedQuantity ?? 0;
+              // Filtrado por cotizacion: goods-receipts se lista por ORDEN, y
+              // una OC consolidada mezcla recepciones de varios productos.
+              const receipts = receiptsRes.items.filter((receipt) => receipt.quoteId === quote.id);
+              const alreadyReceived = receipts.reduce((sum, receipt) => sum + receipt.receivedQuantity, 0);
+              const remaining = Math.max(approvedQuantity - alreadyReceived, 0);
+              return {
+                order,
+                quote,
+                authorization,
+                approvedQuantity,
+                alreadyReceived,
+                remaining,
+                receipts,
+                documentType: "GUIA_DESPACHO",
+                documentNumber: "",
+                receivedQuantity: remaining > 0 ? String(remaining) : "",
+                serialNumbers: remaining > 0 ? Array(remaining).fill("") : [],
+                receiptFile: null,
+                authorizationFile: null,
+                submitting: false,
+              };
+            }),
+          );
         }),
       );
-      setOrderDetails(details);
+      setLines(perOrder.flat());
     } catch (error) {
       handleError(error, navigate);
     } finally {
@@ -146,43 +178,43 @@ export default function ReceiveGoods() {
 
   function handleBackToList(): void {
     setSelectedRequest(null);
-    setOrderDetails([]);
+    setLines([]);
   }
 
-  function updateOrder(orderId: number, patch: Partial<OrderDetail>): void {
-    setOrderDetails((prev) => prev.map((item) => (item.order.id === orderId ? { ...item, ...patch } : item)));
+  function updateLine(key: string, patch: Partial<ReceiptLine>): void {
+    setLines((prev) => prev.map((line) => (lineKey(line.order.id, line.quote.id) === key ? { ...line, ...patch } : line)));
   }
 
   // Cambiar la cantidad recibida redimensiona el array de series -uno por
   // unidad (decision B), preservando lo ya tipeado en las posiciones que
   // siguen existiendo.
-  function handleQuantityChange(orderId: number, rawValue: string): void {
-    setOrderDetails((prev) =>
-      prev.map((item) => {
-        if (item.order.id !== orderId) return item;
+  function handleQuantityChange(key: string, rawValue: string): void {
+    setLines((prev) =>
+      prev.map((line) => {
+        if (lineKey(line.order.id, line.quote.id) !== key) return line;
         const parsed = Number(rawValue);
         const count = Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
-        const serialNumbers = Array.from({ length: count }, (_, i) => item.serialNumbers[i] ?? "");
-        return { ...item, receivedQuantity: rawValue, serialNumbers };
+        const serialNumbers = Array.from({ length: count }, (_, i) => line.serialNumbers[i] ?? "");
+        return { ...line, receivedQuantity: rawValue, serialNumbers };
       }),
     );
   }
 
-  function handleSerialChange(orderId: number, index: number, value: string): void {
-    setOrderDetails((prev) =>
-      prev.map((item) => {
-        if (item.order.id !== orderId) return item;
-        const serialNumbers = [...item.serialNumbers];
+  function handleSerialChange(key: string, index: number, value: string): void {
+    setLines((prev) =>
+      prev.map((line) => {
+        if (lineKey(line.order.id, line.quote.id) !== key) return line;
+        const serialNumbers = [...line.serialNumbers];
         serialNumbers[index] = value;
-        return { ...item, serialNumbers };
+        return { ...line, serialNumbers };
       }),
     );
   }
 
-  async function handleReceive(detail: OrderDetail): Promise<void> {
+  async function handleReceive(line: ReceiptLine): Promise<void> {
     if (!selectedRequest) return;
-    const quantity = Number(detail.receivedQuantity);
-    if (!detail.documentNumber.trim()) {
+    const quantity = Number(line.receivedQuantity);
+    if (!line.documentNumber.trim()) {
       showErrorToast("Debe indicar el número del documento");
       return;
     }
@@ -190,34 +222,38 @@ export default function ReceiveGoods() {
       showErrorToast("La cantidad recibida debe ser mayor a cero");
       return;
     }
-    if (quantity > detail.remaining) {
-      showErrorToast(`No puede recibir más de ${detail.remaining} unidad(es) pendientes para esta orden`);
+    if (quantity > line.remaining) {
+      showErrorToast(`No puede recibir más de ${line.remaining} unidad(es) pendientes para esta cotización`);
       return;
     }
 
-    updateOrder(detail.order.id, { submitting: true });
+    const key = lineKey(line.order.id, line.quote.id);
+    updateLine(key, { submitting: true });
     try {
-      const hasAnySerial = detail.serialNumbers.some((serial) => serial.trim() !== "");
+      const hasAnySerial = line.serialNumbers.some((serial) => serial.trim() !== "");
       const serialNumbers = hasAnySerial
-        ? detail.serialNumbers.map((serial) => (serial.trim() ? serial.trim() : null))
+        ? line.serialNumbers.map((serial) => (serial.trim() ? serial.trim() : null))
         : undefined;
 
       const receipt = await goodsReceiptService.create({
-        documentType: detail.documentType,
-        documentNumber: detail.documentNumber.trim(),
-        purchaseOrderId: detail.order.id,
+        documentType: line.documentType,
+        documentNumber: line.documentNumber.trim(),
+        purchaseOrderId: line.order.id,
+        quoteId: line.quote.id,
         receivedQuantity: quantity,
         serialNumbers,
       });
 
-      if (detail.receiptFile) {
-        await goodsReceiptService.uploadAttachment(receipt.id, detail.receiptFile);
+      if (line.receiptFile) {
+        await goodsReceiptService.uploadAttachment(receipt.id, line.receiptFile);
       }
-      if (detail.authorizationFile && detail.authorization) {
-        await authorizationService.uploadAttachment(detail.authorization.id, detail.authorizationFile);
+      if (line.authorizationFile && line.authorization) {
+        await authorizationService.uploadAttachment(line.authorization.id, line.authorizationFile);
       }
 
-      showSuccessToast(`Recepción registrada: ${quantity} unidad(es) de la orden ${detail.order.orderNumber}`);
+      showSuccessToast(
+        `Recepción registrada: ${quantity} unidad(es) de ${quoteLabel(line.quote)} (orden ${line.order.orderNumber})`,
+      );
 
       // El backend puede haber flipeado la solicitud a AVAILABLE (ya en la
       // primera recepcion, ver createGoodsReceipt) -se relee para reflejarlo,
@@ -232,7 +268,7 @@ export default function ReceiveGoods() {
       await loadDetail(selectedRequest.id);
     } catch (error) {
       handleError(error, navigate);
-      updateOrder(detail.order.id, { submitting: false });
+      updateLine(key, { submitting: false });
     }
   }
 
@@ -258,173 +294,184 @@ export default function ReceiveGoods() {
               <div className="flex justify-center py-12">
                 <Spinner />
               </div>
-            ) : orderDetails.length === 0 ? (
+            ) : linesByOrder.length === 0 ? (
               <EmptyState title="Sin órdenes" description="Esta solicitud no tiene ninguna orden de compra enviada al proveedor." />
             ) : (
-              <div className="space-y-4">
-                {orderDetails.map((detail) => (
-                  <div key={detail.order.id} className="rounded-lg border border-slate-200 bg-white p-4">
+              <div className="space-y-6">
+                {linesByOrder.map(({ order, lines: orderLines }) => (
+                  <div key={order.id} className="rounded-lg border border-slate-200 bg-white p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <h2 className="font-semibold text-slate-800">
-                        Orden {detail.order.orderNumber}
-                        {detail.order.quote && (
-                          <span className="text-slate-500 font-normal">
-                            {" "}
-                            — {detail.order.quote.productCode ?? detail.order.quote.model ?? detail.order.quote.productId}
-                          </span>
-                        )}
+                        Orden {order.orderNumber}{" "}
+                        <span className="text-slate-500 font-normal">— {supplierName(order.supplierId)}</span>
                       </h2>
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          detail.remaining > 0 ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
+                          orderLines.every((line) => line.remaining === 0)
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-700"
                         }`}
                       >
-                        {detail.remaining > 0 ? "Recepción pendiente" : "Recepción completa"}
+                        {orderLines.every((line) => line.remaining === 0) ? "Recepción completa" : "Recepción pendiente"}
                       </span>
                     </div>
 
-                    <div className="mt-2 grid grid-cols-1 gap-2 text-sm text-slate-600 min-[800px]:grid-cols-3">
-                      <p>
-                        <span className="font-semibold text-slate-700">Proveedor:</span>{" "}
-                        {supplierName(detail.order.supplierId)}
-                      </p>
-                      <p>
-                        <span className="font-semibold text-slate-700">Autorizado:</span> {detail.approvedQuantity}
-                      </p>
-                      <p>
-                        <span className="font-semibold text-slate-700">Recibido:</span> {detail.alreadyReceived}
-                        {" / "}
-                        <span className="font-semibold text-slate-700">Pendiente:</span> {detail.remaining}
-                      </p>
-                    </div>
-
-                    {detail.receipts.length > 0 && (
-                      <div className="mt-3 overflow-x-auto">
-                        <table className="min-w-full divide-y divide-slate-200 text-sm">
-                          <thead className="bg-slate-50">
-                            <tr>
-                              <th className="px-3 py-2 text-left font-semibold text-slate-600">Documento</th>
-                              <th className="px-3 py-2 text-left font-semibold text-slate-600">N°</th>
-                              <th className="px-3 py-2 text-left font-semibold text-slate-600">Cantidad</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {detail.receipts.map((receipt) => (
-                              <tr key={receipt.id}>
-                                <td className="px-3 py-2 text-slate-600">{receipt.documentType}</td>
-                                <td className="px-3 py-2 text-slate-600">{receipt.documentNumber}</td>
-                                <td className="px-3 py-2 text-slate-600">{receipt.receivedQuantity}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-
-                    {detail.remaining > 0 && (
-                      <div className="mt-4 border-t border-slate-100 pt-4">
-                        <div className="grid grid-cols-1 gap-4 min-[800px]:grid-cols-4">
-                          <Field label="Tipo de documento" htmlFor={`documentType-${detail.order.id}`}>
-                            <Select
-                              id={`documentType-${detail.order.id}`}
-                              className="bg-zinc-100 focus:bg-indigo-100"
-                              value={detail.documentType}
-                              onChange={(e) =>
-                                updateOrder(detail.order.id, {
-                                  documentType: e.target.value as GoodsReceiptDocumentType,
-                                })
-                              }
-                            >
-                              {DOCUMENT_TYPE_OPTIONS.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </Select>
-                          </Field>
-                          <Field label="N° de documento" htmlFor={`documentNumber-${detail.order.id}`}>
-                            <Input
-                              id={`documentNumber-${detail.order.id}`}
-                              value={detail.documentNumber}
-                              onChange={(e) => updateOrder(detail.order.id, { documentNumber: e.target.value })}
-                              className="bg-zinc-100 focus:bg-indigo-100"
-                            />
-                          </Field>
-                          <Field label="Cantidad recibida" htmlFor={`receivedQuantity-${detail.order.id}`}>
-                            <Input
-                              id={`receivedQuantity-${detail.order.id}`}
-                              type="number"
-                              min={1}
-                              max={detail.remaining}
-                              value={detail.receivedQuantity}
-                              onChange={(e) => handleQuantityChange(detail.order.id, e.target.value)}
-                              className="bg-zinc-100 focus:bg-indigo-100"
-                            />
-                          </Field>
-                          <Field label="Comprobante de recepción (opcional)" htmlFor={`receiptFile-${detail.order.id}`}>
-                            <Input
-                              id={`receiptFile-${detail.order.id}`}
-                              type="file"
-                              accept="application/pdf,image/jpeg,image/png"
-                              onChange={(e) =>
-                                updateOrder(detail.order.id, { receiptFile: e.target.files?.[0] ?? null })
-                              }
-                              className="bg-zinc-100 focus:bg-indigo-100"
-                            />
-                          </Field>
-                        </div>
-
-                        {detail.serialNumbers.length > 0 && (
-                          <div className="mt-3">
-                            <p className="mb-2 text-xs font-semibold text-slate-600">
-                              Números de serie (opcional, uno por unidad)
-                            </p>
-                            <div className="grid grid-cols-2 gap-2 min-[800px]:grid-cols-4">
-                              {detail.serialNumbers.map((serial, index) => (
-                                <Input
-                                  key={index}
-                                  placeholder={`Unidad ${index + 1}`}
-                                  value={serial}
-                                  onChange={(e) => handleSerialChange(detail.order.id, index, e.target.value)}
-                                  className="bg-zinc-100 focus:bg-indigo-100"
-                                />
-                              ))}
+                    <div className="mt-4 space-y-4">
+                      {orderLines.map((line) => {
+                        const key = lineKey(line.order.id, line.quote.id);
+                        return (
+                          <div key={key} className="rounded-md border border-slate-100 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <h3 className="text-sm font-semibold text-slate-700">{quoteLabel(line.quote)}</h3>
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                                  line.remaining > 0 ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
+                                }`}
+                              >
+                                {line.remaining > 0 ? "Recepción pendiente" : "Recepción completa"}
+                              </span>
                             </div>
-                          </div>
-                        )}
 
-                        {detail.authorization && (
-                          <div className="mt-3 max-w-sm">
-                            <Field
-                              label="PDF de la autorización de compra (opcional)"
-                              htmlFor={`authorizationFile-${detail.order.id}`}
-                            >
-                              <Input
-                                id={`authorizationFile-${detail.order.id}`}
-                                type="file"
-                                accept="application/pdf,image/jpeg,image/png"
-                                onChange={(e) =>
-                                  updateOrder(detail.order.id, { authorizationFile: e.target.files?.[0] ?? null })
-                                }
-                                className="bg-zinc-100 focus:bg-indigo-100"
-                              />
-                            </Field>
-                          </div>
-                        )}
+                            <div className="mt-2 grid grid-cols-1 gap-2 text-sm text-slate-600 min-[800px]:grid-cols-3">
+                              <p>
+                                <span className="font-semibold text-slate-700">Autorizado:</span> {line.approvedQuantity}
+                              </p>
+                              <p>
+                                <span className="font-semibold text-slate-700">Recibido:</span> {line.alreadyReceived}
+                                {" / "}
+                                <span className="font-semibold text-slate-700">Pendiente:</span> {line.remaining}
+                              </p>
+                            </div>
 
-                        <div className="mt-4 flex justify-end">
-                          <Button
-                            type="button"
-                            variant="success"
-                            loading={detail.submitting}
-                            onClick={() => void handleReceive(detail)}
-                            className="w-60"
-                          >
-                            Registrar recepción
-                          </Button>
-                        </div>
-                      </div>
-                    )}
+                            {line.receipts.length > 0 && (
+                              <div className="mt-3 overflow-x-auto">
+                                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                                  <thead className="bg-slate-50">
+                                    <tr>
+                                      <th className="px-3 py-2 text-left font-semibold text-slate-600">Documento</th>
+                                      <th className="px-3 py-2 text-left font-semibold text-slate-600">N°</th>
+                                      <th className="px-3 py-2 text-left font-semibold text-slate-600">Cantidad</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {line.receipts.map((receipt) => (
+                                      <tr key={receipt.id}>
+                                        <td className="px-3 py-2 text-slate-600">{receipt.documentType}</td>
+                                        <td className="px-3 py-2 text-slate-600">{receipt.documentNumber}</td>
+                                        <td className="px-3 py-2 text-slate-600">{receipt.receivedQuantity}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+
+                            {line.remaining > 0 && (
+                              <div className="mt-4 border-t border-slate-100 pt-4">
+                                <div className="grid grid-cols-1 gap-4 min-[800px]:grid-cols-4">
+                                  <Field label="Tipo de documento" htmlFor={`documentType-${key}`}>
+                                    <Select
+                                      id={`documentType-${key}`}
+                                      className="bg-zinc-100 focus:bg-indigo-100"
+                                      value={line.documentType}
+                                      onChange={(e) =>
+                                        updateLine(key, {
+                                          documentType: e.target.value as GoodsReceiptDocumentType,
+                                        })
+                                      }
+                                    >
+                                      {DOCUMENT_TYPE_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </Select>
+                                  </Field>
+                                  <Field label="N° de documento" htmlFor={`documentNumber-${key}`}>
+                                    <Input
+                                      id={`documentNumber-${key}`}
+                                      value={line.documentNumber}
+                                      onChange={(e) => updateLine(key, { documentNumber: e.target.value })}
+                                      className="bg-zinc-100 focus:bg-indigo-100"
+                                    />
+                                  </Field>
+                                  <Field label="Cantidad recibida" htmlFor={`receivedQuantity-${key}`}>
+                                    <Input
+                                      id={`receivedQuantity-${key}`}
+                                      type="number"
+                                      min={1}
+                                      max={line.remaining}
+                                      value={line.receivedQuantity}
+                                      onChange={(e) => handleQuantityChange(key, e.target.value)}
+                                      className="bg-zinc-100 focus:bg-indigo-100"
+                                    />
+                                  </Field>
+                                  <Field label="Comprobante de recepción (opcional)" htmlFor={`receiptFile-${key}`}>
+                                    <Input
+                                      id={`receiptFile-${key}`}
+                                      type="file"
+                                      accept="application/pdf,image/jpeg,image/png"
+                                      onChange={(e) => updateLine(key, { receiptFile: e.target.files?.[0] ?? null })}
+                                      className="bg-zinc-100 focus:bg-indigo-100"
+                                    />
+                                  </Field>
+                                </div>
+
+                                {line.serialNumbers.length > 0 && (
+                                  <div className="mt-3">
+                                    <p className="mb-2 text-xs font-semibold text-slate-600">
+                                      Números de serie (opcional, uno por unidad)
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-2 min-[800px]:grid-cols-4">
+                                      {line.serialNumbers.map((serial, index) => (
+                                        <Input
+                                          key={index}
+                                          placeholder={`Unidad ${index + 1}`}
+                                          value={serial}
+                                          onChange={(e) => handleSerialChange(key, index, e.target.value)}
+                                          className="bg-zinc-100 focus:bg-indigo-100"
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {line.authorization && (
+                                  <div className="mt-3 max-w-sm">
+                                    <Field
+                                      label="PDF de la autorización de compra (opcional)"
+                                      htmlFor={`authorizationFile-${key}`}
+                                    >
+                                      <Input
+                                        id={`authorizationFile-${key}`}
+                                        type="file"
+                                        accept="application/pdf,image/jpeg,image/png"
+                                        onChange={(e) =>
+                                          updateLine(key, { authorizationFile: e.target.files?.[0] ?? null })
+                                        }
+                                        className="bg-zinc-100 focus:bg-indigo-100"
+                                      />
+                                    </Field>
+                                  </div>
+                                )}
+
+                                <div className="mt-4 flex justify-end">
+                                  <Button
+                                    type="button"
+                                    variant="success"
+                                    loading={line.submitting}
+                                    onClick={() => void handleReceive(line)}
+                                    className="w-60"
+                                  >
+                                    Registrar recepción
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 ))}
               </div>

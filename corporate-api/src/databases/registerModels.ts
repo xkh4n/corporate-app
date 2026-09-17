@@ -34,6 +34,7 @@ import "./../models/mssql/purchaseRequestLine.model";
 import "./../models/mssql/quote.model";
 import "./../models/mssql/authorization.model";
 import "./../models/mssql/purchaseOrder.model";
+import "./../models/mssql/purchaseOrderQuote.model";
 import "./../models/mssql/goodsReceipt.model";
 
 // Activos (Postgres)

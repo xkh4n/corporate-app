@@ -1,8 +1,11 @@
 // Espejo de corporate-api/src/models/postgres/goodsReceipt.model.ts (GoodsReceiptAttributes).
 export type GoodsReceiptDocumentType = "GUIA_DESPACHO" | "BOLETA" | "FACTURA";
 
-// quoteId/requestId/productId/supplierId/purchaseValue se copian del lado del servidor
-// desde la cadena PurchaseOrder->Quote, no son input del cliente. purchaseValue es decimal, viaja como string.
+// requestId/productId/supplierId/purchaseValue se copian del lado del servidor
+// desde la Quote indicada, no son input del cliente. quoteId SI es input (ver
+// GoodsReceiptCreateInput): una OC ahora puede cubrir varias cotizaciones, asi
+// que la orden por si sola ya no alcanza para saber contra que producto se
+// esta recepcionando. purchaseValue es decimal, viaja como string.
 export interface GoodsReceipt {
   id: number;
   documentType: GoodsReceiptDocumentType;
@@ -26,6 +29,7 @@ export interface GoodsReceiptCreateInput {
   documentType: GoodsReceiptDocumentType;
   documentNumber: string;
   purchaseOrderId: number;
+  quoteId: number;
   receivedQuantity: number;
   serialNumbers?: (string | null)[];
   warrantyExpiresAt?: string;

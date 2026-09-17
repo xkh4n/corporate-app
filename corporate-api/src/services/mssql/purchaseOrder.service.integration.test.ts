@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetTestData } from "../../../test/setupIntegration";
-import { ConflictError, ForbiddenError } from "../../library/errors";
+import { BadRequestError, ConflictError, ForbiddenError } from "../../library/errors";
 import { createPerson } from "./person.service";
 import { createUser } from "./user.service";
 import { createBusinessPartner } from "./businessPartner.service";
@@ -22,12 +22,15 @@ import {
 } from "./purchaseRequest.service";
 import { createAuthorization } from "./authorization.service";
 import { attachPurchaseOrderDocument, createPurchaseOrder, sendPurchaseOrderToSupplier } from "./purchaseOrder.service";
+import { PurchaseOrderModel } from "../../models/mssql/purchaseOrder.model";
+import { PurchaseOrderQuoteModel } from "../../models/mssql/purchaseOrderQuote.model";
 import * as mailerClient from "../../library/mailerClient";
 
 let seq = 0;
 
 const RESET_TABLES = {
   mssql: [
+    "purchase_order_quotes",
     "purchase_orders",
     "authorizations",
     "quotes",
@@ -128,15 +131,107 @@ async function createFixtureAtQuoteApproved() {
   return { request, approver, requesterPerson, line, quote, supplier };
 }
 
+// Request con DOS lineas APPROVED, ambas ya autorizadas (SELECTED + su
+// Authorization) -la solicitud queda en QUOTE_APPROVED con 2 cotizaciones
+// ganadoras listas para cubrirse con una sola OC (si comparten proveedor) o
+// con dos (si sameSupplier es false) -ver los tests de consolidacion.
+async function createFixtureTwoLinesApproved(sameSupplier: boolean) {
+  const requesterPerson = await createFixturePerson();
+  const beneficiary = await createFixturePerson();
+  const costCenter = await createCostCenter({ code: 87000 + seq++, name: "Centro de prueba" });
+  const approver = await createFixtureApproverUser();
+  const request = await createPurchaseRequest({
+    requesterId: requesterPerson.id,
+    beneficiaryId: beneficiary.id,
+    costCenterId: costCenter.id,
+    approverId: approver.id,
+  });
+  await updatePurchaseRequestStatus(request.id, "APPROVED", approver.id);
+  await requestQuotation(request.id, approver.id);
+
+  const productA = await createProduct({ name: `Producto A PO${++seq}`, productType: "COMPRA" });
+  const productB = await createProduct({ name: `Producto B PO${++seq}`, productType: "COMPRA" });
+  const lineA = await createLine({ requestId: request.id, productId: String(productA._id), quantity: 2 });
+  const lineB = await createLine({ requestId: request.id, productId: String(productB._id), quantity: 3 });
+  await updateLine(lineA.id, { status: "APPROVED" });
+  await updateLine(lineB.id, { status: "APPROVED" });
+
+  const supplierA = await createFixtureSupplier();
+  const supplierB = sameSupplier ? supplierA : await createFixtureSupplier();
+
+  const quoteA = await createQuote({
+    requestId: request.id,
+    productId: String(productA._id),
+    supplierId: supplierA.id,
+    purchaseValue: "10.00",
+  });
+  const quoteB = await createQuote({
+    requestId: request.id,
+    productId: String(productB._id),
+    supplierId: supplierB.id,
+    purchaseValue: "20.00",
+  });
+
+  await requestQuoteApproval(request.id, approver.id);
+  await createAuthorization({
+    requestLineId: lineA.id,
+    quoteId: quoteA.id,
+    approverId: approver.id,
+    approvedQuantity: lineA.quantity,
+  });
+  await createAuthorization({
+    requestLineId: lineB.id,
+    quoteId: quoteB.id,
+    approverId: approver.id,
+    approvedQuantity: lineB.quantity,
+  });
+
+  expect((await getPurchaseRequestByIdOrThrow(request.id)).status).toBe("QUOTE_APPROVED");
+
+  return { request, approver, requesterPerson, quoteA, quoteB, supplierA, supplierB };
+}
+
 const fakePdfFile = { mimetype: "application/pdf", buffer: Buffer.from("test") } as Express.Multer.File;
 
 describe("purchaseOrder.service (integracion, MSSQL real)", () => {
   describe("createPurchaseOrder", () => {
     it("emite la OC cuando la solicitud esta QUOTE_APPROVED y el actor es el solicitante", async () => {
-      const { requesterPerson, quote } = await createFixtureAtQuoteApproved();
-      const order = await createPurchaseOrder({ quoteId: quote.id }, requesterPerson.id);
-      expect(order.quoteId).toBe(quote.id);
+      const { request, requesterPerson, quote } = await createFixtureAtQuoteApproved();
+      const order = await createPurchaseOrder({ quoteIds: [quote.id] }, requesterPerson.id);
+      expect(order.requestId).toBe(request.id);
       expect(order.supplierId).toBe(quote.supplierId);
+    });
+
+    it("consolida varias cotizaciones ganadoras del MISMO proveedor en una sola OC", async () => {
+      const { request, requesterPerson, quoteA, quoteB, supplierA } = await createFixtureTwoLinesApproved(true);
+      const order = await createPurchaseOrder({ quoteIds: [quoteA.id, quoteB.id] }, requesterPerson.id);
+      expect(order.requestId).toBe(request.id);
+      expect(order.supplierId).toBe(supplierA.id);
+
+      const links = await PurchaseOrderQuoteModel.findAll({ where: { purchaseOrderId: order.id } });
+      expect(links.map((link) => link.quoteId).sort()).toEqual([quoteA.id, quoteB.id].sort());
+    });
+
+    it("rechaza (BadRequestError) cotizaciones ganadoras de proveedores distintos", async () => {
+      const { requesterPerson, quoteA, quoteB } = await createFixtureTwoLinesApproved(false);
+      await expect(
+        createPurchaseOrder({ quoteIds: [quoteA.id, quoteB.id] }, requesterPerson.id),
+      ).rejects.toBeInstanceOf(BadRequestError);
+    });
+
+    it("rechaza (BadRequestError) cotizaciones de solicitudes distintas", async () => {
+      const { requesterPerson: requesterA, quote: quoteA } = await createFixtureAtQuoteApproved();
+      const { quote: quoteB } = await createFixtureAtQuoteApproved();
+      await expect(
+        createPurchaseOrder({ quoteIds: [quoteA.id, quoteB.id] }, requesterA.id),
+      ).rejects.toBeInstanceOf(BadRequestError);
+    });
+
+    it("crea una sola fila puente cuando quoteIds trae duplicados", async () => {
+      const { requesterPerson, quote } = await createFixtureAtQuoteApproved();
+      const order = await createPurchaseOrder({ quoteIds: [quote.id, quote.id] }, requesterPerson.id);
+      const links = await PurchaseOrderQuoteModel.findAll({ where: { purchaseOrderId: order.id } });
+      expect(links).toHaveLength(1);
     });
 
     it("rechaza (ConflictError) fuera de QUOTE_APPROVED (cotizacion ya SELECTED pero otra linea de la misma solicitud todavia sin autorizar)", async () => {
@@ -188,7 +283,7 @@ describe("purchaseOrder.service (integracion, MSSQL real)", () => {
       // lineB nunca se autoriza -la solicitud queda en APPROVE_QUOTE.
       expect((await getPurchaseRequestByIdOrThrow(request.id)).status).toBe("APPROVE_QUOTE");
 
-      await expect(createPurchaseOrder({ quoteId: quoteA.id }, requesterPerson.id)).rejects.toBeInstanceOf(
+      await expect(createPurchaseOrder({ quoteIds: [quoteA.id] }, requesterPerson.id)).rejects.toBeInstanceOf(
         ConflictError,
       );
     });
@@ -196,24 +291,25 @@ describe("purchaseOrder.service (integracion, MSSQL real)", () => {
     it("rechaza con ForbiddenError a un actor distinto del solicitante original", async () => {
       const { quote } = await createFixtureAtQuoteApproved();
       const otherPerson = await createFixturePerson();
-      await expect(createPurchaseOrder({ quoteId: quote.id }, otherPerson.id)).rejects.toBeInstanceOf(
+      await expect(createPurchaseOrder({ quoteIds: [quote.id] }, otherPerson.id)).rejects.toBeInstanceOf(
         ForbiddenError,
       );
     });
 
-    it("rechaza (ConflictError) una segunda OC para la misma cotizacion", async () => {
+    it("rechaza (ConflictError) una segunda OC para la misma cotizacion, sin dejar una orden huerfana", async () => {
       const { requesterPerson, quote } = await createFixtureAtQuoteApproved();
-      await createPurchaseOrder({ quoteId: quote.id }, requesterPerson.id);
-      await expect(createPurchaseOrder({ quoteId: quote.id }, requesterPerson.id)).rejects.toBeInstanceOf(
+      await createPurchaseOrder({ quoteIds: [quote.id] }, requesterPerson.id);
+      await expect(createPurchaseOrder({ quoteIds: [quote.id] }, requesterPerson.id)).rejects.toBeInstanceOf(
         ConflictError,
       );
+      expect(await PurchaseOrderModel.count()).toBe(1);
     });
   });
 
   describe("attachPurchaseOrderDocument", () => {
     it("flipea la solicitud a OC_GENERATED cuando la unica cotizacion ganadora ya tiene su OC adjuntada", async () => {
       const { requesterPerson, approver, quote, request } = await createFixtureAtQuoteApproved();
-      const order = await createPurchaseOrder({ quoteId: quote.id }, requesterPerson.id);
+      const order = await createPurchaseOrder({ quoteIds: [quote.id] }, requesterPerson.id);
 
       // userId (tercer argumento, ver makeAttachmentHandler): un User real
       // cualquiera con permiso para actuar -no tiene que ser el solicitante
@@ -223,12 +319,33 @@ describe("purchaseOrder.service (integracion, MSSQL real)", () => {
       const refreshed = await getPurchaseRequestByIdOrThrow(request.id);
       expect(refreshed.status).toBe("OC_GENERATED");
     });
+
+    it("flipea a OC_GENERATED con UN solo adjunto cuando la OC consolida 2 cotizaciones ganadoras", async () => {
+      const { request, approver, requesterPerson, quoteA, quoteB } = await createFixtureTwoLinesApproved(true);
+      const order = await createPurchaseOrder({ quoteIds: [quoteA.id, quoteB.id] }, requesterPerson.id);
+
+      await attachPurchaseOrderDocument(order.id, fakePdfFile, approver.id);
+
+      expect((await getPurchaseRequestByIdOrThrow(request.id)).status).toBe("OC_GENERATED");
+    });
+
+    it("no flipea hasta que TODAS las OC de la solicitud (una por proveedor) tengan su PDF", async () => {
+      const { request, approver, requesterPerson, quoteA, quoteB } = await createFixtureTwoLinesApproved(false);
+      const orderA = await createPurchaseOrder({ quoteIds: [quoteA.id] }, requesterPerson.id);
+      const orderB = await createPurchaseOrder({ quoteIds: [quoteB.id] }, requesterPerson.id);
+
+      await attachPurchaseOrderDocument(orderA.id, fakePdfFile, approver.id);
+      expect((await getPurchaseRequestByIdOrThrow(request.id)).status).toBe("QUOTE_APPROVED");
+
+      await attachPurchaseOrderDocument(orderB.id, fakePdfFile, approver.id);
+      expect((await getPurchaseRequestByIdOrThrow(request.id)).status).toBe("OC_GENERATED");
+    });
   });
 
   describe("sendPurchaseOrderToSupplier", () => {
     it("flipea a PENDING_DELIVERY solo si el mailer responde ok (mockeado)", async () => {
       const { requesterPerson, approver, quote, request } = await createFixtureAtQuoteApproved();
-      const order = await createPurchaseOrder({ quoteId: quote.id }, requesterPerson.id);
+      const order = await createPurchaseOrder({ quoteIds: [quote.id] }, requesterPerson.id);
       await attachPurchaseOrderDocument(order.id, fakePdfFile, approver.id);
 
       vi.spyOn(mailerClient, "sendMailViaMailer").mockResolvedValueOnce({ ok: false, error: "simulado: mailer caido" });
@@ -244,7 +361,7 @@ describe("purchaseOrder.service (integracion, MSSQL real)", () => {
 
     it("rechaza (ConflictError) antes de que exista el PDF de la OC (todavia no adjuntada)", async () => {
       const { requesterPerson, approver, quote } = await createFixtureAtQuoteApproved();
-      const order = await createPurchaseOrder({ quoteId: quote.id }, requesterPerson.id);
+      const order = await createPurchaseOrder({ quoteIds: [quote.id] }, requesterPerson.id);
       // Sin attachPurchaseOrderDocument: la solicitud sigue en QUOTE_APPROVED,
       // no en OC_GENERATED/PENDING_DELIVERY.
       await expect(sendPurchaseOrderToSupplier(order.id, approver.id)).rejects.toBeInstanceOf(ConflictError);

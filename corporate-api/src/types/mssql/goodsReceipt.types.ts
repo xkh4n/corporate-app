@@ -17,9 +17,11 @@ export interface GoodsReceiptAttributes {
   updatedAt: Date;
 }
 
-// quoteId/requestId/productId/supplierId/purchaseValue NO son input del
-// cliente: se copian desde la PurchaseOrder -> Quote referenciada (mismo
-// criterio que Authorization/PurchaseOrder, ver
+// requestId/productId/supplierId/purchaseValue NO son input del cliente: se
+// copian de la Quote indicada. quoteId SI pasa a ser input: una OC ahora
+// cubre varias cotizaciones, asi que la orden por si sola ya no determina
+// contra QUE producto se esta recepcionando -el servidor valida que esa
+// cotizacion pertenezca a esa orden (purchase_order_quotes, ver
 // services/mssql/goodsReceipt.service.ts). documentNumber SI es input: es el
 // numero del documento tributario real del proveedor (guia/boleta/factura),
 // no un numero interno generado por esta app.
@@ -32,6 +34,7 @@ export interface GoodsReceiptCreationInput {
   documentType: GoodsReceiptDocumentType;
   documentNumber: string;
   purchaseOrderId: number;
+  quoteId: number;
   receivedQuantity: number;
   serialNumbers?: (string | null)[];
   warrantyExpiresAt?: string | null;

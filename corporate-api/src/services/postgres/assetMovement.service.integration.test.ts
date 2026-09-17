@@ -32,6 +32,7 @@ let seq = 0;
 const RESET_TABLES = {
   mssql: [
     "goods_receipts",
+    "purchase_order_quotes",
     "purchase_orders",
     "authorizations",
     "quotes",
@@ -139,7 +140,7 @@ async function createFixtureWithAvailableAssets(quantity: number) {
     approvedQuantity: quantity,
   });
 
-  const order = await createPurchaseOrder({ quoteId: quote.id }, requesterPerson.id);
+  const order = await createPurchaseOrder({ quoteIds: [quote.id] }, requesterPerson.id);
   await attachPurchaseOrderDocument(order.id, fakePdfFile, approver.id);
   vi.spyOn(mailerClient, "sendMailViaMailer").mockResolvedValueOnce({ ok: true });
   await sendPurchaseOrderToSupplier(order.id, approver.id);
@@ -148,6 +149,7 @@ async function createFixtureWithAvailableAssets(quantity: number) {
     documentType: "GUIA_DESPACHO",
     documentNumber: `GD-AM-${seq}`,
     purchaseOrderId: order.id,
+    quoteId: quote.id,
     receivedQuantity: quantity,
   });
 
