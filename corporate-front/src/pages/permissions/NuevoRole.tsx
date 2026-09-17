@@ -155,11 +155,14 @@ export default function NuevoRole() {
                                         <Textarea
                                             id="descriptionPosition"
                                             value={description}
-                                            maxLength={2000}
+                                            maxLength={255}
                                             rows={4}
                                             onChange={(e) => setDescription(e.target.value)}
                                             className="bg-zinc-100 focus:bg-indigo-100"
                                         />
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            No debe superar los 250 caracteres.
+                                        </div>
                                     </Field>
                                 </div>
                             </div>
