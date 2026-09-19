@@ -118,6 +118,10 @@ de las dos está implementada hoy; no asumas que existe hasta que se decida expl
 
 ## 5. Ver también
 
-- `.claude/specs/flujo-de-trabajo-e-infraestructura.md` — convenciones internas de arranque de stacks,
-  Docker, y una versión resumida de este flujo de ramas para agentes/Claude Code.
+- [`SECURITY-GATE.md`](SECURITY-GATE.md) — todo push a `master` está bloqueado por un git hook hasta
+  que exista una revisión de seguridad vigente para el commit exacto. Es un mecanismo real (no solo
+  política escrita), independiente de este flujo de ramas pero obligatorio en el mismo paso.
+- `.claude/specs/flujo-de-trabajo-e-infraestructura.md` — arranque de los 5 stacks Docker, redes,
+  scripts de secretos/certificados. No repite el flujo de ramas (eso vive solo aquí y en
+  `.claude/roles/git-workflow-lead.md`).
 - `README.md` raíz — arquitectura general y cómo levantar cada ambiente.

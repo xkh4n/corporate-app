@@ -287,6 +287,8 @@ src/
 - Auditoría de seguridad aplicada (hallazgos corregidos): exposición de puertos, cookies de sesión
   sin TLS, y una condición de carrera real en la migración de MSSQL al arrancar 3 réplicas contra
   una base vacía por primera vez.
+- Todo push a `master` está bloqueado por un git hook hasta que exista una revisión de seguridad
+  vigente para el commit exacto — ver [`SECURITY-GATE.md`](SECURITY-GATE.md).
 
 ## Cómo levantar el proyecto
 
