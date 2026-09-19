@@ -268,8 +268,7 @@ async function migrateAssets(): Promise<void> {
   // Campos del acta de entrega (Fase E, formulario enriquecido): todos
   // nullable, sin backfill -las asignaciones ya existentes no tenian estos
   // datos. supervisorName es texto libre (no hay tabla de "jefe directo" en
-  // el modelo de empleados hoy, mismo criterio que AntherxSoft: se tipea al
-  // momento de asignar, no se deriva).
+  // el modelo de empleados hoy): se tipea al momento de asignar, no se deriva.
   await runDdl(`
     ALTER TABLE asset_movements ADD COLUMN IF NOT EXISTS supervisor_name VARCHAR(150);
   `);
@@ -277,10 +276,9 @@ async function migrateAssets(): Promise<void> {
     ALTER TABLE asset_movements ADD COLUMN IF NOT EXISTS mac_address VARCHAR(17);
   `);
   // "accessories" (texto libre unico) se reemplazo por columnas discretas
-  // -decision revisada del usuario tras ver el acta real de AntherxSoft:
-  // ahi bolso/candado/cargador/almacenamiento/memoria son filas propias de
-  // la tabla de especificaciones, no un texto compuesto. DROP en vez de
-  // dejarla huerfana: se agrego en esta misma fase, sin datos reales que
+  // -decision revisada del usuario: bolso/candado/cargador/almacenamiento/
+  // memoria son atributos propios del acta, no un texto compuesto. DROP en vez
+  // de dejarla huerfana: se agrego en esta misma fase, sin datos reales que
   // preservar salvo pruebas puntuales.
   await runDdl(`ALTER TABLE asset_movements DROP COLUMN IF EXISTS accessories;`);
   await runDdl(`ALTER TABLE asset_movements ADD COLUMN IF NOT EXISTS storage_capacity VARCHAR(20);`);
@@ -313,10 +311,10 @@ async function migrateAssetTagCounters(): Promise<void> {
 }
 
 // Libro contable de valorizacion de activos (Kardex): insert-only, un
-// renglon por movimiento -a diferencia del Kardex de AntherxSoft (un
-// documento por producto que se SOBRESCRIBE en cada recepcion, perdiendo el
-// historial salvo el ultimo movimiento), aca cada asiento queda escrito para
-// siempre. Un error se corrige con un asiento ADJUSTMENT que lo compense,
+// renglon por movimiento -en vez de un documento por producto que se
+// SOBRESCRIBE en cada recepcion (que perderia el historial salvo el ultimo
+// movimiento), aca cada asiento queda escrito para siempre. Un error se
+// corrige con un asiento ADJUSTMENT que lo compense,
 // nunca editando/borrando el renglon anterior. product_id no lleva FK real
 // (referencia cross-engine hacia Mongo, mismo criterio que assets.product_id
 // de arriba) y se duplica desde assets.product_id al momento de insertar

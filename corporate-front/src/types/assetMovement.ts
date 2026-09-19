@@ -30,8 +30,7 @@ export interface AssetMovement {
 export type AssetStorageCapacity = "512 GB" | "1 TB";
 export type AssetRamCapacity = "8 GB" | "16 GB" | "32 GB";
 
-// Campos del acta de entrega (Fase E enriquecida, set portado del
-// formulario de asignacion de AntherxSoft): solo tienen sentido para
+// Campos del acta de entrega (Fase E enriquecida): solo tienen sentido para
 // ASSIGNED/REASSIGNED, todos opcionales -las asignaciones sin estos datos
 // siguen funcionando igual que antes.
 export interface AssetHandoverFields {

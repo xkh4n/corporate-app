@@ -11,8 +11,8 @@ import { sendList, sendOk } from "../library/response";
 // formateo en vivo del frontend, ver lib/macAddress.ts) -opcional en ambos
 // schemas, el acta la muestra en blanco si no viene.
 const MAC_ADDRESS_REGEX = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
-// storageCapacity/ramCapacity: mismas opciones que el formulario de
-// AntherxSoft (Almacenamiento/Memoria RAM), portadas 1:1.
+// storageCapacity/ramCapacity: opciones fijas de Almacenamiento/Memoria RAM
+// del acta de entrega.
 const handoverFieldsSchema = z.object({
   supervisorName: z.string().max(150).optional(),
   macAddress: z.string().regex(MAC_ADDRESS_REGEX, "Formato de MAC invalido").optional(),

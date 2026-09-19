@@ -19,8 +19,8 @@ export interface AssetMovementAttributes {
   updatedAt: Date;
 }
 
-// Campos del acta de entrega (Fase E enriquecida, set portado del
-// formulario de AntherxSoft): solo tienen sentido en ASSIGNED/REASSIGNED,
+// Campos del acta de entrega (Fase E enriquecida): solo tienen sentido en
+// ASSIGNED/REASSIGNED,
 // pero se aceptan de forma generica en CreateAssetMovementInput -mismo
 // criterio que "notes", que tampoco esta restringido por movementType a
 // nivel de tipos.

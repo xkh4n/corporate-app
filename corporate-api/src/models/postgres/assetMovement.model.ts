@@ -16,12 +16,11 @@ export class AssetMovementModel extends Model<
   declare notes: string | null;
   // Campos del acta de entrega (Fase E enriquecida): todos opcionales, solo
   // tienen sentido en movementType ASSIGNED/REASSIGNED. supervisorName es
-  // texto libre -no hay tabla de "jefe directo" en el modelo de empleados,
-  // mismo criterio que AntherxSoft (se tipea al asignar, no se deriva).
-  // storageCapacity/ramCapacity/has*: portados 1:1 del formulario de
-  // AntherxSoft (Almacenamiento/Memoria RAM/bolso/candado/cargador) -tampoco
-  // se derivan de ningun catalogo, son datos de la UNIDAD puntual, se tipean
-  // cada vez que se asigna.
+  // texto libre -no hay tabla de "jefe directo" en el modelo de empleados
+  // (se tipea al asignar, no se deriva).
+  // storageCapacity/ramCapacity/has* (Almacenamiento/Memoria RAM/bolso/
+  // candado/cargador) -tampoco se derivan de ningun catalogo, son datos de la
+  // UNIDAD puntual, se tipean cada vez que se asigna.
   declare supervisorName: string | null;
   declare macAddress: string | null;
   declare storageCapacity: string | null;
