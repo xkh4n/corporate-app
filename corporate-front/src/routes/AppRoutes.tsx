@@ -30,7 +30,15 @@ import LinkSupplierProducts from "../pages/adquisiciones/supplierProducts/LinkSu
 import NuevaPantalla from "../pages/pantallas/NuevaPantalla";
 import AsignarPermisos from "../pages/pantallas/AsignarPermisos";
 import { AsignarPermissionToRole, NuevoRole } from "../pages/permissions";
-import { ListarRole, CreatePersonPage, NuevoCargo } from "../pages/personas";
+import {
+  ListarRole,
+  CreatePersonPage,
+  NuevoCargo,
+  AsignarAfp,
+  AsignarSalud,
+  CcafMutualEmpresa,
+  ConfiguracionRemuneraciones,
+} from "../pages/personas";
 import { flattenMenuLinks } from "../lib/menu";
 
 // Vistas reales ya implementadas, mapeadas por el "link" exacto del
@@ -64,6 +72,10 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/roles/update": () => <AsignarPermissionToRole />,
   "/roles/read": () => <ListarRole />,
   "/employees/cargos": () => <NuevoCargo />,
+  "/employees/previsional/afp": () => <AsignarAfp />,
+  "/employees/previsional/salud": () => <AsignarSalud />,
+  "/company/previsional": () => <CcafMutualEmpresa />,
+  "/payroll/settings": () => <ConfiguracionRemuneraciones />,
 };
 
 // Fuerza /change-password antes de cualquier otra ruta protegida mientras
