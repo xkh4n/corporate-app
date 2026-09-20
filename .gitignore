@@ -1,6 +1,4 @@
 corporate-secrets/
-.claude/
-claude/
 .vscode/
 vscode/
 agents/
@@ -10,3 +8,4 @@ corporate-api/src/downloads/
 corporate-api/src/uploads/
 .env.test
 .security-gate/
+.claude/archive/
