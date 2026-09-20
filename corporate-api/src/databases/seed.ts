@@ -6,6 +6,11 @@ import { seedCountries } from "../services/mssql/country.service";
 import { seedCities } from "../services/mssql/city.service";
 import { seedStates } from "../services/mssql/state.service";
 import { seedCostCenters } from "../services/postgres/costCenter.service";
+import {
+  seedApvInstitutions,
+  seedPrevisionalInstitutions,
+  seedPrevisionalRates,
+} from "../services/mssql/previsionalInstitution.service";
 import { PermissionModel } from "../models/postgres/permission.model";
 import { RolePermissionModel } from "../models/postgres/rolePermission.model";
 import { MenuItemModel } from "../models/postgres/menuItem.model";
@@ -24,6 +29,15 @@ export async function seedGeography(): Promise<void> {
   await seedCountries();
   await seedCities();
   await seedStates();
+}
+
+// Catalogos de la nomina Previred. seedPrevisionalRates resuelve cada tasa
+// contra previsional_institutions, asi que va DESPUES de las instituciones;
+// seedApvInstitutions no depende de nada.
+export async function seedPrevisional(): Promise<void> {
+  await seedPrevisionalInstitutions();
+  await seedPrevisionalRates();
+  await seedApvInstitutions();
 }
 
 // Siembra el catalogo de permisos (databases/permission-catalog.ts) y las

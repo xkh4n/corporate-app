@@ -32,6 +32,12 @@ import { assetRouter } from "./asset.routes";
 import { assetMovementRouter } from "./assetMovement.routes";
 import { assetKardexRouter } from "./assetKardex.routes";
 import { notificationRouter } from "./notification.routes";
+import { previsionalInstitutionRouter } from "./previsionalInstitution.routes";
+import { previsionalProfileRouter } from "./previsionalProfile.routes";
+import { previredSettingsRouter } from "./previredSettings.routes";
+import { employeeContractRouter } from "./employeeContract.routes";
+import { payrollSettingsRouter } from "./payrollSettings.routes";
+import { payrollParameterRouter } from "./payrollParameter.routes";
 
 export const apiRouter = Router();
 
@@ -61,6 +67,18 @@ apiRouter.use("/positions", positionRouter);
 apiRouter.use("/addresses", addressRouter);
 apiRouter.use("/products", productRouter);
 apiRouter.use("/product-categories", productCategoryRouter);
+
+// Cotizaciones previsionales (nomina Previred): catalogo de instituciones,
+// afiliacion por colaborador y configuracion de la empresa (CCAF/mutual)
+apiRouter.use("/previsional-institutions", previsionalInstitutionRouter);
+apiRouter.use("/previsional-profiles", previsionalProfileRouter);
+apiRouter.use("/previred-settings", previredSettingsRouter);
+
+// Remuneraciones: contrato del colaborador (sueldo + gratificacion), configuracion
+// de la empresa y parametros monetarios (IMM)
+apiRouter.use("/employee-contracts", employeeContractRouter);
+apiRouter.use("/payroll-settings", payrollSettingsRouter);
+apiRouter.use("/payroll-parameters", payrollParameterRouter);
 
 // Flujo de compras: PurchaseRequest -> Quote -> Authorization -> PurchaseOrder -> GoodsReceipt
 apiRouter.use("/purchase-requests", purchaseRequestRouter);

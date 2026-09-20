@@ -27,6 +27,8 @@ export async function migrateMssql(): Promise<void> {
   await migrateGeography();
   await migrateSupplierLookups();
   await migrateBusinessPartners();
+  await migratePrevisional();
+  await migratePayroll();
   await migratePurchasingFlow();
   await migrateDocumentNumbering();
 
@@ -138,6 +140,42 @@ async function migrateAuth(): Promise<void> {
         created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
       );
+    END
+  `);
+
+  // Identidad exigida por Previred (campos 3, 4, 6 y 7 del formato): apellido
+  // materno, sexo y nacionalidad. last_name pasa a leerse como apellido
+  // PATERNO en los alta nuevos. NULL a proposito: las personas ya existentes
+  // (usuarios, solicitantes, admin bootstrap) no los tienen y no hay forma de
+  // inferirlos -de hecho last_name de esas filas puede traer ambos apellidos
+  // juntos-; el generador de la nomina rechaza a un colaborador que los tenga
+  // vacios. Un batch por sentencia: SQL Server valida las columnas de una
+  // tabla existente al compilar el batch, asi que un ADD COLUMN y un ADD
+  // CONSTRAINT que la referencia no pueden ir juntos.
+  for (const [column, ddl] of [
+    ["maternal_last_name", "NVARCHAR(100) NULL"],
+    ["sex", "NVARCHAR(1) NULL"],
+    ["nationality", "SMALLINT NULL"],
+  ] as const) {
+    await runDdl(`
+      IF NOT EXISTS (
+        SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('persons') AND name = '${column}'
+      )
+      BEGIN
+        ALTER TABLE persons ADD ${column} ${ddl};
+      END
+    `);
+  }
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'chk_persons_sex')
+    BEGIN
+      ALTER TABLE persons ADD CONSTRAINT chk_persons_sex CHECK (sex IS NULL OR sex IN ('M','F'));
+    END
+  `);
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'chk_persons_nationality')
+    BEGIN
+      ALTER TABLE persons ADD CONSTRAINT chk_persons_nationality CHECK (nationality IS NULL OR nationality IN (0,1));
     END
   `);
 
@@ -995,6 +1033,708 @@ async function migratePurchasingFlow(): Promise<void> {
 
       CREATE UNIQUE INDEX ux_goods_receipts_order_quote_document
         ON goods_receipts(purchase_order_id, quote_id, document_type, document_number);
+    END
+  `);
+}
+
+
+// Cotizaciones previsionales para la nomina Previred (formato estandar de
+// largo variable, 105 campos). Depende de employees (migrateBusinessPartners)
+// y de users (created_by), por eso va despues de ambas. Orden interno:
+// catalogos -> tasas -> config empleador -> perfil por trabajador -> planilla
+// -> lineas, que es el orden de las FK.
+async function migratePrevisional(): Promise<void> {
+  // Catalogo unico AFP/SALUD/CCAF/MUTUAL/CESANTIA. El CHECK cierra los 5 tipos
+  // porque cada uno tiene su propia Tabla de Equivalencia en Previred.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'previsional_institutions')
+    BEGIN
+      CREATE TABLE previsional_institutions (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        type NVARCHAR(20) NOT NULL,
+        code NVARCHAR(30) NOT NULL UNIQUE,
+        name NVARCHAR(150) NOT NULL,
+        national_id NVARCHAR(20) NULL,
+        previred_code NVARCHAR(4) NULL,
+        address NVARCHAR(255) NULL,
+        phone NVARCHAR(30) NULL,
+        legal_representative NVARCHAR(150) NULL,
+        is_active BIT NOT NULL DEFAULT 1,
+        created_by INT NULL,
+        updated_by INT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT chk_previsional_institutions_type CHECK (type IN ('AFP','SALUD','CCAF','MUTUAL','CESANTIA')),
+        CONSTRAINT fk_previsional_institutions_created_by FOREIGN KEY (created_by) REFERENCES users(id),
+        CONSTRAINT fk_previsional_institutions_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
+      );
+    END
+  `);
+
+  // Los codigos Previred se repiten entre tipos (01 = Banmedica, Los Andes y
+  // ACHS), asi que la unicidad es por (type, previred_code). Filtrado porque
+  // AFC no tiene codigo.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_previsional_institutions_type_code' AND object_id = OBJECT_ID('previsional_institutions'))
+    BEGIN
+      CREATE UNIQUE INDEX ux_previsional_institutions_type_code
+        ON previsional_institutions(type, previred_code) WHERE previred_code IS NOT NULL;
+    END
+  `);
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_previsional_institutions_national_id' AND object_id = OBJECT_ID('previsional_institutions'))
+    BEGIN
+      CREATE UNIQUE INDEX ux_previsional_institutions_national_id
+        ON previsional_institutions(national_id) WHERE national_id IS NOT NULL;
+    END
+  `);
+
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'apv_institutions')
+    BEGIN
+      CREATE TABLE apv_institutions (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        previred_code NVARCHAR(3) NOT NULL UNIQUE,
+        name NVARCHAR(150) NOT NULL,
+        institution_group NVARCHAR(20) NOT NULL,
+        is_active BIT NOT NULL DEFAULT 1,
+        created_by INT NULL,
+        updated_by INT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT chk_apv_institutions_group CHECK (institution_group IN ('AFP','SEGUROS_VIDA','FONDOS_MUTUOS','CORREDORES_BOLSA')),
+        CONSTRAINT fk_apv_institutions_created_by FOREIGN KEY (created_by) REFERENCES users(id),
+        CONSTRAINT fk_apv_institutions_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
+      );
+    END
+  `);
+
+  // rate_type sin CHECK a proposito: los tipos de tasa crecen con cada reforma
+  // previsional (expectativa de vida y rentabilidad protegida son recientes) y
+  // con el guard IF NOT EXISTS de este archivo un CHECK ya creado no se puede
+  // ampliar sin migracion manual. La lista vive en previsionalRate.model.ts.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'previsional_rates')
+    BEGIN
+      CREATE TABLE previsional_rates (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        rate_type NVARCHAR(30) NOT NULL,
+        institution_id INT NULL,
+        rate DECIMAL(7,4) NOT NULL,
+        valid_from DATE NOT NULL,
+        valid_to DATE NULL,
+        created_by INT NULL,
+        updated_by INT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT fk_previsional_rates_institution FOREIGN KEY (institution_id) REFERENCES previsional_institutions(id),
+        CONSTRAINT chk_previsional_rates_range CHECK (valid_to IS NULL OR valid_to >= valid_from),
+        CONSTRAINT chk_previsional_rates_rate CHECK (rate >= 0 AND rate <= 100),
+        CONSTRAINT fk_previsional_rates_created_by FOREIGN KEY (created_by) REFERENCES users(id),
+        CONSTRAINT fk_previsional_rates_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
+      );
+    END
+  `);
+  // institution_id NULL (tasa global) cuenta como un valor mas en un indice
+  // unico de SQL Server, asi que dos tasas globales del mismo tipo y misma
+  // fecha de inicio tambien chocan -que es lo que se quiere.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_previsional_rates_type_inst_from' AND object_id = OBJECT_ID('previsional_rates'))
+    BEGIN
+      CREATE UNIQUE INDEX ux_previsional_rates_type_inst_from
+        ON previsional_rates(rate_type, institution_id, valid_from);
+    END
+  `);
+
+  // Fila unica del empleador: id sin IDENTITY, DEFAULT 1 y CHECK (id = 1).
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'previred_employer_settings')
+    BEGIN
+      CREATE TABLE previred_employer_settings (
+        id INT NOT NULL PRIMARY KEY DEFAULT 1,
+        ccaf_institution_id INT NULL,
+        mutual_institution_id INT NULL,
+        mutual_branch_code INT NULL,
+        work_accident_rate DECIMAL(7,4) NULL,
+        created_by INT NULL,
+        updated_by INT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT chk_previred_employer_settings_single CHECK (id = 1),
+        CONSTRAINT fk_previred_employer_settings_ccaf FOREIGN KEY (ccaf_institution_id) REFERENCES previsional_institutions(id),
+        CONSTRAINT fk_previred_employer_settings_mutual FOREIGN KEY (mutual_institution_id) REFERENCES previsional_institutions(id),
+        CONSTRAINT fk_previred_employer_settings_created_by FOREIGN KEY (created_by) REFERENCES users(id),
+        CONSTRAINT fk_previred_employer_settings_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
+      );
+    END
+  `);
+
+  // Regimen, tipo de trabajador y contrato son NULL hasta que se asignen: el
+  // perfil nace cuando se asigna la primera pieza (AFP o salud), sea cual sea,
+  // y una fila a medio llenar es un estado valido. Un CHECK sobre NULL no
+  // rechaza (evalua UNKNOWN), asi que los de abajo solo actuan cuando hay
+  // valor; que el perfil este COMPLETO lo exige el generador de la nomina.
+  // Los CHECK espejan las Tablas de Equivalencia de Previred (4, 5, 8, 17,
+  // 22) y los topes de cargas del validador (simples <= 13, maternales <= 1,
+  // invalidas <= 1). "regime = AFP exige AFP" evita un perfil que Previred
+  // rechazaria (campo 26 obligatorio si esta en AFP). Que afp_institution_id
+  // apunte a una institucion de tipo AFP (y health_ a SALUD) no se puede
+  // expresar como FK: lo valida la capa de servicio.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'employee_previsional_profiles')
+    BEGIN
+      CREATE TABLE employee_previsional_profiles (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        employee_id INT NOT NULL UNIQUE,
+        regime NVARCHAR(3) NULL,
+        worker_type SMALLINT NULL,
+        afp_institution_id INT NULL,
+        health_institution_id INT NULL,
+        health_fun NVARCHAR(16) NULL,
+        health_plan_currency SMALLINT NULL,
+        health_agreed_amount DECIMAL(12,4) NULL,
+        afc_covered BIT NOT NULL DEFAULT 1,
+        family_allowance_bracket NVARCHAR(1) NOT NULL DEFAULT 'D',
+        simple_charges SMALLINT NOT NULL DEFAULT 0,
+        maternal_charges SMALLINT NOT NULL DEFAULT 0,
+        disabled_charges SMALLINT NOT NULL DEFAULT 0,
+        workday_type SMALLINT NOT NULL DEFAULT 1,
+        heavy_work_position NVARCHAR(40) NULL,
+        heavy_work_rate DECIMAL(5,2) NULL,
+        created_by INT NULL,
+        updated_by INT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT fk_employee_previsional_profiles_employee FOREIGN KEY (employee_id) REFERENCES employees(id),
+        CONSTRAINT fk_employee_previsional_profiles_afp FOREIGN KEY (afp_institution_id) REFERENCES previsional_institutions(id),
+        CONSTRAINT fk_employee_previsional_profiles_health FOREIGN KEY (health_institution_id) REFERENCES previsional_institutions(id),
+        CONSTRAINT chk_employee_previsional_profiles_regime CHECK (regime IN ('AFP','INP','SIP')),
+        CONSTRAINT chk_employee_previsional_profiles_worker_type CHECK (worker_type IN (0,1,2,3,8,9)),
+        CONSTRAINT chk_employee_previsional_profiles_afp_required CHECK (regime <> 'AFP' OR afp_institution_id IS NOT NULL),
+        CONSTRAINT chk_employee_previsional_profiles_currency CHECK (health_plan_currency IS NULL OR health_plan_currency IN (1,2)),
+        CONSTRAINT chk_employee_previsional_profiles_bracket CHECK (family_allowance_bracket IN ('A','B','C','D')),
+        CONSTRAINT chk_employee_previsional_profiles_charges CHECK (
+          simple_charges BETWEEN 0 AND 13 AND maternal_charges BETWEEN 0 AND 1 AND disabled_charges BETWEEN 0 AND 1
+        ),
+        CONSTRAINT chk_employee_previsional_profiles_workday CHECK (workday_type IN (1,2)),
+        CONSTRAINT chk_employee_previsional_profiles_heavy_rate CHECK (heavy_work_rate IS NULL OR heavy_work_rate IN (2,4)),
+        CONSTRAINT fk_employee_previsional_profiles_created_by FOREIGN KEY (created_by) REFERENCES users(id),
+        CONSTRAINT fk_employee_previsional_profiles_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
+      );
+    END
+  `);
+
+  // Camino de actualizacion: la primera version de esta tabla (ya aplicada en
+  // dev) tenia apellidos/sexo/nacionalidad aca y regimen/contrato NOT NULL.
+  // Esos datos de identidad ahora viven en persons (ver migrateAuth). La tabla
+  // estaba vacia al moverlos, asi que borrar las columnas no pierde datos.
+  for (const constraint of ["chk_employee_previsional_profiles_sex", "chk_employee_previsional_profiles_nationality"]) {
+    await runDdl(`
+      IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = '${constraint}')
+      BEGIN
+        ALTER TABLE employee_previsional_profiles DROP CONSTRAINT ${constraint};
+      END
+    `);
+  }
+  for (const column of ["paternal_surname", "maternal_surname", "sex", "nationality"]) {
+    await runDdl(`
+      IF EXISTS (
+        SELECT 1 FROM sys.columns
+        WHERE object_id = OBJECT_ID('employee_previsional_profiles') AND name = '${column}'
+      )
+      BEGIN
+        ALTER TABLE employee_previsional_profiles DROP COLUMN ${column};
+      END
+    `);
+  }
+  for (const [column, ddl] of [
+    ["regime", "NVARCHAR(3) NULL"],
+    ["worker_type", "SMALLINT NULL"],
+  ] as const) {
+    await runDdl(`
+      IF EXISTS (
+        SELECT 1 FROM sys.columns
+        WHERE object_id = OBJECT_ID('employee_previsional_profiles') AND name = '${column}' AND is_nullable = 0
+      )
+      BEGIN
+        ALTER TABLE employee_previsional_profiles ALTER COLUMN ${column} ${ddl};
+      END
+    `);
+  }
+
+  // Tipo de contrato y fecha de inicio pasaron a employee_contracts (migratePayroll).
+  // El CHECK va primero: SQL Server no deja borrar una columna referenciada.
+  await runDdl(`
+    IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'chk_employee_previsional_profiles_contract')
+    BEGIN
+      ALTER TABLE employee_previsional_profiles DROP CONSTRAINT chk_employee_previsional_profiles_contract;
+    END
+  `);
+  for (const column of ["contract_type", "contract_start_date"]) {
+    await runDdl(`
+      IF EXISTS (
+        SELECT 1 FROM sys.columns
+        WHERE object_id = OBJECT_ID('employee_previsional_profiles') AND name = '${column}'
+      )
+      BEGIN
+        ALTER TABLE employee_previsional_profiles DROP COLUMN ${column};
+      END
+    `);
+  }
+
+  // period_from siempre dia 1 (Previred trabaja por mes, formato mmaaaa) y
+  // period_to obligatorio en gratificaciones/bono (tipos 02 y 03).
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'previred_payrolls')
+    BEGIN
+      CREATE TABLE previred_payrolls (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        payment_type NVARCHAR(2) NOT NULL,
+        period_from DATE NOT NULL,
+        period_to DATE NULL,
+        status NVARCHAR(15) NOT NULL DEFAULT 'DRAFT',
+        generated_at DATETIME2 NULL,
+        generated_by INT NULL,
+        file_name NVARCHAR(150) NULL,
+        file_sha256 NVARCHAR(64) NULL,
+        notes NVARCHAR(500) NULL,
+        created_by INT NULL,
+        updated_by INT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT chk_previred_payrolls_payment_type CHECK (payment_type IN ('01','02','03')),
+        CONSTRAINT chk_previred_payrolls_status CHECK (status IN ('DRAFT','VALIDATED','GENERATED','SUBMITTED')),
+        CONSTRAINT chk_previred_payrolls_period_from CHECK (DAY(period_from) = 1),
+        CONSTRAINT chk_previred_payrolls_period_to CHECK (
+          (period_to IS NULL OR (DAY(period_to) = 1 AND period_to >= period_from))
+          AND (payment_type = '01' OR period_to IS NOT NULL)
+        ),
+        CONSTRAINT fk_previred_payrolls_generated_by FOREIGN KEY (generated_by) REFERENCES users(id),
+        CONSTRAINT fk_previred_payrolls_created_by FOREIGN KEY (created_by) REFERENCES users(id),
+        CONSTRAINT fk_previred_payrolls_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
+      );
+    END
+  `);
+  // period_to NULL cuenta como valor en el indice unico: una sola nomina 01 por
+  // periodo, y una sola 02/03 por (periodo desde, periodo hasta).
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_previred_payrolls_type_period' AND object_id = OBJECT_ID('previred_payrolls'))
+    BEGIN
+      CREATE UNIQUE INDEX ux_previred_payrolls_type_period
+        ON previred_payrolls(payment_type, period_from, period_to);
+    END
+  `);
+
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'previred_payroll_lines')
+    BEGIN
+      CREATE TABLE previred_payroll_lines (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        payroll_id INT NOT NULL,
+        employee_id INT NOT NULL,
+        line_type NVARCHAR(2) NOT NULL DEFAULT '00',
+        line_seq SMALLINT NOT NULL DEFAULT 0,
+
+        regime NVARCHAR(3) NOT NULL,
+        worker_type SMALLINT NOT NULL,
+        days_worked SMALLINT NOT NULL,
+        movement_code SMALLINT NOT NULL DEFAULT 0,
+        movement_from DATE NULL,
+        movement_to DATE NULL,
+        family_allowance_bracket NVARCHAR(1) NOT NULL DEFAULT 'D',
+        simple_charges SMALLINT NOT NULL DEFAULT 0,
+        maternal_charges SMALLINT NOT NULL DEFAULT 0,
+        disabled_charges SMALLINT NOT NULL DEFAULT 0,
+        family_allowance INT NOT NULL DEFAULT 0,
+        retroactive_family_allowance INT NOT NULL DEFAULT 0,
+        family_charges_refund INT NOT NULL DEFAULT 0,
+        young_worker_subsidy NVARCHAR(1) NULL,
+
+        afp_institution_id INT NULL,
+        afp_taxable_income INT NOT NULL DEFAULT 0,
+        afp_mandatory_contribution INT NOT NULL DEFAULT 0,
+        sis_contribution INT NOT NULL DEFAULT 0,
+        afp_voluntary_savings INT NOT NULL DEFAULT 0,
+        substitute_taxable_income INT NOT NULL DEFAULT 0,
+        substitute_agreed_rate DECIMAL(5,2) NULL,
+        substitute_severance_contribution INT NOT NULL DEFAULT 0,
+        substitute_periods SMALLINT NOT NULL DEFAULT 0,
+        substitute_from DATE NULL,
+        substitute_to DATE NULL,
+        heavy_work_position NVARCHAR(40) NULL,
+        heavy_work_rate DECIMAL(5,2) NULL,
+        heavy_work_contribution INT NOT NULL DEFAULT 0,
+
+        apvi_institution_id INT NULL,
+        apvi_contract_number NVARCHAR(20) NULL,
+        apvi_payment_method SMALLINT NULL,
+        apvi_amount INT NOT NULL DEFAULT 0,
+        apvi_agreed_deposits INT NOT NULL DEFAULT 0,
+        apvc_institution_id INT NULL,
+        apvc_contract_number NVARCHAR(20) NULL,
+        apvc_payment_method SMALLINT NULL,
+        apvc_worker_amount INT NOT NULL DEFAULT 0,
+        apvc_employer_amount INT NOT NULL DEFAULT 0,
+
+        ips_ex_fund_code NVARCHAR(4) NULL,
+        ips_rate DECIMAL(5,2) NULL,
+        ips_taxable_income INT NOT NULL DEFAULT 0,
+        ips_mandatory_contribution INT NOT NULL DEFAULT 0,
+        severance_taxable_income INT NOT NULL DEFAULT 0,
+        severance_fund_code NVARCHAR(4) NULL,
+        severance_rate DECIMAL(5,2) NULL,
+        severance_contribution INT NOT NULL DEFAULT 0,
+        fonasa_contribution INT NOT NULL DEFAULT 0,
+        isl_work_accident_contribution INT NOT NULL DEFAULT 0,
+        law_15386_bonus INT NOT NULL DEFAULT 0,
+        ips_family_charges_discount INT NOT NULL DEFAULT 0,
+        government_bonus INT NOT NULL DEFAULT 0,
+
+        health_institution_id INT NULL,
+        health_fun NVARCHAR(16) NULL,
+        health_taxable_income INT NOT NULL DEFAULT 0,
+        health_plan_currency SMALLINT NULL,
+        health_agreed_contribution DECIMAL(12,4) NULL,
+        health_mandatory_contribution INT NOT NULL DEFAULT 0,
+        health_additional_contribution INT NOT NULL DEFAULT 0,
+        ges_contribution INT NOT NULL DEFAULT 0,
+
+        ccaf_institution_id INT NULL,
+        ccaf_taxable_income INT NOT NULL DEFAULT 0,
+        ccaf_personal_credits INT NOT NULL DEFAULT 0,
+        ccaf_dental_discount INT NOT NULL DEFAULT 0,
+        ccaf_leasing_discount INT NOT NULL DEFAULT 0,
+        ccaf_life_insurance_discount INT NOT NULL DEFAULT 0,
+        ccaf_other_discounts INT NOT NULL DEFAULT 0,
+        ccaf_non_isapre_contribution INT NOT NULL DEFAULT 0,
+        ccaf_family_charges_discount INT NOT NULL DEFAULT 0,
+
+        previous_month_taxable_income INT NULL,
+        workday_type SMALLINT NOT NULL DEFAULT 1,
+        life_expectancy_contribution INT NOT NULL DEFAULT 0,
+        protected_return_contribution INT NOT NULL DEFAULT 0,
+
+        mutual_institution_id INT NULL,
+        mutual_taxable_income INT NOT NULL DEFAULT 0,
+        mutual_work_accident_contribution INT NOT NULL DEFAULT 0,
+        mutual_branch_code INT NULL,
+
+        afc_taxable_income INT NOT NULL DEFAULT 0,
+        afc_worker_contribution INT NOT NULL DEFAULT 0,
+        afc_employer_contribution INT NOT NULL DEFAULT 0,
+
+        subsidy_payer_institution_id INT NULL,
+        cost_center_label NVARCHAR(20) NULL,
+
+        created_by INT NULL,
+        updated_by INT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+
+        CONSTRAINT fk_previred_payroll_lines_payroll FOREIGN KEY (payroll_id) REFERENCES previred_payrolls(id),
+        CONSTRAINT fk_previred_payroll_lines_employee FOREIGN KEY (employee_id) REFERENCES employees(id),
+        CONSTRAINT fk_previred_payroll_lines_afp FOREIGN KEY (afp_institution_id) REFERENCES previsional_institutions(id),
+        CONSTRAINT fk_previred_payroll_lines_health FOREIGN KEY (health_institution_id) REFERENCES previsional_institutions(id),
+        CONSTRAINT fk_previred_payroll_lines_ccaf FOREIGN KEY (ccaf_institution_id) REFERENCES previsional_institutions(id),
+        CONSTRAINT fk_previred_payroll_lines_mutual FOREIGN KEY (mutual_institution_id) REFERENCES previsional_institutions(id),
+        CONSTRAINT fk_previred_payroll_lines_subsidy_payer FOREIGN KEY (subsidy_payer_institution_id) REFERENCES previsional_institutions(id),
+        CONSTRAINT fk_previred_payroll_lines_apvi FOREIGN KEY (apvi_institution_id) REFERENCES apv_institutions(id),
+        CONSTRAINT fk_previred_payroll_lines_apvc FOREIGN KEY (apvc_institution_id) REFERENCES apv_institutions(id),
+        CONSTRAINT chk_previred_payroll_lines_line_type CHECK (line_type IN ('00','01','02','03')),
+        CONSTRAINT chk_previred_payroll_lines_days CHECK (days_worked BETWEEN 0 AND 30),
+        CONSTRAINT chk_previred_payroll_lines_regime CHECK (regime IN ('AFP','INP','SIP')),
+        CONSTRAINT chk_previred_payroll_lines_bracket CHECK (family_allowance_bracket IN ('A','B','C','D')),
+        CONSTRAINT chk_previred_payroll_lines_workday CHECK (workday_type IN (1,2)),
+        CONSTRAINT chk_previred_payroll_lines_young_subsidy CHECK (young_worker_subsidy IS NULL OR young_worker_subsidy IN ('S','N')),
+        CONSTRAINT chk_previred_payroll_lines_apv_method CHECK (
+          (apvi_payment_method IS NULL OR apvi_payment_method IN (1,2))
+          AND (apvc_payment_method IS NULL OR apvc_payment_method IN (1,2))
+        ),
+        CONSTRAINT fk_previred_payroll_lines_created_by FOREIGN KEY (created_by) REFERENCES users(id),
+        CONSTRAINT fk_previred_payroll_lines_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
+      );
+    END
+  `);
+
+  // Una linea por (nomina, trabajador, orden): payroll_id lidera el indice, asi
+  // que cubre tambien el recorrido "todas las lineas de una nomina" al generar.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_previred_payroll_lines_payroll_employee_seq' AND object_id = OBJECT_ID('previred_payroll_lines'))
+    BEGIN
+      CREATE UNIQUE INDEX ux_previred_payroll_lines_payroll_employee_seq
+        ON previred_payroll_lines(payroll_id, employee_id, line_seq);
+    END
+  `);
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_previred_payroll_lines_employee_id' AND object_id = OBJECT_ID('previred_payroll_lines'))
+    BEGIN
+      CREATE INDEX ix_previred_payroll_lines_employee_id ON previred_payroll_lines(employee_id);
+    END
+  `);
+}
+
+
+// Remuneraciones: configuracion de la empresa, parametros monetarios, contrato
+// del colaborador (sueldo base + forma de pago de la gratificacion legal) y los
+// movimientos de gratificacion que alimentaran la liquidacion. Depende de
+// employees y users, por eso va despues de migrateBusinessPartners.
+async function migratePayroll(): Promise<void> {
+  // Fila unica de la empresa: id sin IDENTITY, DEFAULT 1 y CHECK (id = 1).
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'payroll_settings')
+    BEGIN
+      CREATE TABLE payroll_settings (
+        id INT NOT NULL PRIMARY KEY DEFAULT 1,
+        gratification_system NVARCHAR(15) NULL,
+        created_by INT NULL,
+        updated_by INT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT chk_payroll_settings_single CHECK (id = 1),
+        CONSTRAINT chk_payroll_settings_gratification CHECK (gratification_system IS NULL OR gratification_system IN ('ART47','ART50','CONVENCIONAL')),
+        CONSTRAINT fk_payroll_settings_created_by FOREIGN KEY (created_by) REFERENCES users(id),
+        CONSTRAINT fk_payroll_settings_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
+      );
+    END
+  `);
+
+  // % del sueldo base que la empresa anticipa cada mes; con el se calcula en
+  // pesos el anticipo del contrato al crear el colaborador. Se agrego despues de
+  // la primera version de la tabla, asi que va por ALTER (columna y CHECK en
+  // batches separados). Que sea coherente con el sistema (ART47 no anticipa,
+  // ART50 hasta 25%) lo valida el servicio, no la BD: son reglas legales.
+  await runDdl(`
+    IF COL_LENGTH('payroll_settings', 'gratification_monthly_advance_percentage') IS NULL
+    BEGIN
+      ALTER TABLE payroll_settings ADD gratification_monthly_advance_percentage DECIMAL(5,2) NULL;
+    END
+  `);
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'chk_payroll_settings_advance_pct')
+    BEGIN
+      ALTER TABLE payroll_settings ADD CONSTRAINT chk_payroll_settings_advance_pct CHECK (
+        gratification_monthly_advance_percentage IS NULL
+        OR (gratification_monthly_advance_percentage > 0 AND gratification_monthly_advance_percentage <= 100)
+      );
+    END
+  `);
+
+  // code sin CHECK (mismo criterio que previsional_rates.rate_type): la lista
+  // de parametros crece y un CHECK ya creado no se amplia con estos guards.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'payroll_parameters')
+    BEGIN
+      CREATE TABLE payroll_parameters (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        code NVARCHAR(30) NOT NULL,
+        value DECIMAL(14,4) NOT NULL,
+        valid_from DATE NOT NULL,
+        valid_to DATE NULL,
+        created_by INT NULL,
+        updated_by INT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT chk_payroll_parameters_range CHECK (valid_to IS NULL OR valid_to >= valid_from),
+        CONSTRAINT chk_payroll_parameters_value CHECK (value > 0),
+        CONSTRAINT fk_payroll_parameters_created_by FOREIGN KEY (created_by) REFERENCES users(id),
+        CONSTRAINT fk_payroll_parameters_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
+      );
+    END
+  `);
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_payroll_parameters_code_from' AND object_id = OBJECT_ID('payroll_parameters'))
+    BEGIN
+      CREATE UNIQUE INDEX ux_payroll_parameters_code_from ON payroll_parameters(code, valid_from);
+    END
+  `);
+
+  // Los CHECK cruzados espejan reglas de negocio que no dependen de datos
+  // externos: plazo fijo exige fecha de termino; mes de reliquidacion exigido
+  // salvo en modo MENSUAL; reajuste por IPC solo tiene sentido con anticipos;
+  // tope = tipo + factor juntos o ninguno. Las reglas por tipo de gratificacion
+  // (ART50 = 25% y 4,75 IMM) las valida el servicio, no la BD, para poder
+  // ajustarlas sin migrar. Un solo contrato ABIERTO (sin end_date) por
+  // colaborador; el solape entre contratos con fecha de termino, en el servicio.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'employee_contracts')
+    BEGIN
+      CREATE TABLE employee_contracts (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        employee_id INT NOT NULL,
+        contract_type NVARCHAR(15) NOT NULL,
+        start_date DATE NOT NULL,
+        end_date DATE NULL,
+        base_salary INT NOT NULL,
+        gratification_type NVARCHAR(15) NOT NULL,
+        gratification_method NVARCHAR(30) NOT NULL,
+        gratification_percentage DECIMAL(5,2) NOT NULL,
+        gratification_cap_type NVARCHAR(10) NULL,
+        gratification_cap_factor DECIMAL(6,3) NULL,
+        gratification_payment_mode NVARCHAR(30) NOT NULL,
+        gratification_settlement_month SMALLINT NULL,
+        gratification_adjust_advances_cpi BIT NOT NULL DEFAULT 0,
+        created_by INT NULL,
+        updated_by INT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT fk_employee_contracts_employee FOREIGN KEY (employee_id) REFERENCES employees(id),
+        CONSTRAINT chk_employee_contracts_type CHECK (contract_type IN ('INDEFINIDO','PLAZO_FIJO')),
+        CONSTRAINT chk_employee_contracts_dates CHECK (end_date IS NULL OR end_date >= start_date),
+        CONSTRAINT chk_employee_contracts_fixed_term CHECK (contract_type <> 'PLAZO_FIJO' OR end_date IS NOT NULL),
+        CONSTRAINT chk_employee_contracts_salary CHECK (base_salary > 0),
+        CONSTRAINT chk_employee_contracts_grat_type CHECK (gratification_type IN ('ART47','ART50','CONVENCIONAL')),
+        CONSTRAINT chk_employee_contracts_grat_method CHECK (gratification_method IN ('PORCENTAJE_REMUNERACIONES','PARTICIPACION_UTILIDADES')),
+        CONSTRAINT chk_employee_contracts_grat_pct CHECK (gratification_percentage > 0 AND gratification_percentage <= 100),
+        CONSTRAINT chk_employee_contracts_grat_cap_v2 CHECK (
+          (gratification_cap_type IS NULL AND gratification_cap_factor IS NULL)
+          OR (gratification_cap_type = 'IMM' AND gratification_cap_factor IS NOT NULL AND gratification_cap_factor > 0)
+        ),
+        CONSTRAINT chk_employee_contracts_grat_mode CHECK (gratification_payment_mode IN ('MENSUAL','ANTICIPO_MENSUAL_RELIQUIDACION','ANUAL')),
+        CONSTRAINT chk_employee_contracts_grat_month_v2 CHECK (
+          (gratification_payment_mode = 'MENSUAL' AND gratification_settlement_month IS NULL)
+          OR (gratification_payment_mode <> 'MENSUAL' AND gratification_settlement_month IS NOT NULL
+              AND gratification_settlement_month BETWEEN 1 AND 12)
+        ),
+        CONSTRAINT chk_employee_contracts_grat_cpi CHECK (
+          gratification_adjust_advances_cpi = 0 OR gratification_payment_mode = 'ANTICIPO_MENSUAL_RELIQUIDACION'
+        ),
+        CONSTRAINT fk_employee_contracts_created_by FOREIGN KEY (created_by) REFERENCES users(id),
+        CONSTRAINT fk_employee_contracts_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
+      );
+    END
+  `);
+  // Camino de actualizacion: la primera version de estos dos CHECK (ya aplicada en
+  // dev) dejaba pasar NULL. En SQL un CHECK que evalua a UNKNOWN NO rechaza, asi
+  // que "modo ANTICIPO con mes NULL" y "tope IMM con factor NULL" se colaban:
+  // faltaba exigir IS NOT NULL en la rama que compara. Se reemplazan con otro
+  // nombre (_v2) porque el guard IF NOT EXISTS por nombre nunca detectaria un
+  // cambio de definicion bajo el mismo nombre.
+  for (const [oldName, newName, definition] of [
+    [
+      "chk_employee_contracts_grat_cap",
+      "chk_employee_contracts_grat_cap_v2",
+      `(gratification_cap_type IS NULL AND gratification_cap_factor IS NULL)
+       OR (gratification_cap_type = 'IMM' AND gratification_cap_factor IS NOT NULL AND gratification_cap_factor > 0)`,
+    ],
+    [
+      "chk_employee_contracts_grat_month",
+      "chk_employee_contracts_grat_month_v2",
+      `(gratification_payment_mode = 'MENSUAL' AND gratification_settlement_month IS NULL)
+       OR (gratification_payment_mode <> 'MENSUAL' AND gratification_settlement_month IS NOT NULL
+           AND gratification_settlement_month BETWEEN 1 AND 12)`,
+    ],
+  ] as const) {
+    await runDdl(`
+      IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = '${oldName}')
+      BEGIN
+        ALTER TABLE employee_contracts DROP CONSTRAINT ${oldName};
+      END
+    `);
+    await runDdl(`
+      IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = '${newName}')
+      BEGIN
+        ALTER TABLE employee_contracts ADD CONSTRAINT ${newName} CHECK (${definition});
+      END
+    `);
+  }
+  // Monto que se anticipa cada mes (pesos enteros) en ANTICIPO_MENSUAL_RELIQUIDACION.
+  // Se agrego despues de la primera version de la tabla, asi que va por ALTER
+  // (sirve igual en BD nueva, donde CREATE TABLE ya corrio arriba). Columna y
+  // CHECK en batches separados: el CHECK referencia la columna recien agregada.
+  // El CHECK solo prohibe el monto fuera de ese modo y los montos <= 0; que el
+  // modo ANTICIPO lo EXIJA lo valida el controlador, porque exigirlo aca haria
+  // fallar la migracion con los contratos ANTICIPO que ya existen sin monto.
+  await runDdl(`
+    IF COL_LENGTH('employee_contracts', 'gratification_monthly_advance') IS NULL
+    BEGIN
+      ALTER TABLE employee_contracts ADD gratification_monthly_advance INT NULL;
+    END
+  `);
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'chk_employee_contracts_grat_advance')
+    BEGIN
+      ALTER TABLE employee_contracts ADD CONSTRAINT chk_employee_contracts_grat_advance CHECK (
+        gratification_monthly_advance IS NULL
+        OR (gratification_monthly_advance > 0 AND gratification_payment_mode = 'ANTICIPO_MENSUAL_RELIQUIDACION')
+      );
+    END
+  `);
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_employee_contracts_open' AND object_id = OBJECT_ID('employee_contracts'))
+    BEGIN
+      CREATE UNIQUE INDEX ux_employee_contracts_open ON employee_contracts(employee_id) WHERE end_date IS NULL;
+    END
+  `);
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_employee_contracts_employee_id' AND object_id = OBJECT_ID('employee_contracts'))
+    BEGIN
+      CREATE INDEX ix_employee_contracts_employee_id ON employee_contracts(employee_id, start_date);
+    END
+  `);
+
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'gratification_movements')
+    BEGIN
+      CREATE TABLE gratification_movements (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        employee_id INT NOT NULL,
+        contract_id INT NOT NULL,
+        period DATE NOT NULL,
+        type NVARCHAR(15) NOT NULL,
+        calculation_base INT NOT NULL,
+        percentage DECIMAL(5,2) NOT NULL,
+        calculated_amount INT NOT NULL,
+        paid_amount INT NOT NULL DEFAULT 0,
+        ipc_factor DECIMAL(9,6) NULL,
+        adjusted_amount INT NULL,
+        status NVARCHAR(15) NOT NULL DEFAULT 'CALCULADO',
+        created_by INT NULL,
+        updated_by INT NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT fk_gratification_movements_employee FOREIGN KEY (employee_id) REFERENCES employees(id),
+        CONSTRAINT fk_gratification_movements_contract FOREIGN KEY (contract_id) REFERENCES employee_contracts(id),
+        CONSTRAINT chk_gratification_movements_period CHECK (DAY(period) = 1),
+        CONSTRAINT chk_gratification_movements_type CHECK (type IN ('ANTICIPO','RELIQUIDACION','PAGO')),
+        CONSTRAINT chk_gratification_movements_status CHECK (status IN ('CALCULADO','PAGADO','RELIQUIDADO','ANULADO')),
+        CONSTRAINT chk_gratification_movements_amounts CHECK (calculation_base >= 0 AND calculated_amount >= 0 AND paid_amount >= 0),
+        CONSTRAINT chk_gratification_movements_ipc_v2 CHECK (
+          (ipc_factor IS NULL AND adjusted_amount IS NULL)
+          OR (ipc_factor IS NOT NULL AND ipc_factor > 0 AND adjusted_amount IS NOT NULL AND adjusted_amount >= 0)
+        ),
+        CONSTRAINT fk_gratification_movements_created_by FOREIGN KEY (created_by) REFERENCES users(id),
+        CONSTRAINT fk_gratification_movements_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
+      );
+    END
+  `);
+  // Mismo bug de NULL que los CHECK de employee_contracts (ver arriba): con
+  // factor NULL y monto reajustado presente, la rama derecha daba UNKNOWN y pasaba.
+  await runDdl(`
+    IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'chk_gratification_movements_ipc')
+    BEGIN
+      ALTER TABLE gratification_movements DROP CONSTRAINT chk_gratification_movements_ipc;
+    END
+  `);
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'chk_gratification_movements_ipc_v2')
+    BEGIN
+      ALTER TABLE gratification_movements ADD CONSTRAINT chk_gratification_movements_ipc_v2 CHECK (
+        (ipc_factor IS NULL AND adjusted_amount IS NULL)
+        OR (ipc_factor IS NOT NULL AND ipc_factor > 0 AND adjusted_amount IS NOT NULL AND adjusted_amount >= 0)
+      );
+    END
+  `);
+  // Un movimiento por (contrato, periodo, tipo): evita anticipar dos veces el mismo mes.
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_gratification_movements_contract_period_type' AND object_id = OBJECT_ID('gratification_movements'))
+    BEGIN
+      CREATE UNIQUE INDEX ux_gratification_movements_contract_period_type ON gratification_movements(contract_id, period, type);
+    END
+  `);
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_gratification_movements_employee_period' AND object_id = OBJECT_ID('gratification_movements'))
+    BEGIN
+      CREATE INDEX ix_gratification_movements_employee_period ON gratification_movements(employee_id, period);
     END
   `);
 }

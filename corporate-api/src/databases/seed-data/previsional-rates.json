@@ -1,0 +1,50 @@
+[
+  {
+    "rate_type": "AFP_COMMISSION",
+    "institution_code": "AFP_CAPITAL",
+    "rate": 1.44,
+    "valid_from": "2026-09-01"
+  },
+  {
+    "rate_type": "AFP_COMMISSION",
+    "institution_code": "AFP_CUPRUM",
+    "rate": 1.44,
+    "valid_from": "2026-09-01"
+  },
+  {
+    "rate_type": "AFP_COMMISSION",
+    "institution_code": "AFP_HABITAT",
+    "rate": 1.27,
+    "valid_from": "2026-09-01"
+  },
+  {
+    "rate_type": "AFP_COMMISSION",
+    "institution_code": "AFP_MODELO",
+    "rate": 0.58,
+    "valid_from": "2026-09-01"
+  },
+  {
+    "rate_type": "AFP_COMMISSION",
+    "institution_code": "AFP_PLANVITAL",
+    "rate": 1.16,
+    "valid_from": "2026-09-01"
+  },
+  {
+    "rate_type": "AFP_COMMISSION",
+    "institution_code": "AFP_PROVIDA",
+    "rate": 1.45,
+    "valid_from": "2026-09-01"
+  },
+  {
+    "rate_type": "AFP_COMMISSION",
+    "institution_code": "AFP_UNO",
+    "rate": 0.46,
+    "valid_from": "2026-09-01"
+  },
+  {
+    "rate_type": "HEALTH_LEGAL",
+    "institution_code": null,
+    "rate": 7.0,
+    "valid_from": "2026-09-01"
+  }
+]

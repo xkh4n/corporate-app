@@ -1,0 +1,272 @@
+[
+  {
+    "type": "AFP",
+    "code": "AFP_CAPITAL",
+    "name": "AFP Capital",
+    "national_id": "98000000-1",
+    "previred_code": "33",
+    "address": "Av. Apoquindo 4820, Las Condes, Santiago",
+    "phone": "600 6600 900",
+    "legal_representative": null
+  },
+  {
+    "type": "AFP",
+    "code": "AFP_CUPRUM",
+    "name": "AFP Cuprum",
+    "national_id": "76240079-0",
+    "previred_code": "03",
+    "address": "Av. Apoquindo 3600, Of. 601, Las Condes, Santiago",
+    "phone": "600 2287 786",
+    "legal_representative": null
+  },
+  {
+    "type": "AFP",
+    "code": "AFP_HABITAT",
+    "name": "AFP Habitat",
+    "national_id": "98000100-8",
+    "previred_code": "05",
+    "address": "Av. Providencia 1909, Providencia, Santiago",
+    "phone": "22 378 20 00",
+    "legal_representative": null
+  },
+  {
+    "type": "AFP",
+    "code": "AFP_MODELO",
+    "name": "AFP Modelo",
+    "national_id": "76762250-3",
+    "previred_code": "34",
+    "address": "Av. del Valle Sur 614, Of. 101, Huechuraba, Santiago",
+    "phone": "22 828 72 00",
+    "legal_representative": null
+  },
+  {
+    "type": "AFP",
+    "code": "AFP_PLANVITAL",
+    "name": "AFP PlanVital",
+    "national_id": "98001200-K",
+    "previred_code": "29",
+    "address": "Apoquindo 3039, Las Condes, Santiago",
+    "phone": "22 577 77 00",
+    "legal_representative": "José Joaquín Prat Errázuriz"
+  },
+  {
+    "type": "AFP",
+    "code": "AFP_PROVIDA",
+    "name": "AFP Provida",
+    "national_id": "76265736-8",
+    "previred_code": "08",
+    "address": "Av. Apoquindo 2730, piso 13, Las Condes, Santiago",
+    "phone": "600 20 10 150",
+    "legal_representative": null
+  },
+  {
+    "type": "AFP",
+    "code": "AFP_UNO",
+    "name": "AFP Uno",
+    "national_id": "76960424-3",
+    "previred_code": "35",
+    "address": "Huérfanos 713, piso 8, Santiago",
+    "phone": "22 720 5500",
+    "legal_representative": null
+  },
+  {
+    "type": "SALUD",
+    "code": "FONASA",
+    "name": "FONASA",
+    "national_id": "61603000-0",
+    "previred_code": "07",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "SALUD",
+    "code": "ISAPRE_BANMEDICA",
+    "name": "Isapre Banmédica",
+    "national_id": "96572800-7",
+    "previred_code": "01",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "SALUD",
+    "code": "ISAPRE_CONSALUD",
+    "name": "Isapre Consalud",
+    "national_id": "96856780-2",
+    "previred_code": "02",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "SALUD",
+    "code": "ISAPRE_VIDA_TRES",
+    "name": "Isapre Vida Tres",
+    "national_id": "96502530-8",
+    "previred_code": "03",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "SALUD",
+    "code": "ISAPRE_COLMENA",
+    "name": "Isapre Colmena",
+    "national_id": "76296619-0",
+    "previred_code": "04",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "SALUD",
+    "code": "ISAPRE_CRUZ_BLANCA",
+    "name": "Isapre Cruz Blanca",
+    "national_id": "96501450-0",
+    "previred_code": "05",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "SALUD",
+    "code": "ISAPRE_NUEVA_MASVIDA",
+    "name": "Isapre Nueva Masvida",
+    "national_id": "96504160-5",
+    "previred_code": "10",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "SALUD",
+    "code": "ISAPRE_ISALUD",
+    "name": "Isapre Isalud",
+    "national_id": "76334370-7",
+    "previred_code": "11",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "SALUD",
+    "code": "ISAPRE_FUNDACION",
+    "name": "Isapre Fundación",
+    "national_id": "71235700-2",
+    "previred_code": "12",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "SALUD",
+    "code": "ISAPRE_CRUZ_DEL_NORTE",
+    "name": "Isapre Cruz del Norte",
+    "national_id": "79906120-1",
+    "previred_code": "25",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "SALUD",
+    "code": "ISAPRE_ESENCIAL",
+    "name": "Isapre Esencial",
+    "national_id": "96936100-0",
+    "previred_code": "28",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "CCAF",
+    "code": "CCAF_LOS_ANDES",
+    "name": "Caja Los Andes",
+    "national_id": null,
+    "previred_code": "01",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "CCAF",
+    "code": "CCAF_LA_ARAUCANA",
+    "name": "Caja La Araucana",
+    "national_id": null,
+    "previred_code": "02",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "CCAF",
+    "code": "CCAF_LOS_HEROES",
+    "name": "Caja Los Héroes",
+    "national_id": null,
+    "previred_code": "03",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "CCAF",
+    "code": "CCAF_18_SEPTIEMBRE",
+    "name": "Caja 18 de Septiembre",
+    "national_id": null,
+    "previred_code": "04",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "MUTUAL",
+    "code": "MUTUAL_ACHS",
+    "name": "ACHS",
+    "national_id": "70360100-6",
+    "previred_code": "01",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "MUTUAL",
+    "code": "MUTUAL_CCHC",
+    "name": "Mutual de Seguridad CChC",
+    "national_id": "70285100-9",
+    "previred_code": "02",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "MUTUAL",
+    "code": "MUTUAL_IST",
+    "name": "IST",
+    "national_id": "70015580-3",
+    "previred_code": "03",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "MUTUAL",
+    "code": "MUTUAL_ISL",
+    "name": "ISL",
+    "national_id": "61533000-0",
+    "previred_code": "00",
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  },
+  {
+    "type": "CESANTIA",
+    "code": "AFC_CHILE",
+    "name": "AFC Chile",
+    "national_id": null,
+    "previred_code": null,
+    "address": null,
+    "phone": null,
+    "legal_representative": null
+  }
+]

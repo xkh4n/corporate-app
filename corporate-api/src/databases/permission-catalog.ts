@@ -52,6 +52,23 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "users", action: "update", description: "Editar usuarios (incluye password)" },
   { resource: "users", action: "delete", description: "Desactivar usuarios" },
 
+  // Cotizaciones previsionales (nomina Previred). Todo admin-only por defecto:
+  // el perfil trae el plan de isapre y el numero de FUN de cada colaborador.
+  { resource: "previsional-institutions", action: "read", description: "Consultar AFP, salud, CCAF y mutualidades" },
+  { resource: "previsional-profiles", action: "read", description: "Consultar la afiliacion previsional de un colaborador" },
+  { resource: "previsional-profiles", action: "update", description: "Asignar AFP y salud a un colaborador" },
+  { resource: "previred-settings", action: "read", description: "Consultar la CCAF y mutual de la empresa" },
+  { resource: "previred-settings", action: "update", description: "Definir la CCAF y mutual de la empresa" },
+
+  // Remuneraciones. Sueldo base y gratificacion de cada colaborador son datos
+  // sensibles: admin-only por defecto, igual que el perfil previsional.
+  { resource: "employee-contracts", action: "read", description: "Consultar contratos y sueldo de un colaborador" },
+  { resource: "employee-contracts", action: "create", description: "Crear el contrato (sueldo y gratificacion) de un colaborador" },
+  { resource: "payroll-settings", action: "read", description: "Consultar el sistema de gratificacion de la empresa" },
+  { resource: "payroll-settings", action: "update", description: "Definir el sistema de gratificacion de la empresa" },
+  { resource: "payroll-parameters", action: "read", description: "Consultar parametros de remuneraciones (IMM)" },
+  { resource: "payroll-parameters", action: "update", description: "Registrar parametros de remuneraciones (IMM)" },
+
   // Maestros/config: admin-only por defecto (create/update).
   { resource: "business-partners",action: "read",description: "Consultar terceros",grantToUser: true,},
   { resource: "business-partners", action: "create", description: "Crear terceros" },

@@ -28,6 +28,21 @@ import "./../models/mssql/customer.model";
 import "./../models/mssql/employee.model";
 import "./../models/mssql/address.model";
 
+// Cotizaciones previsionales / nomina Previred (dependen de employees)
+import "./../models/mssql/previsionalInstitution.model";
+import "./../models/mssql/previsionalRate.model";
+import "./../models/mssql/apvInstitution.model";
+import "./../models/mssql/previredEmployerSettings.model";
+import "./../models/mssql/employeePrevisionalProfile.model";
+import "./../models/mssql/previredPayroll.model";
+import "./../models/mssql/previredPayrollLine.model";
+
+// Remuneraciones: config de la empresa, contrato y gratificacion
+import "./../models/mssql/payrollSettings.model";
+import "./../models/mssql/payrollParameter.model";
+import "./../models/mssql/employeeContract.model";
+import "./../models/mssql/gratificationMovement.model";
+
 // Flujo de compras: PurchaseRequest -> Quote -> Authorization -> PurchaseOrder -> GoodsReceipt
 import "./../models/mssql/purchaseRequest.model";
 import "./../models/mssql/purchaseRequestLine.model";
