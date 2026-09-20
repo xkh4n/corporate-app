@@ -16,10 +16,10 @@ observabilidad (métricas + logs) desde el día uno.
 | Módulo | Estado |
 |---|---|
 | `corporate-infra` (bases de datos) | ✅ Construido, hardenizado y validado con instalación limpia real |
-| `corporate-api` (backend) | ✅ Construido: auth, RBAC, ERP core, flujo de compras, activos (Kardex, ZPL, handover), tiempo real |
+| `corporate-api` (backend) | ✅ Construido: auth, RBAC, ERP core, flujo de compras, activos (Kardex, ZPL, handover), tiempo real, remuneraciones y previsión |
 | `corporate-mailer` (servicio de correo) | ✅ Construido: adjuntos de OC, notificaciones, SMTP |
 | `corporate-monitoring` (observabilidad) | ✅ Construido: métricas, logs, dashboards, todo detrás de TLS |
-| `corporate-front` (frontend) | ✅ Construido: React 19/TypeScript/Tailwind v4, menú dinámico desde BD, activos, adquisiciones, solicitudes, personas, permissions |
+| `corporate-front` (frontend) | ✅ Construido: React 19/TypeScript/Tailwind v4, menú dinámico desde BD, activos, adquisiciones, solicitudes, personas, remuneraciones, previsión, permissions |
 | Ambientes `prod`/`test` | ✅ Compose/Dockerfiles existen; `dev` es el único validado en clean-install real |
 
 ## Arquitectura general
@@ -274,6 +274,14 @@ src/
   a proveedores y usuarios, salida SMTP aislada en su propia red Docker.
 - **Multi-réplica real**: 3 instancias de la API detrás de NGINX, migraciones y seeds escritos para
   ser idempotentes y seguros frente a arranque concurrente de las 3 réplicas contra una base recién creada.
+- **Remuneraciones y previsión (base)**: catálogo de instituciones previsionales (AFP, Isapres, CCAF,
+  mutualidades), tasas versionadas por vigencia, afiliación de colaboradores (régimen, AFP, salud y plan
+  Isapre; el modelo también contempla cargas familiares y jornada, aún sin captura en pantalla), contrato con sueldo base y gratificación legal (tipos ART47/ART50/CONVENCIONAL,
+  método, porcentaje, tope, forma de pago). Configuración a nivel empresa (CCAF, mutualidad, tasa de
+  accidentes, sistema de gratificación, % de anticipo mensual). El IMM se registra como parámetro
+  monetario con vigencia (lo ingresa el usuario, no se precarga). **Nota:** el archivo de Previred (formato de 105 campos) y la liquidación de sueldos con
+  cálculo de cotizaciones obligatorias aún no se generan; las tablas `previred_payrolls`, `previred_payroll_lines`
+  y `gratification_movements` existen pero aún no se usan.
 
 ## Seguridad
 
@@ -457,7 +465,7 @@ chequeo de CI, así que `master` no debería volver a acumular esto sin que el P
   verificaron en vivo (ver "Validación por ambiente" arriba) — ya no es solo `dev` el validado. Sigue
   siendo cierto que el uso continuo/prolongado (no solo un boot puntual) está mejor probado en `dev`.
 - **Frontend**: `corporate-front` está en desarrollo activo; el layout y páginas cubren activos,
-  adquisiciones, solicitudes, personas y permissions. Pueden existir placeholders o páginas no
+  adquisiciones, solicitudes, personas, remuneraciones, previsión y permissions. Pueden existir placeholders o páginas no
   totalmente implementadas en módulos específicos.
 - **Scripts de arranque y `--build`**: algunos scripts de `corporate-scripts/` no pasan `--build` al
   levantar un Compose, lo que significa que cambios en Dockerfiles/templating no se reconstruyen
@@ -465,3 +473,17 @@ chequeo de CI, así que `master` no debería volver a acumular esto sin que el P
 - **pnpm en Docker Windows**: pnpm dentro de Dockerfiles en este host (Windows + WSL2) genera symlinks
   rotos. Los Dockerfiles usan `npm` en lugar de `pnpm` para evitarlo — `pnpm` sigue siendo el gestor
   del lado del host (`pnpm-lock.yaml`).
+- **Permisos nuevos para crear colaboradores**: el alta de colaboradores ahora requiere tres permisos
+  nuevos (`employee-contracts:create`, `previsional-institutions:read`, `previsional-profiles:update`)
+  además de los anteriores. Solo el rol `admin` los tiene por defecto; otros roles deben recibirlos
+  explícitamente vía `PUT /roles/:id/permissions`. Los usuarios que ya tenían sesión iniciada deben
+  re-loguearse para que el backend actualice sus permisos y el menú refleje las nuevas opciones.
+- **Desarrollo con hot-reload de la API**: guardar cambios en `corporate-api/src/databases/mssql/migrate.ts`
+  dispara automáticamente la migración contra la BD de desarrollo compartida entre las 3 réplicas.
+  Conviene probar el DDL antes en un SQL Server desechable (por ejemplo, un contenedor local) y recién después guardar el archivo.
+- **Fechas DATEONLY en zonas horarias no UTC**: fuera de contenedores (ej. máquina con zona horaria -03),
+  Sequelize puede desplazar un día las fechas de columnas `DATEONLY`; dentro de Docker (UTC) no ocurre.
+- **Gestión de contratos existentes**: no existe pantalla para listar o editar contratos ya creados;
+  tampoco se pueden actualizar apellido materno, sexo y nacionalidad de personas ya existentes. Un
+  colaborador creado con tipo de gratificación `ANTICIPO_MENSUAL_RELIQUIDACION` antes de que existiera
+  la columna `gratification_monthly_advance` quedará sin monto asignado y hoy no hay cómo completarlo desde la interfaz.
