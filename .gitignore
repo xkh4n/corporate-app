@@ -9,3 +9,8 @@ corporate-api/src/uploads/
 .env.test
 .security-gate/
 .claude/archive/
+.claude/orchestrator/
+.claude/roles/
+.claude/skills/
+.claude/specs/
+.claude/context/

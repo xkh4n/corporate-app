@@ -4,8 +4,9 @@ Bitácora de lo que se va construyendo, en orden cronológico inverso (lo más n
 insumo para actualizar el `README.md` raíz: el agente de documentación lee esta bitácora, **verifica
 cada dato contra el código** y recién entonces lo lleva al README público.
 
-Flujo de cada bloque de trabajo: (1) memoria de Claude al día → (2) nueva entrada acá → (3) agente
-`documentation-engineer` actualiza el `README.md` raíz → (4) commits en `develop`.
+Flujo de cada bloque de trabajo: (1) memoria de Claude al día → (2) nueva entrada acá → (3) contexto de
+agentes al día en [`context/README.md`](context/README.md) → (4) agente `documentation-engineer` actualiza el
+`README.md` raíz → (5) commits en `develop`.
 
 Convenciones de esta bitácora: una entrada por bloque de trabajo, fechada; no se reescriben entradas
 viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada separa *hecho*,
