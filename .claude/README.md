@@ -18,6 +18,52 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-21 (6) — Ronda de `cybersecurity-orchestrator` sobre los cambios de la entrada (5)
+
+### Contexto
+
+El usuario pidió una nueva ronda con `cybersecurity-orchestrator` sobre lo agregado en la entrada (5) (qpdf, auditor único,
+modos por tenedor, migración con lock, `read_only`). Veredicto del agente: **PASS** (sin Critical/High), 1 Medium, 6 Low.
+Se corrigió todo lo accionable. Flujo de ramas acordado: `develop` → PR a `testing` → PR a producción (`master`).
+Esta entrada **corrige** una afirmación de la (5): qpdf **sí** descomprime en memoria los object streams.
+
+### Hecho
+
+- **M1 (Medium) — bomba de descompresión**: `--json-stream-data=none` no evita que qpdf descomprima entero un `/ObjStm`
+  (medido: 82 KB → 137 MB de RSS; un PDF de 5 MB llega a varios GB) y qpdf 12 no tiene tope de tamaño descomprimido.
+  Ahora cada qpdf corre por `/bin/sh` con `ulimit -v 192 MB` y `ulimit -f 32 MB`, **un solo qpdf a la vez** por réplica y
+  espera en cola de 10 s (después 429), JSON ≤ 8 MB. Con el límite qpdf no falla: atrapa el `bad_alloc`, avisa y sigue sin ese
+  flujo (código 3); por eso se rechaza explícitamente cualquier `bad_alloc`/«error decoding stream data» en stderr. El límite
+  solo aplica donde hay `/bin/sh` (contenedores Linux); en Windows (desarrollo) no.
+- **L1**: se rechazan también `/URI`, `/Named`, `/ResetForm`, `/GoToDp`, `/SetOCGState`; y lo que se va a guardar se
+  **vuelve a inspeccionar** (defensa en profundidad).
+- **L2**: propiedad y estado se validan **antes** de recibir y sanear el archivo (`assertDocumentUploadAllowed`, un SELECT):
+  un tercero o una devolución ya enviada no gastan CPU/RAM de qpdf. Cola con cupo transferido directo (sin carrera).
+- **L3**: `closeInventoryCount` autoriza antes de tomar el lock de la cabecera (403 antes que 409).
+- **L4**: `sendAssetReturn` vuelve a exigir el modo OWN/OTHERS; un activo que cambió de tenedor se lista y no se envía.
+- **L5**: `GET /inventory-counts/:id/lookup` con límite de 120/min por usuario; las líneas, el informe, el PDF y las etiquetas
+  de una toma **abierta** solo las lee su auditor o un admin (traen RUT). El front no las pide si no es el auditor.
+- **L6**: cualquier usuario del último movimiento cuenta como tenedor para el modo (antes solo el primero).
+- **Migración (Info)**: `runDdl` consulta el catálogo antes de `ADD COLUMN IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`
+  (piden lock de tabla aunque el objeto exista y encolaban tráfico en cada reinicio en caliente).
+
+### Verificación
+
+API 243 tests en verde, `tsc` limpio (API y front), ESLint y 68 tests del front. En **Testing** (imagen reconstruida): una
+bomba que expande a 80 y a 150 MB se rechaza en ~120 ms sin OOM ni reinicios; un PDF normal y uno con object streams
+comprimidos legítimos se aceptan; JavaScript, basura y polyglot se comportan igual; las 3 réplicas arrancan sin errores.
+
+### Riesgos que siguen
+
+- El agente supone (no probó) que un `idle_in_transaction_session_timeout` en el servidor real mataría la transacción que
+  sostiene el lock de migración; no hay tal parámetro en el repo.
+- Exploits en el decodificador de imágenes/fuentes del lector (JBIG2, JPX) no los cubre ningún saneado estructural.
+- La lectura del RUT del tenedor en `lookup` sigue disponible para el auditor (lo necesita el formulario), ahora con límite.
+- Los PR a `testing`/`master` se fusionan en GitHub y el hook local `pre-push` no corre ahí: para exigir esta revisión hace
+  falta protección de rama en GitHub (checks/aprobaciones obligatorias).
+
+---
+
 ## 2026-09-21 (5) — Cierre de los riesgos abiertos de la revisión de seguridad
 
 ### Contexto
