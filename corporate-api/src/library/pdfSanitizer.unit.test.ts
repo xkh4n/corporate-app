@@ -20,7 +20,7 @@ describe("findActiveContent (arbol de qpdf --json)", () => {
     for (const key of ["/JS", "/JavaScript", "/EF", "/EmbeddedFiles", "/RichMedia", "/XFA", "/Launch", "/GoToR", "/GoToE"]) {
       expect(findActiveContent({ value: { [key]: "u:x" } }), key).not.toBeNull();
     }
-    for (const value of ["/JavaScript", "/Launch", "/SubmitForm", "/ImportData", "/FileAttachment", "/EmbeddedFile", "/Sound", "/3D"]) {
+    for (const value of ["/JavaScript", "/Launch", "/SubmitForm", "/ImportData", "/FileAttachment", "/EmbeddedFile", "/Sound", "/3D", "/URI", "/Named", "/ResetForm", "/GoToDp", "/SetOCGState"]) {
       expect(findActiveContent({ value: { "/S": value } }), value).not.toBeNull();
       expect(findActiveContent([[value]]), value).not.toBeNull();
     }
@@ -78,6 +78,13 @@ describe.skipIf(!qpdfAvailable)("sanitizePdf (qpdf real)", () => {
     await expect(sanitizePdf(embedded)).rejects.toThrow(/contenido activo/);
     const remote = buildPdf(["<< /S /GoToR /F (otro.pdf) /D [0 /Fit] >>"], "/OpenAction 5 0 R");
     await expect(sanitizePdf(remote)).rejects.toThrow(/contenido activo/);
+  });
+
+  it("rechaza hipervinculos y acciones de navegacion (URI, Named)", async () => {
+    const link = buildPdf(["<< /S /URI /URI (http://phishing.example) >>"], "/OpenAction 5 0 R");
+    await expect(sanitizePdf(link)).rejects.toThrow(/contenido activo/);
+    const named = buildPdf(["<< /S /Named /N /Print >>"], "/OpenAction 5 0 R");
+    await expect(sanitizePdf(named)).rejects.toThrow(/contenido activo/);
   });
 
   it("acepta un PDF cifrado con contrasena de usuario vacia y lo entrega descifrado", async () => {

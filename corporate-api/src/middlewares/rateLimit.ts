@@ -95,6 +95,15 @@ export const holderLookupRateLimiter = createLazyUserLimiter({
   message: "Demasiadas consultas de colaboradores, intenta mas tarde",
 });
 
+// Consulta de un equipo por TAG/serie en la toma: devuelve tenedor (con RUT); los TAG son correlativos y sin
+// freno se podian recorrer para enumerar personas.
+export const assetLookupRateLimiter = createLazyUserLimiter({
+  prefix: "rl:invlookup:",
+  windowMs: 60 * 1000,
+  limit: 120,
+  message: "Demasiadas consultas de equipos, intenta mas tarde",
+});
+
 export function loginRateLimiter(req: Request, res: Response, next: NextFunction): void {
   getLimiter()(req, res, next);
 }

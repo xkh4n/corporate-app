@@ -2,7 +2,7 @@ import { Router } from "express";
 import * as inventoryCountController from "../controllers/inventoryCount.controller";
 import { authenticate } from "../middlewares/authenticate";
 import { authorize } from "../middlewares/authorize";
-import { holderLookupRateLimiter } from "../middlewares/rateLimit";
+import { assetLookupRateLimiter, holderLookupRateLimiter } from "../middlewares/rateLimit";
 import { validateBody } from "../middlewares/validate";
 
 export const inventoryCountRouter = Router();
@@ -28,7 +28,12 @@ inventoryCountRouter.get("/", authorize("inventory-counts", "read"), inventoryCo
 inventoryCountRouter.get("/:id", authorize("inventory-counts", "read"), inventoryCountController.getById);
 
 // Captura: escanear/ingresar equipos mientras la toma esta OPEN.
-inventoryCountRouter.get("/:id/lookup", authorize("inventory-counts", "create"), inventoryCountController.lookup);
+inventoryCountRouter.get(
+  "/:id/lookup",
+  authorize("inventory-counts", "create"),
+  assetLookupRateLimiter,
+  inventoryCountController.lookup,
+);
 inventoryCountRouter.get("/:id/lines", authorize("inventory-counts", "read"), inventoryCountController.listLines);
 inventoryCountRouter.post(
   "/:id/lines",

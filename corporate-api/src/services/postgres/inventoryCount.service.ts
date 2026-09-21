@@ -96,6 +96,12 @@ function assertAuditor(count: InventoryCountModel, actor: InventoryCountActor, a
   }
 }
 
+// Lectura de las lineas/informe/etiquetas de una toma ABIERTA: solo el auditor o un admin (trae RUT y el detalle
+// de lo que se esta ingresando). Una toma cerrada la puede leer quien tenga inventory-counts:read.
+export function assertCanReadOpenCount(count: InventoryCountModel, actor: InventoryCountActor): void {
+  if (count.status === "OPEN") assertAuditor(count, actor, "ver sus equipos mientras está abierta");
+}
+
 // Lee la cabecera con un lock de fila DENTRO de la transaccion y exige que siga
 // OPEN. SHARE para agregar/editar lineas (no se bloquean entre si), UPDATE para cerrar: el
 // cierre espera a las escrituras en curso y las escrituras posteriores ven la toma ya CLOSED.
@@ -592,7 +598,8 @@ export async function closeInventoryCount(
   actor: InventoryCountActor,
 ): Promise<{ count: InventoryCountModel; createdAssetIds: number[] }> {
   const closedBy = actor.userId;
-  await getInventoryCountByIdOrThrow(countId);
+  // Antes de tomar el lock UPDATE de la cabecera: un tercero no debe bloquearla ni enterarse de su estado.
+  assertAuditor(await getInventoryCountByIdOrThrow(countId), actor, "cerrarla");
 
   return postgres.transaction(async (transaction) => {
     const count = await lockOpenCount(countId, transaction, "UPDATE");

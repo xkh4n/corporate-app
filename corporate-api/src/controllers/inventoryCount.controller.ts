@@ -161,13 +161,21 @@ export async function lookup(req: Request, res: Response, next: NextFunction): P
   }
 }
 
+// Lineas, informe y etiquetas de una toma ABIERTA: solo el auditor o un admin (traen RUT y lo que se esta
+// ingresando). Una toma cerrada la lee quien tenga inventory-counts:read.
+async function assertCanReadCount(req: Request, countId: number): Promise<void> {
+  inventoryCountService.assertCanReadOpenCount(await inventoryCountService.getInventoryCountByIdOrThrow(countId), requireActor(req));
+}
+
 export async function listLines(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const params = parsePaginationParams({ ...req.query, ...req.body }, "id", "asc", {
       allowedSortBy: ["id", "createdAt"],
       maxLimit: 1000,
     });
-    const { items, total } = await inventoryCountService.listInventoryLines(parseId(req.params.id, "Id de toma"), params);
+    const countId = parseId(req.params.id, "Id de toma");
+    await assertCanReadCount(req, countId);
+    const { items, total } = await inventoryCountService.listInventoryLines(countId, params);
     sendList(res, items, buildPaginationMeta(params, total), "Equipos de la toma obtenidos exitosamente");
   } catch (err) {
     next(err);
@@ -232,9 +240,9 @@ export async function close(req: Request, res: Response, next: NextFunction): Pr
 
 export async function report(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { count, auditor, summary, lines, missingAssets } = await inventoryCountService.getInventoryCountReport(
-      parseId(req.params.id, "Id de toma"),
-    );
+    const countId = parseId(req.params.id, "Id de toma");
+    await assertCanReadCount(req, countId);
+    const { count, auditor, summary, lines, missingAssets } = await inventoryCountService.getInventoryCountReport(countId);
     sendOk(res, { count, auditor, summary, lines, missingAssets }, "Reporte de toma obtenido exitosamente");
   } catch (err) {
     next(err);
@@ -244,9 +252,9 @@ export async function report(req: Request, res: Response, next: NextFunction): P
 // PDF al vuelo, mismo criterio que downloadHandover en assetMovement.controller.ts.
 export async function downloadReportPdf(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { count, auditor, summary, lines, missingAssets } = await inventoryCountService.getInventoryCountReport(
-      parseId(req.params.id, "Id de toma"),
-    );
+    const countId = parseId(req.params.id, "Id de toma");
+    await assertCanReadCount(req, countId);
+    const { count, auditor, summary, lines, missingAssets } = await inventoryCountService.getInventoryCountReport(countId);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="inventario-${count.number}.pdf"`);
     const doc = renderInventoryCountReportPdf({
@@ -277,7 +285,9 @@ export async function downloadLabels(req: Request, res: Response, next: NextFunc
       throw new BadRequestError("Configuracion de etiqueta invalida", parsedConfig.error.flatten());
     }
     const config: AssetLabelConfig = { ...ASSET_LABEL_DEFAULT_CONFIG, ...parsedConfig.data };
-    const items = await inventoryCountService.getCreatedAssetLabelData(parseId(req.params.id, "Id de toma"));
+    const countId = parseId(req.params.id, "Id de toma");
+    await assertCanReadCount(req, countId);
+    const items = await inventoryCountService.getCreatedAssetLabelData(countId);
     if (items.length === 0) throw new BadRequestError("La toma no creo activos nuevos, no hay etiquetas que imprimir");
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="etiquetas.txt"`);

@@ -16,9 +16,13 @@ import { AppError, BadRequestError } from "./errors";
 //     estructura y xref reconstruidos, sin basura antes/despues (polyglots) ni
 //     cifrado. Como es el mismo analisis, lo revisado es lo entregado.
 //
-// qpdf no descomprime los flujos (--json-stream-data=none) ni escribe archivos
-// grandes: una zip bomb no le cuesta memoria ni disco. Sin qpdf disponible la
-// subida se rechaza (falla cerrada): nunca se guarda un PDF sin verificar.
+// OJO con las zip bombs: --json-stream-data=none evita volcar los datos de los flujos normales, pero para
+// listar y reescribir los objetos que viven en un object stream qpdf tiene que descomprimirlo ENTERO en memoria
+// (medido: 82 KB de PDF -> 137 MB de RSS; 5 MB -> varios GB) y qpdf 12 no trae un limite de tamano descomprimido.
+// Por eso cada qpdf corre con limites del sistema operativo (ulimit: memoria virtual y tamano de archivo
+// escrito): una bomba hace fallar a qpdf (bad_alloc / SIGXFSZ) y la subida se rechaza, sin tocar al resto del
+// contenedor. Los limites solo aplican donde hay /bin/sh (Linux: contenedores); en Windows (desarrollo) no.
+// Sin qpdf disponible la subida se rechaza (falla cerrada): nunca se guarda un PDF sin verificar.
 
 // Claves de diccionario que habilitan contenido activo: JavaScript, archivos
 // incrustados, multimedia, formularios XFA y saltos a otros archivos.
@@ -46,6 +50,11 @@ const ACTIVE_VALUES = new Set([
   "/SubmitForm",
   "/ImportData",
   "/Rendition",
+  "/URI",
+  "/Named",
+  "/ResetForm",
+  "/GoToDp",
+  "/SetOCGState",
   "/Movie",
   "/Sound",
   "/RichMedia",
@@ -55,10 +64,15 @@ const ACTIVE_VALUES = new Set([
   "/XFA",
 ]);
 
-const MAX_JSON_BYTES = 16 * 1024 * 1024;
+const MAX_JSON_BYTES = 8 * 1024 * 1024;
 const MAX_DEPTH = 200;
 const QPDF_TIMEOUT_MS = 15_000;
-const MAX_CONCURRENT_QPDF = 2;
+// Un solo qpdf a la vez por replica (contenedor de 512 MB) y espera acotada: mas alla, 429.
+const MAX_CONCURRENT_QPDF = 1;
+const QUEUE_WAIT_MS = 10_000;
+// Limites por proceso qpdf: memoria virtual (KB) y tamano de archivo escrito (bloques de 512 B = 32 MB).
+const QPDF_ADDRESS_SPACE_KB = 196_608;
+const QPDF_MAX_FILE_BLOCKS = 65_536;
 
 const ACTIVE_REASON = "El PDF contiene contenido activo (JavaScript, archivos incrustados u otros)";
 
@@ -102,10 +116,17 @@ interface QpdfResult {
 }
 
 function runQpdf(args: string[]): Promise<QpdfResult> {
+  // En Linux qpdf se lanza via /bin/sh con ulimit (ver el comentario de arriba); "exec" lo reemplaza, asi que
+  // el proceso que recibe el timeout/SIGKILL es el propio qpdf.
+  const limited = process.platform !== "win32";
+  const file = limited ? "/bin/sh" : qpdfBinary();
+  const argv = limited
+    ? ["-c", `ulimit -v ${QPDF_ADDRESS_SPACE_KB}; ulimit -f ${QPDF_MAX_FILE_BLOCKS}; exec "$0" "$@"`, qpdfBinary(), ...args]
+    : args;
   return new Promise((resolve, reject) => {
     execFile(
-      qpdfBinary(),
-      args,
+      file,
+      argv,
       {
         timeout: QPDF_TIMEOUT_MS,
         killSignal: "SIGKILL",
@@ -115,13 +136,21 @@ function runQpdf(args: string[]): Promise<QpdfResult> {
         // Entorno minimo: qpdf no necesita nada mas que el PATH.
         env: { PATH: process.env.PATH ?? "", SystemRoot: process.env.SystemRoot ?? "" },
       },
-      (err, stdout) => {
+      (err, stdout, stderr) => {
+        // Con el limite de memoria qpdf NO falla: atrapa el bad_alloc al descomprimir un flujo, avisa (WARNING, codigo
+        // 3) y sigue sin ese contenido. Lo que se guarda ya no traeria la carga, pero un PDF que no se pudo leer entero
+        // no se acepta: se rechaza explicitamente en vez de guardar uno incompleto.
+        if (/bad_alloc|error decoding stream data/i.test(stderr)) {
+          reject(new BadRequestError("El PDF es demasiado complejo o pesado para verificarlo"));
+          return;
+        }
         if (!err) {
           resolve({ code: 0, stdout });
           return;
         }
-        const failure = err as NodeJS.ErrnoException & { code?: string | number; killed?: boolean };
-        if (failure.code === "ENOENT") {
+        const failure = err as Error & { code?: string | number; killed?: boolean };
+        // 127 = el shell no encontro el binario de qpdf.
+        if (failure.code === "ENOENT" || failure.code === 127) {
           reject(new QpdfUnavailableError());
           return;
         }
@@ -137,21 +166,61 @@ function runQpdf(args: string[]): Promise<QpdfResult> {
   });
 }
 
-// Cola simple: cada qpdf es un proceso aparte y el contenedor tiene 512 MB.
+// Cola: cada qpdf es un proceso aparte y el contenedor tiene 512 MB. Al liberar, el cupo pasa DIRECTO al
+// siguiente en espera (running no cambia), asi nunca hay mas de MAX_CONCURRENT_QPDF. Una espera larga se
+// rechaza con 429 en vez de dejar subidas colgadas.
 let running = 0;
-const waiting: (() => void)[] = [];
+const waiting: { grant: () => void }[] = [];
+
+async function acquireSlot(): Promise<void> {
+  if (running < MAX_CONCURRENT_QPDF) {
+    running += 1;
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const entry = {
+      grant: () => {
+        clearTimeout(timer);
+        resolve();
+      },
+    };
+    const timer = setTimeout(() => {
+      const index = waiting.indexOf(entry);
+      if (index >= 0) waiting.splice(index, 1);
+      reject(new AppError(429, "Hay demasiadas verificaciones de PDF en curso, intente nuevamente en unos segundos"));
+    }, QUEUE_WAIT_MS);
+    waiting.push(entry);
+  });
+}
+
+function releaseSlot(): void {
+  const next = waiting.shift();
+  if (next) next.grant();
+  else running -= 1;
+}
 
 async function withQpdfSlot<T>(task: () => Promise<T>): Promise<T> {
-  if (running >= MAX_CONCURRENT_QPDF) {
-    await new Promise<void>((resolve) => waiting.push(resolve));
-  }
-  running += 1;
+  await acquireSlot();
   try {
     return await task();
   } finally {
-    running -= 1;
-    waiting.shift()?.();
+    releaseSlot();
   }
+}
+
+// Arbol de objetos del archivo (qpdf --json) -> motivo de rechazo o null.
+async function inspectFile(source: string): Promise<string | null> {
+  const json = await runQpdf(["--json=2", "--json-stream-data=none", "--decrypt", source]);
+  if (json.code !== 0 && json.code !== 3) {
+    throw new BadRequestError("El PDF está dañado, protegido con contraseña o no se puede verificar");
+  }
+  let tree: unknown;
+  try {
+    tree = JSON.parse(json.stdout);
+  } catch {
+    throw new BadRequestError("El PDF no se puede verificar");
+  }
+  return findActiveContent(tree);
 }
 
 export async function sanitizePdf(input: Buffer): Promise<Buffer> {
@@ -163,17 +232,7 @@ export async function sanitizePdf(input: Buffer): Promise<Buffer> {
       await writeFile(source, input, { mode: 0o600 });
 
       // 1) Arbol de objetos (sin datos de flujo) para inspeccionar.
-      const json = await runQpdf(["--json=2", "--json-stream-data=none", "--decrypt", source]);
-      if (json.code !== 0 && json.code !== 3) {
-        throw new BadRequestError("El PDF está dañado, protegido con contraseña o no se puede verificar");
-      }
-      let tree: unknown;
-      try {
-        tree = JSON.parse(json.stdout);
-      } catch {
-        throw new BadRequestError("El PDF no se puede verificar");
-      }
-      const reason = findActiveContent(tree);
+      const reason = await inspectFile(source);
       if (reason) throw new BadRequestError(`${reason}: no se acepta`);
 
       // 2) Reescritura: es lo que se guarda.
@@ -181,6 +240,9 @@ export async function sanitizePdf(input: Buffer): Promise<Buffer> {
       if (rewrite.code !== 0 && rewrite.code !== 3) {
         throw new BadRequestError("El PDF está dañado o no se puede procesar");
       }
+      // 3) Defensa en profundidad: lo que se va a guardar se inspecciona igual que lo subido.
+      const reasonAfter = await inspectFile(output);
+      if (reasonAfter) throw new BadRequestError(`${reasonAfter}: no se acepta`);
       const clean = await readFile(output);
       if (clean.subarray(0, 5).toString("latin1") !== "%PDF-") {
         throw new BadRequestError("El PDF no se puede procesar");

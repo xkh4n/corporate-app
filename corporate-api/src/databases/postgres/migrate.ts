@@ -39,7 +39,33 @@ async function assertIndexExists(indexName: string): Promise<void> {
   }
 }
 
+// "ADD COLUMN IF NOT EXISTS" y "CREATE INDEX IF NOT EXISTS" piden el lock de la tabla ANTES de comprobar que el
+// objeto ya existe (ADD COLUMN: ACCESS EXCLUSIVE; CREATE INDEX: SHARE, que bloquea escrituras). En un reinicio en
+// caliente, con otras replicas sirviendo trafico, cada arranque encolaba trafico por nada: se consulta el catalogo
+// primero y solo se ejecuta el DDL si falta.
+async function alreadyApplied(sql: string): Promise<boolean> {
+  const column = /ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+(\w+)/i.exec(sql);
+  if (column) {
+    const rows = await postgres.query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = :table AND column_name = :column`,
+      { replacements: { table: column[1], column: column[2] }, type: QueryTypes.SELECT },
+    );
+    return rows.length > 0;
+  }
+  const index = /CREATE\s+(?:UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS\s+(\w+)/i.exec(sql);
+  if (index) {
+    const rows = await postgres.query(`SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND indexname = :name`, {
+      replacements: { name: index[1] },
+      type: QueryTypes.SELECT,
+    });
+    return rows.length > 0;
+  }
+  return false;
+}
+
 async function runDdl(sql: string): Promise<void> {
+  if (await alreadyApplied(sql)) return;
   try {
     // Cada DDL en su propia transaccion para acotar la espera de locks con SET LOCAL (solo vale dentro de ella:
     // no cambia la sesion de la conexion, que vuelve al pool). Ningun DDL de este archivo es CONCURRENTLY.

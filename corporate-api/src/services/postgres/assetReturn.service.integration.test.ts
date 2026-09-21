@@ -17,6 +17,7 @@ import { addInventoryLine, lookupAsset, startInventoryCount } from "./inventoryC
 import type { AssetReturnActor } from "../../types/postgres/assetReturn.types";
 import {
   addAssetReturnLines,
+  assertDocumentUploadAllowed,
   attachAssetReturnDocument,
   cancelAssetReturn,
   createAssetReturn,
@@ -635,5 +636,58 @@ describe("modos por tenedor: mis equipos / equipos de otro usuario", () => {
     const admin = await listReturnCandidates({ scope: "OTHERS", costCenterId: catalog.costCenter.id, actor: actorOf(requester, true) }, page);
     expect(admin.total).toBe(2);
     await expect(listReturnCandidates({ scope: "OTHERS", actor }, page)).rejects.toBeInstanceOf(BadRequestError);
+  });
+});
+
+describe("revalidaciones de la ronda de seguridad 3", () => {
+  it("el chequeo previo a la subida rechaza a un tercero, una devolucion enviada y una inexistente", async () => {
+    const { requester, id } = await draftWithDocument();
+    const stranger = await createFixtureUser();
+
+    await expect(assertDocumentUploadAllowed(id, actorOf(requester))).resolves.toBeUndefined();
+    await expect(assertDocumentUploadAllowed(id, actorOf(stranger))).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(assertDocumentUploadAllowed(999999, actorOf(requester))).rejects.toBeInstanceOf(NotFoundError);
+    await sendAssetReturn(id, actorOf(requester));
+    await expect(assertDocumentUploadAllowed(id, actorOf(requester))).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("enviar vuelve a exigir el modo: un activo de 'mis equipos' reasignado a otro se lista y no se envia", async () => {
+    const requester = await createFixtureUser();
+    const other = await createFixtureUser();
+    const catalog = await createFixtureCatalog();
+    const mine = await createAssignedAsset(catalog, "SN-R3-OWN", requester.id);
+    const draft = await createAssetReturn({ scope: "OWN", assetIds: [mine.id], requestedBy: requester.id });
+    await attach(draft.id, actorOf(requester));
+
+    // Otro actor lo reasigna entre el borrador y el envio.
+    await createAssetMovement({ assetId: mine.id, movementType: "REASSIGNED", userIds: [other.id], createdBy: other.id });
+
+    await expect(sendAssetReturn(draft.id, actorOf(requester))).rejects.toThrow(/cambió de tenedor/);
+    expect(await statusOf(mine.tag)).toBe("ASSIGNED");
+    expect((await getAssetReturnDetail(draft.id)).status).toBe("DRAFT");
+  });
+
+  it("un movimiento con varios usuarios: cualquiera de ellos es tenedor a efectos del modo", async () => {
+    const requester = await createFixtureUser();
+    const first = await createFixtureUser();
+    const catalog = await createFixtureCatalog();
+    const [asset] = await createAssetsFromReceipt({
+      goodsReceiptId: 990000 + ++seq,
+      productId: catalog.productId,
+      quantity: 1,
+      costCenterId: catalog.costCenter.id,
+      serialNumbers: ["SN-R3-SHARED"],
+      finalStatusCode: "AVAILABLE",
+    });
+    // El solicitante es el SEGUNDO usuario del movimiento (co-asignatario).
+    await createAssetMovement({ assetId: asset!.id, movementType: "ASSIGNED", userIds: [first.id, requester.id], createdBy: first.id });
+
+    await expect(
+      createAssetReturn({ scope: "OTHERS", costCenterId: catalog.costCenter.id, assetIds: [asset!.id], requestedBy: requester.id }),
+    ).rejects.toBeInstanceOf(ConflictError);
+    const own = await createAssetReturn({ scope: "OWN", assetIds: [asset!.id], requestedBy: requester.id });
+    expect(own.lineCount).toBe(1);
+    const others = await listReturnCandidates(othersOf(requester, catalog.costCenter.id), { page: 1, limit: 10, sortBy: "tag", sortOrder: "asc" });
+    expect(others.total).toBe(0);
   });
 });

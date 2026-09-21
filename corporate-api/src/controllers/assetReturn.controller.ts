@@ -155,6 +155,16 @@ export async function uploadDocument(req: Request, res: Response, next: NextFunc
   }
 }
 
+// Va ANTES de uploadSingle en la ruta (ver assertDocumentUploadAllowed).
+export async function precheckDocumentUpload(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    await assetReturnService.assertDocumentUploadAllowed(parseId(req.params.id, "Id de devolución"), requireActor(req));
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
 // La guia se entrega SOLO como descarga (attachment): no se abre en el visor del navegador. Ademas
 // es la reescritura de qpdf, ya sin contenido activo (library/pdfSanitizer.ts).
 export async function downloadDocument(req: Request, res: Response, next: NextFunction): Promise<void> {

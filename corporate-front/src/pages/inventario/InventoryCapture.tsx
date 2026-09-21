@@ -89,6 +89,11 @@ export function InventoryCapture({ count, onClosed }: { count: InventoryCountDet
   const scanInputRef = useRef<HTMLInputElement>(null);
 
   async function loadLines(): Promise<void> {
+    // Las lineas de una toma abierta solo las lee su auditor (el servidor responde 403 al resto).
+    if (!isAuditor) {
+      setLoadingLines(false);
+      return;
+    }
     try {
       const res = await inventoryCountService.listLines(count.id, { limit: 1000, sortBy: "id", sortOrder: "desc" });
       setLines(res.items);

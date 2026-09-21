@@ -14,6 +14,7 @@ import { assignAssetToUser, createAssetMovement, listCurrentHoldersByAssetIds } 
 import { InventoryCountModel } from "../../models/postgres/inventoryCount.model";
 import type { InventoryCountActor, UpdateInventoryLineInput } from "../../types/postgres/inventoryCount.types";
 import * as inventoryCountService from "./inventoryCount.service";
+import { assertCanReadOpenCount } from "./inventoryCount.service";
 import {
   closeInventoryCount,
   getCreatedAssetLabelData,
@@ -752,5 +753,30 @@ describe("solo el auditor de la toma la modifica", () => {
     await expect(
       addInventoryLine(count.id, byTag(catalog, asset.tag, { createdBy: auditor.id }), actorOf(auditor)),
     ).rejects.toBeInstanceOf(ConflictError);
+  });
+});
+
+describe("revalidaciones de la ronda de seguridad 3", () => {
+  it("cerrar: el tercero recibe 403 aunque la toma ya este cerrada (no se entera del estado)", async () => {
+    const auditor = await createFixtureUser();
+    const stranger = await createFixtureUser();
+    const { count } = await startInventoryCount({ createdBy: auditor.id });
+    await closeInventoryCount(count.id, actorOf(auditor));
+
+    await expect(closeInventoryCount(count.id, actorOf(stranger))).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(closeInventoryCount(count.id, actorOf(auditor))).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("las lineas, el informe y las etiquetas de una toma ABIERTA solo las lee su auditor o un admin", async () => {
+    const auditor = await createFixtureUser();
+    const stranger = await createFixtureUser();
+    const { count } = await startInventoryCount({ createdBy: auditor.id });
+
+    expect(() => assertCanReadOpenCount(count, actorOf(stranger))).toThrow(ForbiddenError);
+    expect(() => assertCanReadOpenCount(count, actorOf(auditor))).not.toThrow();
+    expect(() => assertCanReadOpenCount(count, actorOf(stranger, true))).not.toThrow();
+
+    const closed = await closeInventoryCount(count.id, actorOf(auditor));
+    expect(() => assertCanReadOpenCount(closed.count, actorOf(stranger))).not.toThrow();
   });
 });

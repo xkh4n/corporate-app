@@ -56,17 +56,28 @@ const NOT_IN_ACTIVE_RETURN = literal(
 // Condicion SQL "el tenedor vigente del activo es este usuario": primer usuario del ULTIMO movimiento, si ese
 // movimiento lleva tenedor. Misma regla que listCurrentHoldersByAssetIds, pero evaluable dentro de un filtro
 // (los candidatos se filtran y paginan en la BD). userId se valida como entero: va interpolado.
-function heldBySql(userId: number): string {
+function heldBySql(userId: number, assetIdSql = '"AssetModel"."id"'): string {
   if (!Number.isInteger(userId)) throw new BadRequestError("Usuario invalido");
+  if (assetIdSql !== '"AssetModel"."id"' && !/^\d+$/.test(assetIdSql)) throw new BadRequestError("Activo invalido");
   const types = [...MOVEMENT_TYPES_REQUIRING_USERS].map((type) => `'${type}'`).join(", ");
   return `EXISTS (
        SELECT 1 FROM asset_movements m
          JOIN asset_movement_users mu ON mu.asset_movement_id = m.id
-        WHERE m.id = (SELECT m2.id FROM asset_movements m2 WHERE m2.asset_id = "AssetModel"."id"
+        WHERE m.id = (SELECT m2.id FROM asset_movements m2 WHERE m2.asset_id = ${assetIdSql}
                        ORDER BY m2.movement_date DESC, m2.id DESC LIMIT 1)
           AND m.movement_type IN (${types})
-          AND mu.id = (SELECT MIN(mu2.id) FROM asset_movement_users mu2 WHERE mu2.asset_movement_id = m.id)
           AND mu.user_id = ${userId})`;
+}
+
+// Un movimiento puede asignar a varios usuarios: cualquiera de ellos es tenedor a estos efectos (el "tenedor"
+// unico que se guarda en la linea es el primero, ver listCurrentHoldersByAssetIds).
+async function isHeldBy(assetId: number, userId: number | null, transaction: Transaction): Promise<boolean> {
+  if (userId === null) return false;
+  const rows = await postgres.query<{ held: boolean }>(`SELECT ${heldBySql(userId, String(assetId))} AS held`, {
+    type: QueryTypes.SELECT,
+    transaction,
+  });
+  return rows[0]?.held === true;
 }
 
 // Borradores abiertos por solicitante: un borrador reserva sus activos (indice unico de lineas activas),
@@ -183,22 +194,21 @@ export async function listReturnCandidates(
 // define el activo (no se elige ni se cambia); en "equipos de otro usuario" (OTHERS) el activo no puede ser del
 // solicitante: sus propios equipos se devuelven por OWN. Un administrador queda exento. El servidor es quien manda:
 // el front solo filtra la lista.
-function assertHolderScope(
+async function holderScopeViolation(
   assetReturn: AssetReturnModel,
-  tag: string,
-  holderUserId: number | null,
+  asset: { id: number; tag: string },
   actor: AssetReturnActor,
-): void {
-  if (actor.isAdmin) return;
-  const isOwn = holderUserId !== null && holderUserId === assetReturn.requestedBy;
+  transaction: Transaction,
+): Promise<string | null> {
+  if (actor.isAdmin) return null;
+  const isOwn = await isHeldBy(asset.id, assetReturn.requestedBy, transaction);
   if (assetReturn.holderScope === "OWN" && !isOwn) {
-    throw new ConflictError(`El activo ${tag} no está asignado a usted: use la devolución de equipos de otro usuario`);
+    return `El activo ${asset.tag} no está asignado a usted: use la devolución de equipos de otro usuario`;
   }
   if (assetReturn.holderScope === "OTHERS" && isOwn) {
-    throw new ConflictError(
-      `El activo ${tag} está asignado a usted: devuélvalo como «mis equipos» (el centro de costo lo define el activo)`,
-    );
+    return `El activo ${asset.tag} está asignado a usted: devuélvalo como «mis equipos» (el centro de costo lo define el activo)`;
   }
+  return null;
 }
 
 // Agrega activos a un borrador dentro de la transaccion de quien llama. Cada
@@ -232,7 +242,8 @@ async function addLines(
 
     // Leido DESPUES de bloquear el activo: una reasignacion concurrente ya no puede dejar un tenedor viejo.
     const holderUserId = (await listCurrentHoldersByAssetIds([assetId], transaction)).get(assetId) ?? null;
-    assertHolderScope(assetReturn, asset.tag, holderUserId, actor);
+    const violation = await holderScopeViolation(assetReturn, asset, actor, transaction);
+    if (violation) throw new ConflictError(violation);
 
     const other = await AssetReturnLineModel.findOne({
       where: { assetId, active: true },
@@ -372,6 +383,16 @@ export async function removeAssetReturnLine(
 
 // ---- Guia de despacho -------------------------------------------------------
 
+// Chequeo BARATO previo a la subida (sin lock): la ruta lo corre ANTES de recibir y sanear el archivo, para que un
+// tercero o una devolucion que ya no es borrador no gasten CPU/RAM de qpdf. La validacion definitiva sigue siendo la
+// de attachAssetReturnDocument, bajo lock.
+export async function assertDocumentUploadAllowed(id: number, actor: AssetReturnActor): Promise<void> {
+  const assetReturn = await AssetReturnModel.findByPk(id);
+  if (!assetReturn) throw new NotFoundError(`La devolución ${id} no existe`);
+  assertCanModify(assetReturn, actor);
+  assertStatus(assetReturn, "DRAFT", "adjuntar la guía");
+}
+
 // Adjunta (o reemplaza, mientras siga en borrador) la guia. La primera vez
 // asigna el codigo, que es tambien el nombre del archivo:
 // DEV<centro><aaaammddHHmmssSSS>.pdf. El UPDATE con el codigo va ANTES de
@@ -467,6 +488,9 @@ export async function sendAssetReturn(id: number, actor: AssetReturnActor): Prom
         problems.push(`${asset.tag} (estado actual: ${statusCode || "desconocido"})`);
       } else if (asset.costCenterId !== assetReturn.costCenterId) {
         problems.push(`${asset.tag} (cambió de centro de costo)`);
+      } else if (await holderScopeViolation(assetReturn, asset, actor, transaction)) {
+        // Cambio de tenedor desde que se armo el borrador (p. ej. una toma de inventario lo reasigno).
+        problems.push(`${asset.tag} (cambió de tenedor y ya no corresponde a esta devolución)`);
       } else {
         // El tenedor que queda registrado es el del momento del DESPACHO: pudo reasignarse desde que
         // se agrego al borrador.

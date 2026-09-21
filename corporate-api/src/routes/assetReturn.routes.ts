@@ -37,7 +37,9 @@ assetReturnRouter.delete("/:id/lines/:lineId", authorize("asset-returns", "creat
 assetReturnRouter.post(
   "/:id/document",
   authorize("asset-returns", "create"),
-  // La guia se imprime y se abre en el visor: PDF sin contenido activo.
+  // Propiedad y estado ANTES de recibir y sanear el archivo (qpdf es caro): un tercero no gasta CPU/RAM.
+  assetReturnController.precheckDocumentUpload,
+  // La guia se descarga y se abre en el equipo de Adquisiciones: PDF sin contenido activo, reescrito por qpdf.
   uploadSingle("file", { sanitizePdf: true, maxFileSizeBytes: MAX_GUIDE_SIZE_BYTES }),
   assetReturnController.uploadDocument,
 );
