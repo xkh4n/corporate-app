@@ -18,6 +18,104 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-21 (10) — Ronda de `cybersecurity-orchestrator` sobre la carga masiva de activos y su endurecimiento
+
+### Contexto
+Revisión de solo lectura de la entrada (9) (plan 005). Veredicto **PASS con observaciones**: 0 Critical/High, 1 Medium,
+9 Low y 8 Info; por la regla del propietario (cerrar incluso lo menor) se corrigieron todos.
+
+### Hecho
+- **F-01 (Medium) enumeración de colaboradores**: validar un CSV con `assigned_rut`/`assigned_username` era un oráculo sobre el
+  directorio (hasta 5.000 RUT por archivo, ~220 veces lo que permite el buscador de la toma). Ahora el mensaje es único
+  («no existe o no está activo», sin repetir el valor) y hay un **presupuesto de 300 identidades no resueltas por usuario y hora**
+  (429 al agotarlo); un archivo real casi no falla en eso, un enumerador falla casi todas.
+- **Carreras** (F-02, F-03, F-05): el inicio de la carga es un **script Lua atómico** (estado `VALIDATED`, cupo por usuario,
+  quitar vencimientos y `RUNNING` en un paso; antes un doble `start` podía dejar el trabajo con TTL de 1 h o iniciar dos cargas del
+  mismo usuario) y el resultado de cada fila se escribe con **fencing** (solo si el worker sigue siendo dueño del lease; un worker
+  pausado ya no reescribe el cursor hacia atrás). Además `res` recibe su vencimiento si la carga se cancela mientras se crea una fila.
+- **Redis** (F-04): un **borrador por usuario** (validar otro archivo descarta el anterior sin iniciar) y, en
+  `corporate-infra/Redis/entrypoint-wrapper.sh`, `--maxmemory 400mb --maxmemory-policy noeviction` (el contenedor tiene 512M): al
+  llenarse fallan las escrituras con un error en vez de que el cgroup mate Redis y caigan sesiones y límites. Verificado con la
+  imagen base; **surte efecto al reconstruir el servicio de Redis** de cada ambiente.
+- **Autorización viva** (F-07): cada 100 filas el worker revalida que el dueño siga activo y con `asset-imports:create` (si no, cancela
+  la carga) y, por fila, que el usuario asignado y el producto sigan activos (la revisión va fuera de la transacción de la fila).
+- **Adopción más estricta** (F-06): además de autor, momento, producto y centro, exige la misma garantía y el mismo estado, con 60 s de
+  tolerancia por desfase de reloj entre réplicas.
+- **Lecturas** (F-09, F-13, F-15): los GET tienen limitador (120/min por usuario); una carga ajena responde 404 igual que una inexistente;
+  los GET aceptan `read` **o** `create` (un rol con solo `create` ya no inicia cargas que no puede ver) y la descripción del permiso
+  avisa que `create` implica crear y asignar activos.
+- **Parser y salida** (F-10, F-14, F-17): tope de 32 columnas por registro (2 MB de comas gastaban ~48 MB), neutralización de fórmulas en
+  el CSV de salida también con espacios o saltos de línea previos, mensaje claro para un CSV en ANSI («guardar como CSV UTF-8») y más
+  códigos de error transitorios (`ETIMEOUT`, `ECONNCLOSED`, cortes de Mongo).
+- **Front** (F-08, F-17): `?job=` solo acepta un UUID (con `?job=../users` la pantalla hacía un GET a otra ruta de la API con la sesión
+  de la víctima) y el servicio codifica el id.
+- **Operación** (F-11, F-12, F-16, F-18): el barrido no se solapa consigo mismo y `resume` avisa si el servidor está ocupado; el error de
+  una consulta de validación ya no lleva su SQL (con RUT/usuarios) a los logs; el cierre ordenado hace `server.close()`, sale con
+  128+señal como antes y los compose de la API llevan `stop_grace_period: 20s`; el log de inicio registra al dueño además de quien inició.
+
+### Verificación
+- API: **295 tests** (unitarios + integración contra el stack de Testing), 12 omitidos (los que necesitan `qpdf` local); `tsc` limpio.
+  Front: `tsc`, ESLint y build limpios y 68 tests. Tests nuevos: doble `start` concurrente, dos cargas del mismo usuario a la vez, borrador
+  único, presupuesto de identidades, dueño desactivado o sin permiso a mitad de carga, usuario o producto desactivado tras validar,
+  adopción estricta y desfase de reloj, tope de columnas, fórmulas en la salida, 404 de cargas ajenas y roles solo `create`/solo `read`.
+- **Prueba de caída real repetida en Testing** con el código corregido: ver el resultado en la entrada (9).
+
+### Riesgos que siguen
+- Sin `maxmemory` aplicado hasta reconstruir Redis; los `imp:*` de un trabajo terminado viven 7 días.
+- `createAssetMovement` consulta MSSQL (usuario) dentro de la transacción de la fila cuando hay estado `ASSIGNED`: un MSSQL lento retiene el
+  contador de tags de Postgres (la toma de inventario ya tenía el mismo comportamiento). Aceptado y documentado.
+- El barrido usa `SCAN` sobre todo el keyspace de Redis cada 30 s por réplica (sin solapes); aceptable con el tamaño actual.
+- La UI no se probó en un navegador real; los logs de SQL en nivel debug (fuera de producción) siguen registrando las consultas normales.
+
+---
+
+## 2026-09-21 (9) — Carga masiva de activos por CSV, reanudable con Redis
+
+### Contexto
+Se pidió un endpoint independiente (usable desde Insomnia o el front) para cargar un inventario desde un CSV **sin modificar tablas ni
+schemas**. Decisiones del usuario: reanudable con Redis (retomar desde la última fila si se cae la conexión o el proceso), **solo altas**
+(una serie que ya existe se rechaza con su TAG; modificar activos sigue siendo solo por toma de inventario) y **sin valor** en el CSV
+(se valoriza después). Plan: `.claude/planes/005-carga-masiva-activos-csv.html`.
+
+### Hecho
+- **API `/api/asset-imports`**: `POST /` (multipart `file`, valida todo el CSV **sin escribir** y guarda el trabajo en Redis), `POST /:id/start`
+  (`?skipInvalid=true` carga solo las filas válidas), `GET /:id` (estado y avance), `GET /:id/result` (CSV con el resultado por fila, con
+  BOM), `POST /:id/resume` y `POST /:id/cancel`. Permisos `asset-imports:read|create`, sin acceso por defecto; cada carga solo la ve su
+  dueño o un admin. Menú «Carga Masiva de Activos» (`/assets/import`).
+- **Columnas del CSV**: `serial_number`, `product` (nombre exacto), `cost_center_code` (obligatorias); `category`, `status`
+  (`AVAILABLE` por defecto, `ASSIGNED`, `SUPPORT`, `DAMAGED`), `assigned_username` o `assigned_rut` (si `ASSIGNED`) y `warranty_expires_at`.
+  La categoría es del producto y el tenedor sale del movimiento, así que el CSV los **resuelve** y usa las funciones existentes; el TAG lo
+  genera el sistema. Máximo 5.000 filas y 2 MB, UTF-8, separador `,` o `;`.
+- **Reanudación**: cada fila es **una transacción Postgres** (Mongo y MSSQL solo se leen); Redis guarda las filas ya resueltas, el cursor y el
+  resultado por fila. Un *lease* impide que dos réplicas procesen el mismo trabajo; un barrido cada 30 s en cada réplica retoma los trabajos en
+  curso sin lease; SIGTERM/SIGINT esperan hasta 8 s la fila en curso. Como Redis va por detrás de Postgres (AOF por segundo, réplica asíncrona),
+  al reanudar una fila ya confirmada se **adopta** en vez de rechazarla como duplicada.
+- **Refactor sin cambio de comportamiento**: el bloqueo por serie y la aplicación del estado declarado se extrajeron de `inventoryCount.service.ts`
+  a `assetIntake.service.ts` para que la toma y la carga usen las mismas reglas.
+- **Front** `pages/activos/ImportAssets.tsx`: plantilla descargable, subida (valida), tabla de errores por fila, «Iniciar carga» o «Cargar solo las
+  filas válidas», barra de avance con sondeo, «Reanudar» si se detiene, «Cancelar» y descarga del resultado. La carga vive en `?job=<id>`.
+- **Sin dependencias nuevas**: parser CSV propio (`library/csvImport.ts`) en lugar de `csv-parse`.
+
+### Decisiones
+- Solo altas, sin valor y sin tocar el schema (pedido del usuario); un trabajo activo por usuario; los errores de una fila no detienen el
+  trabajo (quedan en el resultado) y un error de infraestructura sí (se reintenta, hasta 20 veces).
+
+### Verificación
+- **Prueba de caída real en Testing (3 réplicas)**: carga de 5.000 filas con la réplica que la procesaba **muerta con SIGKILL** (~1.000 filas) →
+  otra la retomó sola a los ~60 s (vencimiento del lease + barrido) y terminó: 5.000 series distintas, TAG contiguos, 0 duplicados, sin valor ni
+  Kardex. Repetido con **SIGTERM** (cierre ordenado): retomada en ~10 s, mismo resultado. ~130 filas/s. Datos de prueba y contador de tags
+  restaurados después. (Se repitió tras las correcciones de la entrada (10).)
+- Tests unitarios del parser (20) y de integración de servicio, trabajo/reanudación y HTTP (la reanudación se prueba dejando Redis y Postgres
+  exactamente como los deja una caída: filas confirmadas en Postgres que Redis no alcanzó a registrar).
+
+### Pendiente
+- Asignar `asset-imports:read` + `create` a los roles que cargan inventario y probar la UI en un navegador real (no se hizo).
+
+### Impacto en la documentación pública
+- `README.md` raíz: nuevo bullet «Carga masiva de activos por CSV».
+
+---
+
 ## 2026-09-21 (8) — `promote-to-master.ps1` resuelve los conflictos en rutas excluidas
 
 - **Problema** (visto al promover el PR #11): cuando `testing` modifica un archivo de solo-testing que `master` no tiene

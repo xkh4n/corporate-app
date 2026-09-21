@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>005 — Carga masiva de activos por CSV</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:900px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.5rem; font-size:1.25rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  h3 { margin-top:1.6rem; font-size:1.05rem; }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }
+  th, td { border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  .flow { background:var(--block-bg); border:1px solid var(--border); border-radius:8px; padding:.8rem 1rem; font-family:Consolas,monospace; font-size:.85rem; white-space:pre-wrap; }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 005</span>
+  <h1>Carga masiva de activos por CSV, reanudable con Redis</h1>
+  <div class="meta">corporate-app · corporate-api (+ corporate-front en una segunda fase) · Estado: aprobado, implementado (API y front) · 2026-09-21 · continúa los planes 002, 003 y 004</div>
+</header>
+
+<h2>Contexto</h2>
+<p>Hoy los activos solo nacen de una recepción de mercadería o de la toma de inventario (una línea a la vez). Se pide un endpoint independiente, usable desde Insomnia o desde el front, que reciba un <code>.csv</code> con series, producto, centro de costo, usuario asignado, etc. y dé de alta el inventario en lote, <strong>sin modificar tablas ni schemas</strong>.</p>
+
+<h2>Decisiones confirmadas</h2>
+<ul>
+  <li><strong>Reanudable con Redis</strong>: procesar fila a fila y, si se cae la conexión o el proceso, retomar desde la última fila procesada sin perder la coherencia entre Postgres, MSSQL y Mongo.</li>
+  <li><strong>Solo altas</strong>: una serie que ya existe se rechaza y se informa el TAG del activo que ya la tiene. Modificar activos existentes sigue siendo solo por toma de inventario (auditor).</li>
+  <li><strong>Sin valor en el CSV</strong>: los activos nacen con <code>value = NULL</code> y se valorizan en la pantalla de Valorización. La carga no escribe asientos de Kardex.</li>
+</ul>
+
+<h2>Hechos del código que condicionan el diseño</h2>
+<ul>
+  <li><code>assets</code> no tiene columna de categoría ni de tenedor. La categoría es del producto (Mongo, <code>Product.categoryId</code>) y el tenedor sale del último movimiento (<code>asset_movements</code> + <code>asset_movement_users</code>). El CSV no «carga» esos datos: los <strong>resuelve</strong> y usa las funciones existentes.</li>
+  <li>El TAG lo genera siempre el sistema (<code>generateAssetTag</code>, contador <code>asset_tag_counters</code>, prefijo por <code>productType</code>): no viene en el CSV.</li>
+  <li>No hay <code>UNIQUE</code> sobre <code>serial_number</code>: la única defensa contra duplicados es el advisory lock por serie + <code>findAssetsBySerial</code>, hoy inline en <code>createNewAsset</code> (<code>inventoryCount.service.ts</code>).</li>
+  <li><strong>Mongo y MSSQL solo se leen</strong> (producto, categoría, usuario); lo único que se escribe es Postgres. Con una transacción Postgres por fila no hay escrituras cruzadas que puedan quedar a medias.</li>
+  <li>Redis (cliente único <code>redis</code>, <code>databases/redis/connection.ts</code>) corre con <code>appendonly yes</code> (fsync por segundo) y réplica asíncrona sin failover automático: su estado puede ir unos segundos <strong>por detrás</strong> de Postgres. Postgres es la fuente de verdad y el diseño debe ser idempotente.</li>
+  <li>No hay parser CSV, jobs en segundo plano, manejo de SIGTERM ni tabla de auditoría en el repo. <code>upload.ts</code> solo acepta PDF/JPG/PNG/EML/MSG.</li>
+</ul>
+
+<h2>Datos del CSV (encabezado obligatorio, UTF-8, separador <code>,</code> o <code>;</code>)</h2>
+<table>
+  <tr><th>Columna</th><th>Oblig.</th><th>Regla</th></tr>
+  <tr><td><code>serial_number</code></td><td>Sí</td><td>≤100, <code>[A-Za-z0-9._/ -]</code>; único dentro del archivo y en el sistema (<code>findAssetsBySerial</code>).</td></tr>
+  <tr><td><code>product</code></td><td>Sí</td><td>Nombre exacto del producto (<code>name</code> es único en Mongo); debe estar <code>isActive</code>.</td></tr>
+  <tr><td><code>category</code></td><td>No</td><td>Si viene debe coincidir con la categoría del producto (misma regla que <code>addInventoryLine</code>); si no, se deriva del producto.</td></tr>
+  <tr><td><code>cost_center_code</code></td><td>Sí</td><td>Entero; <code>getCostCenterByCode</code>.</td></tr>
+  <tr><td><code>status</code></td><td>No</td><td><code>AVAILABLE</code> (defecto), <code>ASSIGNED</code>, <code>SUPPORT</code>, <code>DAMAGED</code>. No <code>DECOMMISSIONED</code> (escribiría <code>WRITE_OFF</code> sobre un activo sin valor).</td></tr>
+  <tr><td><code>assigned_username</code> o <code>assigned_rut</code></td><td>Solo si <code>ASSIGNED</code></td><td>Exactamente uno; el usuario debe existir y estar activo (<code>getUserByUsername</code> / <code>findActiveUserByDocumentId</code>).</td></tr>
+  <tr><td><code>warranty_expires_at</code></td><td>No</td><td><code>YYYY-MM-DD</code>; se fija al crear el activo.</td></tr>
+</table>
+<p>Fuera del CSV: <code>tag</code> (generado), <code>value</code> (Valorización), <code>received_at</code> (hoy). Límites: 5.000 filas, 2 MB, columnas desconocidas rechazadas; las celdas que empiecen con <code>= + - @</code> se rechazan al entrar y se escapan en el CSV de resultado.</p>
+
+<h2>Flujo</h2>
+<div class="flow">1. POST /asset-imports (multipart "file")     → parsea y VALIDA todo, sin escribir en Postgres
+   resuelve producto/categoría (Mongo), centros de costo, usuarios (MSSQL),
+   duplicados en el archivo y series ya existentes
+   guarda el trabajo en Redis (VALIDATED, expira en 1 h) → 201 { jobId, total, errors[] }
+2. POST /asset-imports/:id/start                 → 202; un worker del proceso empieza
+   exige 0 errores (o ?skipInvalid=true: solo las filas válidas)
+3. GET  /asset-imports/:id                       → estado, cursor, ok, failed, total
+   GET  /asset-imports/:id/result                → CSV: row, serial_number, resultado, tag, error
+   POST /asset-imports/:id/resume | /cancel</div>
+
+<h2>Estado en Redis (prefijo <code>imp:{jobId}:</code>)</h2>
+<ul>
+  <li><code>meta</code> (hash): <code>status</code> (<code>VALIDATED|RUNNING|PAUSED|DONE|CANCELLED</code>), <code>ownerUserId</code>, <code>filename</code>, <code>total</code>, <code>cursor</code>, <code>ok</code>, <code>failed</code>, <code>startedAt</code>, <code>updatedAt</code>.</li>
+  <li><code>rows</code> (lista): filas ya resueltas (serie, productId, productType, costCenterId, statusCode, userId, garantía), para no volver a Mongo/MSSQL al reanudar.</li>
+  <li><code>res</code> (hash <code>rowIndex → {tag}|{error}</code>), <code>lease</code> (<code>SET NX PX 30000</code>, renovado en cada fila), <code>inflight</code> (índice de la fila en curso).</li>
+  <li>TTL de 7 días tras terminar. El archivo original no se guarda ni se escribe a disco (multer en memoria).</li>
+</ul>
+
+<h2>Procesamiento y reanudación</h2>
+<ul>
+  <li><strong>Una transacción Postgres por fila</strong>: advisory lock por serie (helper compartido con <code>createNewAsset</code>), <code>findAssetsBySerial</code>, <code>createAssetFromInventory</code>, luego el estado con <code>createAssetMovement(input, tx)</code> (notas «Carga masiva &lt;jobId&gt; fila N») o <code>setAssetStatus</code> para <code>DAMAGED</code>. Filas de una en una y en orden (el contador de TAG bloquea la fila).</li>
+  <li><strong>Orden de escritura</strong>: <code>inflight = i</code> → commit de la fila → <code>res[i]</code>, <code>cursor = i+1</code>, borrar <code>inflight</code>. Un error de fila se registra y <strong>no detiene</strong> el trabajo.</li>
+  <li><strong>Idempotencia ante caídas</strong>: al retomar, si la fila <code>inflight</code> (o una posterior al cursor guardado) ya tiene su serie en Postgres y ese activo fue creado por el mismo <code>created_by</code> con <code>created_at ≥ startedAt</code>, se <strong>adopta</strong> como hecha (con su TAG) en vez de rechazarla como duplicada. Como el archivo no repite series, ese activo solo puede ser de esa fila. Cualquier otro activo con esa serie sigue siendo «ya existe (TAG …)».</li>
+  <li><strong>Una sola réplica por trabajo</strong>: el <code>lease</code> impide que dos de las 3 réplicas trabajen a la vez. Si una muere, el lease vence a los 30 s. Un barrido (<code>setInterval</code> 30 s, arrancado en <code>corporate-api/index.ts</code>) toma los trabajos <code>RUNNING</code> con lease vencido y los continúa; <code>POST /:id/resume</code> hace lo mismo a mano. Un manejador de SIGTERM/SIGINT termina la fila actual, deja el trabajo en <code>PAUSED</code> y suelta el lease.</li>
+  <li><strong>Si Redis pierde el trabajo entero</strong>: se vuelve a subir el CSV; las filas ya creadas se rechazan con su TAG, sin duplicados. La red de seguridad final es Postgres, no Redis.</li>
+</ul>
+
+<h2>Seguridad</h2>
+<ul>
+  <li>Permisos nuevos <code>asset-imports:create</code> y <code>asset-imports:read</code>, <strong>sin</strong> <code>grantToUser</code>: solo admin por defecto, el admin los asigna por rol. Menú «Carga masiva de activos» (<code>/assets/import</code>, <code>sortOrder</code> 112, bajo «Productos»).</li>
+  <li>Un trabajo solo lo ve, inicia, reanuda o cancela su dueño o un admin (403 antes de mirar el estado, mismo patrón que <code>assertAuditor</code>).</li>
+  <li><code>importRateLimiter</code> propio (por usuario, en Redis) y un solo trabajo activo por usuario.</li>
+  <li>Subida: opción por ruta en <code>uploadSingle</code> para <strong>no</strong> abrir <code>text/csv</code> al resto de rutas. Acepta <code>text/csv</code>, <code>application/vnd.ms-excel</code> (Windows) y <code>text/plain</code> solo aquí; <code>matchesRealContent</code> verifica UTF-8 válido, sin bytes nulos y con la cabecera esperada. Máximo 2 MB.</li>
+  <li>Parser: <code>csv-parse</code> (dependencia nueva, a confirmar por supply chain; alternativa: parser propio). Con <code>bom</code>, <code>max_record_size</code> y sin <code>relax_column_count</code>.</li>
+  <li>Auditoría: no hay tabla; queda <code>created_by</code> en cada activo, el <code>jobId</code> en las notas del movimiento y <code>logger.info</code> al iniciar y terminar.</li>
+</ul>
+
+<h2>Cambios por archivo (<code>corporate-api/src/</code>)</h2>
+<ul>
+  <li><strong>Nuevos</strong>: <code>library/csvImport.ts</code> (parseo y validación puras), <code>services/postgres/assetImport.service.ts</code> (validación contra BD y alta de una fila), <code>services/redis/assetImportJob.service.ts</code> (estado, lease, worker, barrido), <code>controllers/assetImport.controller.ts</code>, <code>routes/assetImport.routes.ts</code>, <code>types/postgres/assetImport.types.ts</code>.</li>
+  <li><strong>Modificados</strong>: <code>middlewares/upload.ts</code>, <code>middlewares/rateLimit.ts</code>, <code>databases/permission-catalog.ts</code>, <code>databases/menu-catalog.ts</code>, <code>routes/index.ts</code>, <code>services/postgres/inventoryCount.service.ts</code> (extraer el bloqueo/chequeo de serie y <code>applyDeclaredStatusToNewAsset</code> a un módulo compartido, sin cambiar su comportamiento), <code>services/postgres/asset.service.ts</code> (garantía opcional en <code>createAssetFromInventory</code>), <code>corporate-api/index.ts</code> (barrido y señales), helpers de solo lectura nuevos: producto/categoría por nombre (Mongo).</li>
+  <li><strong>Front (fase 2)</strong>: <code>pages/activos/ImportAssets.tsx</code> (plantilla descargable, subida, errores por fila, «Iniciar carga», progreso con sondeo, «Reanudar», descarga del resultado), <code>services/assetImportService.ts</code>, <code>types/assetImport.ts</code>, entrada en <code>MODULE_PAGES</code> de <code>AppRoutes.tsx</code>.</li>
+</ul>
+
+<h2>Orden de implementación</h2>
+<ol>
+  <li>Guardar este plan en <code>.claude/planes/</code>.</li>
+  <li><code>csvImport.ts</code> + unit tests; opción CSV de <code>upload.ts</code>; helpers de producto.</li>
+  <li>Extracción de los helpers compartidos de <code>inventoryCount.service.ts</code> (los tests de inventario deben seguir en verde).</li>
+  <li>Servicio de importación, estado y worker en Redis; controlador, rutas, permisos, menú, limiter, barrido y señales.</li>
+  <li>Tests de integración y verificación en el stack de Testing.</li>
+  <li>Front (fase 2).</li>
+  <li>Ronda con <code>cybersecurity-orchestrator</code> y corrección de hallazgos, incluidos los menores.</li>
+  <li>Documentación: bitácora, README raíz, glosario, memoria del proyecto.</li>
+</ol>
+
+<h2>Fuera de alcance (con motivo)</h2>
+<ul>
+  <li>Actualizar activos existentes por CSV (decisión del usuario).</li>
+  <li>Cargar <code>value</code> o asientos de Kardex (se valoriza en la pantalla existente).</li>
+  <li>XLSX y guardar el archivo original como evidencia.</li>
+  <li>Cola externa (BullMQ): innecesaria para este volumen y suma una dependencia; lease + barrido cubren la reanudación.</li>
+  <li>Failover automático de Redis: sigue siendo manual; el diseño tolera perder el estado.</li>
+</ul>
+
+<h2>Riesgos y verificación</h2>
+<ul>
+  <li><code>tsc</code> de API y front, ESLint sobre lo tocado.</li>
+  <li>Unit (sin BD): parser (BOM, <code>;</code> y <code>,</code>, comillas, saltos de línea en celdas, columnas desconocidas, fórmulas), reglas por columna, duplicados dentro del archivo.</li>
+  <li>Integración (Testing): altas con cada estado, serie existente rechazada con su TAG, producto inactivo, categoría que no corresponde, usuario inactivo, <code>ASSIGNED</code> sin usuario; <strong>reanudación</strong> (cortar tras N filas y retomar sin duplicados, caso <code>inflight</code> adoptado, dos workers con un lease, lease vencido tomado por el barrido); HTTP con multipart real, 403 sin permiso, otro usuario no ve el trabajo, MIME/tamaño/binario disfrazado rechazados.</li>
+  <li><strong>Caída real</strong> en Testing: iniciar una carga de ~2.000 filas, <code>docker kill</code> de la réplica que la procesa, confirmar que otra la termina sin series duplicadas.</li>
+  <li>Prueba manual del flujo completo desde Insomnia con Bearer. Limpiar los datos de prueba al terminar.</li>
+</ul>
+
+<h2>Desviaciones respecto al plan aprobado</h2>
+<ul>
+  <li><strong>Parser propio</strong> (<code>library/csvImport.ts</code>) en lugar de <code>csv-parse</code>: no se agregó ninguna dependencia (el plan dejaba <code>csv-parse</code> pendiente del visto bueno por supply chain).</li>
+  <li>Estado extra <code>FAILED</code> (un trabajo se abandona tras 20 intentos por errores de infraestructura) y <code>GET /asset-imports/:id/result</code> con BOM UTF-8 para Excel.</li>
+  <li>El menú y la pantalla se gatean con <code>asset-imports:read</code> (los GET aceptan <code>read</code> o <code>create</code>); subir e iniciar exige <code>create</code>.</li>
+</ul>
+
+<h2>Endurecimiento posterior (revisión de seguridad, 2026-09-21)</h2>
+<p>Ronda de <code>cybersecurity-orchestrator</code>: sin Critical/High; 1 Medium, 9 Low y 8 Info, todos corregidos.</p>
+<ul>
+  <li><strong>Enumeración de colaboradores</strong> (Medium): un mensaje único para usuario/RUT inexistente o inactivo (sin repetir el valor) y un presupuesto de 300 identidades no resueltas por usuario y hora (429 al agotarlo).</li>
+  <li><strong>Inicio atómico</strong> de la carga (un script Lua: estado, cupo, TTL y RUNNING en un paso) y <strong>escritura del resultado con fencing</strong> (solo el dueño del lease); cerraba dos carreras (doble <code>start</code>; worker pausado que reescribía el cursor).</li>
+  <li><strong>Un borrador por usuario</strong> y Redis con <code>maxmemory 400mb</code> + <code>noeviction</code> (el contenedor tiene 512M): el peor caso deja de ser un OOM que tumba sesiones y límites.</li>
+  <li>El worker revalida cada 100 filas que el dueño siga activo y con permiso (si no, cancela) y, por fila, que el usuario asignado y el producto sigan activos; la adopción exige además igual garantía y estado, con tolerancia de 60 s de desfase de reloj.</li>
+  <li>404 (no 403) para una carga ajena; limitador en los GET; tope de 32 columnas por registro; neutralización de fórmulas en el CSV de salida también con espacios previos; SQL de errores de consulta fuera de los logs.</li>
+  <li>Front: <code>?job=</code> solo acepta un UUID (evitaba un GET arbitrario a <code>/api/...</code> desde un enlace); cierre ordenado con <code>server.close()</code>, código de salida convencional y <code>stop_grace_period: 20s</code>.</li>
+</ul>
+
+<footer class="doc-footer">Plan 005 · corporate-app · guardado en <code>.claude/planes/</code></footer>
+</div>
+</body>
+</html>
