@@ -22,7 +22,7 @@ export class StateModel extends Model<InferAttributes<StateModel>, InferCreation
 StateModel.init(
   {
     id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
-    territorialCode: { type: DataTypes.STRING(20), allowNull: true, field: "territorial_code" },
+    territorialCode: { type: DataTypes.STRING(20), allowNull: true, unique: true, field: "territorial_code" },
     postalCode: { type: DataTypes.STRING(20), allowNull: true, field: "postal_code" },
     siiCode: { type: DataTypes.STRING(20), allowNull: true, field: "sii_code" },
     nameState: { type: DataTypes.STRING(150), allowNull: false, field: "name_state" },

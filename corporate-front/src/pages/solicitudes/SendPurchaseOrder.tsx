@@ -168,7 +168,12 @@ export default function SendPurchaseOrder() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <h2 className="font-semibold text-slate-800">
                         Orden {detail.order.orderNumber}
-                        {detail.order.quote && <span className="text-slate-500 font-normal"> — {detail.order.quote.productCode ?? detail.order.quote.model ?? detail.order.quote.productId}</span>}
+                        {(detail.order.quotes?.length ?? 0) > 0 && (
+                          <span className="text-slate-500 font-normal">
+                            {" — "}
+                            {detail.order.quotes!.map((quote) => quote.productCode ?? quote.model ?? quote.productId).join(", ")}
+                          </span>
+                        )}
                       </h2>
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-medium ${

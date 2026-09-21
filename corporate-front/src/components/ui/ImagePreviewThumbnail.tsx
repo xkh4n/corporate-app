@@ -114,7 +114,7 @@ export function ImagePreviewThumbnail({ src, alt, className = "" }: ImagePreview
         onBlur={closeHoverPreview}
         onClick={handleClick}
         aria-label={`Ver imagen ampliada de ${alt}`}
-        className={`block rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
+        className={`block rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
           isDesktop ? "cursor-zoom-in" : "cursor-pointer"
         }`}
       >
@@ -151,7 +151,7 @@ export function ImagePreviewThumbnail({ src, alt, className = "" }: ImagePreview
                 type="button"
                 onClick={() => setModalOpen(false)}
                 aria-label="Cerrar"
-                className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />

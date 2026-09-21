@@ -14,7 +14,9 @@ export const uploadAttachment = makeAttachmentHandler(
 );
 
 export const createPurchaseOrderSchema = z.object({
-  quoteId: z.number().int().positive(),
+  // Una OC cubre N cotizaciones ganadoras; el servidor valida que todas sean
+  // de la misma solicitud y del mismo proveedor (ver createPurchaseOrder).
+  quoteIds: z.array(z.number().int().positive()).min(1),
   paymentTerms: z.string().max(50).optional(),
 });
 

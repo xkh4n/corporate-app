@@ -3,7 +3,7 @@ import { z } from "zod";
 import * as roleService from "../services/postgres/role.service";
 import * as permissionService from "../services/postgres/permission.service";
 import { listUserIdsByRoleId } from "../services/mssql/user.service";
-import { invalidateUserSessions } from "../services/redis/session.service";
+import { invalidateUserSessions, revokeAllRefreshTokens } from "../services/redis/session.service";
 import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
 import { sendList, sendOk, sendNoContent } from "../library/response";
 
@@ -73,7 +73,12 @@ export async function deactivate(req: Request, res: Response, next: NextFunction
     await roleService.deactivateRole(roleId);
 
     const userIds = await listUserIdsByRoleId(roleId);
-    await Promise.all(userIds.map((userId) => invalidateUserSessions(userId, "role_deactivated")));
+    await Promise.all(
+      userIds.map(async (userId) => {
+        await revokeAllRefreshTokens(userId);
+        await invalidateUserSessions(userId, "role_deactivated");
+      })
+    );
 
     sendNoContent(res);
   } catch (err) {

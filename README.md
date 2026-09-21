@@ -16,10 +16,10 @@ observabilidad (métricas + logs) desde el día uno.
 | Módulo | Estado |
 |---|---|
 | `corporate-infra` (bases de datos) | ✅ Construido, hardenizado y validado con instalación limpia real |
-| `corporate-api` (backend) | ✅ Construido: auth, RBAC, ERP core, flujo de compras, activos (Kardex, ZPL, handover), tiempo real |
+| `corporate-api` (backend) | ✅ Construido: auth, RBAC, ERP core, flujo de compras, activos (Kardex, ZPL, handover, toma de inventario), tiempo real, remuneraciones y previsión |
 | `corporate-mailer` (servicio de correo) | ✅ Construido: adjuntos de OC, notificaciones, SMTP |
 | `corporate-monitoring` (observabilidad) | ✅ Construido: métricas, logs, dashboards, todo detrás de TLS |
-| `corporate-front` (frontend) | ✅ Construido: React 19/TypeScript/Tailwind v4, menú dinámico desde BD, activos, adquisiciones, solicitudes, personas, permissions |
+| `corporate-front` (frontend) | ✅ Construido: React 19/TypeScript/Tailwind v4, menú dinámico desde BD, activos (incl. toma de inventario), adquisiciones, solicitudes, personas, remuneraciones, previsión, permissions |
 | Ambientes `prod`/`test` | ✅ Compose/Dockerfiles existen; `dev` es el único validado en clean-install real |
 
 ## Arquitectura general
@@ -268,12 +268,38 @@ src/
   (entrada/salida, costo promedio móvil), **impresión de etiquetas ZPL**, asignación a colaboradores,
   **flujo de entrega (handover) con PDF** generado dinámicamente, trazabilidad de movimientos
   incluyendo responsables.
+- **Toma de inventario física**: un auditor abre una toma («Inicio de Inventario»), ingresa equipos
+  identificándolos por **TAG** (lector USB/Bluetooth o escrito) o por **serie**, y la cierra («Fin Inventario»).
+  El servidor valida si el activo existe: si existe, la toma lo **actualiza** (queda asignado al usuario
+  ingresado, o el estado que indique el auditor, y en el centro de costo donde se encontró; un activo en
+  devolución queda en mantención con la instrucción de enviarlo a Soporte TI / Adquisiciones TI; una baja
+  encontrada en uso queda `DEVALUATED`, valor 0, sin afectar el Kardex); si no existe, se crea con una
+  etiqueta nueva. Al cerrar se listan los activos del sistema no encontrados, se descarga el informe en PDF
+  con los cambios aplicados y se imprimen las etiquetas nuevas (`etiquetas.txt` ZPL o WebUSB). Permiso
+  `inventory-counts`, sin acceso por defecto (lo asigna el admin al rol del auditor).
+- **Valorización de activos**: pantalla para Adquisiciones TI que asigna valor por primera vez a los
+  activos sin valor (p. ej. los dados de alta por una toma) y registra su asiento de alta en el Kardex.
+  Permiso `asset-valuation`, sin acceso por defecto.
+- **Devolución de activos**: el solicitante arma una devolución de UN centro de costo, adjunta la guía de
+  despacho (PDF, guardada como `DEV<centro><aaaammddHHmmssSSS>.pdf`), la imprime y la envía a Adquisiciones TI
+  (los activos pasan a `MOVE_TO_RETURNED`); Adquisiciones recibe cada activo (parcial o total) y pasan a
+  `RETURNED`. Permiso `asset-returns`, sin acceso por defecto; solo el solicitante o un administrador modifica una
+  devolución y quien la solicitó o envió no puede recibirla. La guía es un PDF de hasta 5 MB que se sanea con qpdf al subir (sin contenido activo) y solo se descarga; se devuelven «mis equipos» (centro de costo fijado por el equipo) o equipos de otro usuario (centro de costo elegido).
+  Los adjuntos (`uploads`/`downloads`) persisten en volúmenes nombrados compartidos por las 3 réplicas.
 - **Notificaciones en tiempo real**: eventos de cambio de estado (`socket.io` + `@socket.io/redis-adapter`,
   escalado entre 3 réplicas) sin polling.
 - **Envío de correos**: `corporate-mailer` gestiona adjuntos (PDF, facturas), notificaciones
   a proveedores y usuarios, salida SMTP aislada en su propia red Docker.
 - **Multi-réplica real**: 3 instancias de la API detrás de NGINX, migraciones y seeds escritos para
   ser idempotentes y seguros frente a arranque concurrente de las 3 réplicas contra una base recién creada.
+- **Remuneraciones y previsión (base)**: catálogo de instituciones previsionales (AFP, Isapres, CCAF,
+  mutualidades), tasas versionadas por vigencia, afiliación de colaboradores (régimen, AFP, salud y plan
+  Isapre; el modelo también contempla cargas familiares y jornada, aún sin captura en pantalla), contrato con sueldo base y gratificación legal (tipos ART47/ART50/CONVENCIONAL,
+  método, porcentaje, tope, forma de pago). Configuración a nivel empresa (CCAF, mutualidad, tasa de
+  accidentes, sistema de gratificación, % de anticipo mensual). El IMM se registra como parámetro
+  monetario con vigencia (lo ingresa el usuario, no se precarga). **Nota:** el archivo de Previred (formato de 105 campos) y la liquidación de sueldos con
+  cálculo de cotizaciones obligatorias aún no se generan; las tablas `previred_payrolls`, `previred_payroll_lines`
+  y `gratification_movements` existen pero aún no se usan.
 
 ## Seguridad
 
@@ -287,6 +313,8 @@ src/
 - Auditoría de seguridad aplicada (hallazgos corregidos): exposición de puertos, cookies de sesión
   sin TLS, y una condición de carrera real en la migración de MSSQL al arrancar 3 réplicas contra
   una base vacía por primera vez.
+- Todo push a `master` está bloqueado por un git hook hasta que exista una revisión de seguridad
+  vigente para el commit exacto — ver [`SECURITY-GATE.md`](SECURITY-GATE.md).
 
 ## Cómo levantar el proyecto
 
@@ -455,7 +483,7 @@ chequeo de CI, así que `master` no debería volver a acumular esto sin que el P
   verificaron en vivo (ver "Validación por ambiente" arriba) — ya no es solo `dev` el validado. Sigue
   siendo cierto que el uso continuo/prolongado (no solo un boot puntual) está mejor probado en `dev`.
 - **Frontend**: `corporate-front` está en desarrollo activo; el layout y páginas cubren activos,
-  adquisiciones, solicitudes, personas y permissions. Pueden existir placeholders o páginas no
+  adquisiciones, solicitudes, personas, remuneraciones, previsión y permissions. Pueden existir placeholders o páginas no
   totalmente implementadas en módulos específicos.
 - **Scripts de arranque y `--build`**: algunos scripts de `corporate-scripts/` no pasan `--build` al
   levantar un Compose, lo que significa que cambios en Dockerfiles/templating no se reconstruyen
@@ -463,3 +491,17 @@ chequeo de CI, así que `master` no debería volver a acumular esto sin que el P
 - **pnpm en Docker Windows**: pnpm dentro de Dockerfiles en este host (Windows + WSL2) genera symlinks
   rotos. Los Dockerfiles usan `npm` en lugar de `pnpm` para evitarlo — `pnpm` sigue siendo el gestor
   del lado del host (`pnpm-lock.yaml`).
+- **Permisos nuevos para crear colaboradores**: el alta de colaboradores ahora requiere tres permisos
+  nuevos (`employee-contracts:create`, `previsional-institutions:read`, `previsional-profiles:update`)
+  además de los anteriores. Solo el rol `admin` los tiene por defecto; otros roles deben recibirlos
+  explícitamente vía `PUT /roles/:id/permissions`. Los usuarios que ya tenían sesión iniciada deben
+  re-loguearse para que el backend actualice sus permisos y el menú refleje las nuevas opciones.
+- **Desarrollo con hot-reload de la API**: guardar cambios en `corporate-api/src/databases/mssql/migrate.ts`
+  dispara automáticamente la migración contra la BD de desarrollo compartida entre las 3 réplicas.
+  Conviene probar el DDL antes en un SQL Server desechable (por ejemplo, un contenedor local) y recién después guardar el archivo.
+- **Fechas DATEONLY en zonas horarias no UTC**: fuera de contenedores (ej. máquina con zona horaria -03),
+  Sequelize puede desplazar un día las fechas de columnas `DATEONLY`; dentro de Docker (UTC) no ocurre.
+- **Gestión de contratos existentes**: no existe pantalla para listar o editar contratos ya creados;
+  tampoco se pueden actualizar apellido materno, sexo y nacionalidad de personas ya existentes. Un
+  colaborador creado con tipo de gratificación `ANTICIPO_MENSUAL_RELIQUIDACION` antes de que existiera
+  la columna `gratification_monthly_advance` quedará sin monto asignado y hoy no hay cómo completarlo desde la interfaz.

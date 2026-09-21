@@ -7,8 +7,8 @@ import { validateBody } from "../middlewares/validate";
 export const productCategoryRouter = Router();
 
 productCategoryRouter.use(authenticate);
-productCategoryRouter.get("/", productCategoryController.list);
-productCategoryRouter.get("/:id", productCategoryController.getById);
+productCategoryRouter.get("/", authorize("product-categories", "read"), productCategoryController.list);
+productCategoryRouter.get("/:id", authorize("product-categories", "read"), productCategoryController.getById);
 productCategoryRouter.post(
   "/",
   authorize("product-categories", "create"),

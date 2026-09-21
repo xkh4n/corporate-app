@@ -1,0 +1,110 @@
+name: CI (typecheck, lint y tests)
+
+# Corre en los PR hacia "develop" y "testing" y en los push a esas ramas. NO corre hacia
+# "master": los tests, vitest.config.ts y los compose de dev/test no viajan a producción (ver
+# corporate-scripts/master-excluded-paths.txt); el PR a master lo cubre
+# master-no-testing-artifacts.yml.
+#
+# Solo tests SIN base de datos: el proyecto "unit" de la API y el de la web. Los tests de
+# integración necesitan el stack de Testing (bases reales, ver corporate-api/TESTING.md) y se
+# corren a mano con ".\run.ps1 bdd test" antes de promover.
+on:
+  pull_request:
+    branches: [develop, testing]
+  push:
+    branches: [develop, testing]
+
+# Un push nuevo a la misma rama/PR cancela la corrida anterior.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: API (tsc + tests unitarios)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: corporate-api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # La versión de pnpm sale del campo "packageManager" del package.json.
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: corporate-api/package.json
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: corporate-api/pnpm-lock.yaml
+
+      # qpdf: los tests del saneador de PDF (src/library/pdfSanitizer.unit.test.ts) usan el binario
+      # real; sin él esos casos se omiten y el CI pasaría sin probarlos.
+      - name: qpdf
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qpdf
+          qpdf --version | head -n 1
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Tests unitarios
+        run: pnpm exec vitest run --project unit
+
+  front:
+    name: Web (tsc + lint + tests + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: corporate-front
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # El front no declara "packageManager": se fija la misma versión que usa la API.
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: corporate-front/pnpm-lock.yaml
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      # tsconfig.json es "solution-style" (solo referencias): un "tsc --noEmit" pelado no revisa nada,
+      # hay que apuntar al proyecto de la app.
+      - name: Typecheck
+        run: pnpm exec tsc -p tsconfig.app.json --noEmit
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Tests
+        run: pnpm run test
+
+      # vite.config.ts lee corporate-secrets (fuera del repo) para el proxy del servidor de desarrollo; con
+      # DOCKER_DEV=true no lo hace (ese flag solo afecta a "server", no a lo que se compila).
+      - name: Build
+        env:
+          DOCKER_DEV: "true"
+        run: pnpm run build

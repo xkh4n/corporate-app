@@ -2,6 +2,7 @@ import path from "node:path";
 import fs from "node:fs";
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
+import { isValidObjectId } from "mongoose";
 import * as productService from "../services/mongo/product.service";
 import { getProductImagesFolder } from "../library/documentStorage";
 import { BadRequestError, NotFoundError } from "../library/errors";
@@ -25,7 +26,9 @@ export const updateProductSchema = z.object({
 export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const params = parsePaginationParams({ ...req.query, ...req.body }, "name");
-    const { items, total } = await productService.listProducts(params);
+    const categoryId = typeof req.query.categoryId === "string" && req.query.categoryId ? req.query.categoryId : undefined;
+    if (categoryId !== undefined && !isValidObjectId(categoryId)) throw new BadRequestError("categoryId invalido");
+    const { items, total } = await productService.listProducts(params, categoryId);
     sendList(res, items, buildPaginationMeta(params, total), "Productos obtenidos exitosamente");
   } catch (err) {
     next(err);

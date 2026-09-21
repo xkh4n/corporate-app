@@ -5,6 +5,10 @@ LABEL maintainer="Osvaldo Rojas G."
 
 WORKDIR /app
 
+# qpdf: sanea las guias de despacho subidas (library/pdfSanitizer.ts); sin el binario las subidas
+# de PDF se rechazan (503).
+RUN apk add --no-cache qpdf
+
 # npm en vez de pnpm para esta imagen a proposito: con Docker Desktop (Windows
 # + WSL2) pnpm generó symlinks de node_modules con el TARGET absoluto en
 # formato Windows ("D:/Proyectos/.../node_modules/.pnpm/...") en vez de

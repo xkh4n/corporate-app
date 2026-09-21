@@ -8,8 +8,8 @@ import { validateBody } from "../middlewares/validate";
 export const productRouter = Router();
 
 productRouter.use(authenticate);
-productRouter.get("/", productController.list);
-productRouter.get("/:id", productController.getById);
+productRouter.get("/", authorize("products", "read"), productController.list);
+productRouter.get("/:id", authorize("products", "read"), productController.getById);
 // Sin authorize() a proposito, igual que list/getById de arriba: la imagen
 // es tan de solo-lectura/no-sensible como el resto del catalogo.
 productRouter.get("/:id/image", productController.getImage);

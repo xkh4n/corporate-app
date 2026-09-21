@@ -8,9 +8,16 @@ import { getQuoteByIdOrThrow } from "./quote.service";
 import { getUserByIdOrThrow, getUserByPersonId } from "./user.service";
 import { getSupplierByIdOrThrow } from "./supplier.service";
 import { getBusinessPartnerByIdOrThrow } from "./businessPartner.service";
-import { copyIfExists, findFileByPrefix, getAcquisitionFolder, getQuoteRequestFolder, saveBuffer } from "../../library/documentStorage";
+import {
+  copyIfExists,
+  findFileByPrefix,
+  getAcquisitionFolder,
+  getQuoteRequestFolder,
+  sanitizeFilenameSegment,
+  saveBuffer,
+} from "../../library/documentStorage";
 import { getSafeExtension } from "../../middlewares/upload";
-import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../../library/errors";
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, isUniqueConstraintError } from "../../library/errors";
 import { logger } from "../../library/logger";
 import { notifyPendingPurchaseOrder } from "../../library/realtime/notify";
 import type { PaginationParams } from "../../library/pagination";
@@ -69,6 +76,23 @@ export async function createAuthorization(
     );
   }
 
+  // Sin esto, dos llamadas legitimas y secuenciales del mismo aprobador
+  // asignado sobre la misma linea (posible mientras la solicitud sigue en
+  // APPROVE_QUOTE por otras lineas sin resolver) creaban dos Authorization
+  // SELECTED para la misma linea -el UNIQUE (request_line_id) de migrate.ts
+  // cierra la carrera a nivel de motor, este chequeo solo da el mensaje
+  // legible en el camino no concurrente.
+  if (quote.status !== "PENDING") {
+    throw new ConflictError(
+      `La cotizacion ${data.quoteId} ya no esta PENDING (estado actual: "${quote.status}")`,
+    );
+  }
+
+  const existingAuthorization = await AuthorizationModel.findOne({ where: { requestLineId: data.requestLineId } });
+  if (existingAuthorization) {
+    throw new ConflictError(`La linea ${data.requestLineId} ya tiene una autorizacion (id ${existingAuthorization.id})`);
+  }
+
   const request = await getPurchaseRequestByIdOrThrow(line.requestId);
 
   // Decision A del plan de implementacion: solo el aprobador ASIGNADO a
@@ -100,37 +124,49 @@ export async function createAuthorization(
     );
   }
 
-  const authorization = await mssql.transaction(async (transaction) => {
-    const created = await AuthorizationModel.create(
-      {
-        requestLineId: data.requestLineId,
-        quoteId: data.quoteId,
-        approverId: data.approverId,
-        approvedQuantity: data.approvedQuantity,
-        approvedAt: new Date(),
-        productId: quote.productId,
-        supplierId: quote.supplierId,
-      },
-      { transaction },
-    );
-    await quote.update({ status: "SELECTED", updatedBy: data.approverId }, { transaction });
-    // Cotizaciones competidoras del MISMO producto en esta solicitud quedan
-    // REJECTED -autorizar ES la accion de negocio que decide, entre varias,
-    // cual proveedor gano (ver comentario mas arriba en este archivo).
-    await QuoteModel.update(
-      { status: "REJECTED", updatedBy: data.approverId },
-      {
-        where: {
-          requestId: line.requestId,
+  let authorization: AuthorizationModel;
+  try {
+    authorization = await mssql.transaction(async (transaction) => {
+      const created = await AuthorizationModel.create(
+        {
+          requestLineId: data.requestLineId,
+          quoteId: data.quoteId,
+          approverId: data.approverId,
+          approvedQuantity: data.approvedQuantity,
+          approvedAt: new Date(),
           productId: quote.productId,
-          status: "PENDING",
-          id: { [Op.ne]: quote.id },
+          supplierId: quote.supplierId,
         },
-        transaction,
-      },
-    );
-    return created;
-  });
+        { transaction },
+      );
+      await quote.update({ status: "SELECTED", updatedBy: data.approverId }, { transaction });
+      // Cotizaciones competidoras del MISMO producto en esta solicitud quedan
+      // REJECTED -autorizar ES la accion de negocio que decide, entre varias,
+      // cual proveedor gano (ver comentario mas arriba en este archivo).
+      await QuoteModel.update(
+        { status: "REJECTED", updatedBy: data.approverId },
+        {
+          where: {
+            requestId: line.requestId,
+            productId: quote.productId,
+            status: "PENDING",
+            id: { [Op.ne]: quote.id },
+          },
+          transaction,
+        },
+      );
+      return created;
+    });
+  } catch (err) {
+    // uq_authorizations_request_line (migrate.ts): cierra a nivel de motor
+    // la misma carrera que el findOne de arriba ya rechaza en el camino no
+    // concurrente -dos llamadas simultaneas del aprobador para la misma
+    // linea, la perdedora choca aca en vez de crear una segunda Authorization.
+    if (isUniqueConstraintError(err)) {
+      throw new ConflictError(`La linea ${data.requestLineId} ya tiene una autorizacion`);
+    }
+    throw err;
+  }
 
   // Consolida en la carpeta de la adquisicion (best-effort, no bloquea la
   // autorizacion ya confirmada) el respaldo del proveedor ganador: el
@@ -142,8 +178,9 @@ export async function createAuthorization(
     const sourceFolder = getQuoteRequestFolder(request.requestNumber);
     const destFolder = getAcquisitionFolder(request.requestNumber);
 
-    copyIfExists(sourceFolder, destFolder, `SOLCOT-${businessPartner.nationalId}.pdf`);
-    const cotFile = findFileByPrefix(sourceFolder, `COT-${businessPartner.nationalId}`);
+    const safeNationalId = sanitizeFilenameSegment(businessPartner.nationalId);
+    copyIfExists(sourceFolder, destFolder, `SOLCOT-${safeNationalId}.pdf`);
+    const cotFile = findFileByPrefix(sourceFolder, `COT-${safeNationalId}`);
     if (cotFile) copyIfExists(sourceFolder, destFolder, cotFile);
   } catch (err) {
     logger.error(
@@ -186,7 +223,7 @@ export async function attachAuthorizationDocument(
   const businessPartner = await getBusinessPartnerByIdOrThrow(supplier.businessPartnerId);
 
   const extension = getSafeExtension(file);
-  const filename = `AUTORIZACION-${businessPartner.nationalId}${extension}`;
+  const filename = `AUTORIZACION-${sanitizeFilenameSegment(businessPartner.nationalId)}${extension}`;
   saveBuffer(getAcquisitionFolder(request.requestNumber), filename, file.buffer);
   return filename;
 }
