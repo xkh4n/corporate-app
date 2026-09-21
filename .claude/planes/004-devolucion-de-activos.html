@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>004 — Devolución de activos a Adquisiciones</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:900px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.5rem; font-size:1.25rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  h3 { margin-top:1.6rem; font-size:1.05rem; }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }
+  th, td { border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  .flow { background:var(--block-bg); border:1px solid var(--border); border-radius:8px; padding:.8rem 1rem; font-family:Consolas,monospace; font-size:.85rem; white-space:pre-wrap; }
+  .files-list { list-style:none; padding-left:0; }
+  .files-list li { font-family:Consolas,monospace; font-size:.85rem; background:var(--code-bg); padding:.35rem .6rem; border-radius:6px; margin:.3rem 0; }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 004</span>
+  <h1>Devolución de activos a Adquisiciones (guía de despacho)</h1>
+  <div class="meta">corporate-app · corporate-api + corporate-front · Estado: aprobado, implementado · 2026-09-21 · continúa los planes 002 y 003</div>
+</header>
+
+<h2>Contexto</h2>
+<p>La toma de inventario ya validada en desarrollo deja <code>RETURNED</code> como estado, pero solo se podía crear por API y sin respaldo documental. Se pide una pantalla para devolver uno o varios activos, con guía de despacho adjunta que se pueda imprimir y enviar a Adquisiciones, y una recepción en Adquisiciones que cierre el ciclo.</p>
+
+<h2>Flujo</h2>
+<div class="flow">SOLICITANTE                                   ADQUISICIONES TI
+1. Elige centro de costo y activos    (DRAFT)
+2. Adjunta la guía de despacho (PDF)  → se guarda como
+   uploads/devoluciones/DEV<cc><aaaammddHHmmssSSS>.pdf
+3. Imprime la guía (las veces que quiera)
+4. Presiona «Enviar a Adquisiciones»  (SENT)
+   activos: ASSIGNED/DEVALUATED → MOVE_TO_RETURNED
+                                              5. Recibe cada activo que llegó (o «Recibir todos»)
+                                                 activo: MOVE_TO_RETURNED → RETURNED
+                                              6. Al llegar todos, la devolución queda RECEIVED</div>
+
+<h2>Decisiones confirmadas</h2>
+<ul>
+  <li><strong>Despacho</strong>: el estado cambia solo con el botón «Enviar a Adquisiciones» (adjuntar o imprimir no cambian nada; el navegador no puede confirmar que se imprimió).</li>
+  <li><strong>Centro de costo</strong>: uno por devolución, lo elige el solicitante; solo se pueden agregar activos que estén en ese centro. Es el <code>code</code> numérico del centro (ej. 5802), sin relleno.</li>
+  <li><strong>Recepción</strong>: por activo, con recepción parcial; se ve cuáles faltan por llegar.</li>
+</ul>
+
+<h2>Decisiones de diseño (mías, a confirmar en la revisión)</h2>
+<ul>
+  <li><strong>Código = nombre del archivo</strong>: <code>DEV</code> + código del centro + <code>aaaa MM dd HH mm ss SSS</code> (ej. <code>DEV580220260921113254862</code>). Se asigna al adjuntar por primera vez la guía y es <code>UNIQUE</code>; volver a adjuntar en borrador sobrescribe el mismo archivo. Hora local del servidor (zona horaria del contenedor).</li>
+  <li><strong>Solo PDF</strong> para la guía (el nombre pedido termina en <code>.pdf</code>); se valida el contenido real (magic bytes) con el middleware de subida existente.</li>
+  <li><strong>Un activo solo puede estar en una devolución activa</strong> (borrador o enviada): índice único parcial sobre las líneas activas.</li>
+  <li><strong>Al enviarse, el activo pierde su tenedor</strong> (<code>MOVE_TO_RETURNED</code> no es un movimiento con tenedor). El usuario que lo tenía queda como foto en la línea de la devolución.</li>
+  <li><strong><code>MOVE_TO_RETURNED</code> y <code>RETURNED</code> quedan solo internos</strong>: se sacan del enum Zod de <code>POST /asset-movements</code> para que nadie devuelva sin guía. <code>RETURNED</code> solo se acepta desde <code>MOVE_TO_RETURNED</code> (hoy acepta ASSIGNED/DEVALUATED; cambia).</li>
+  <li><strong>Sin efecto en Kardex ni en el valor</strong> (un DEVALUATED conserva valor 0).</li>
+  <li><strong>Cancelar</strong> solo en borrador (libera los activos y borra el PDF). Una devolución ya enviada no se revierte desde la pantalla.</li>
+</ul>
+
+<h2>Cambios de datos (<code>migrate.ts</code>, idempotentes, con <code>runDdl</code>)</h2>
+<ul>
+  <li><code>asset_statuses</code>: sembrar <code>MOVE_TO_RETURNED</code> («En tránsito a devolución»). El código usa guion bajo, como el resto (el <code>MOVE-TO-RETURNED</code> del pedido es el nombre visible).</li>
+  <li><code>asset_movements.movement_type</code>: ensanchar el CHECK (DROP + ADD) con <code>MOVE_TO_RETURNED</code> (16 caracteres, cabe en <code>VARCHAR(20)</code>).</li>
+  <li><code>asset_returns</code>: <code>id</code>, <code>code</code> (UNIQUE, nulo hasta adjuntar), <code>cost_center_id</code> (FK), <code>status</code> CHECK (DRAFT, SENT, RECEIVED, CANCELLED), <code>document_filename</code>, <code>notes</code>, <code>requested_by</code>, <code>sent_at</code>, <code>sent_by</code>, <code>received_at</code>, <code>created_at/updated_at</code>. «Recibida parcialmente» no es un estado: es <code>SENT</code> con líneas recibidas.</li>
+  <li><code>asset_return_lines</code>: <code>id</code>, <code>asset_return_id</code> (FK, CASCADE), <code>asset_id</code> (FK), <code>holder_user_id</code> y <code>previous_status_code</code> (foto al agregar; el nombre del usuario se resuelve al leer, no se copia), <code>active</code> BOOLEAN, <code>received_at</code>, <code>received_by</code>. Índices: <code>UNIQUE (asset_return_id, asset_id)</code> y <code>UNIQUE (asset_id) WHERE active</code>.</li>
+</ul>
+
+<h2>API (<code>corporate-api/src/</code>, ruta <code>/asset-returns</code>)</h2>
+<table>
+  <tr><th>Endpoint</th><th>Permiso</th><th>Qué hace</th></tr>
+  <tr><td><code>GET /</code></td><td>read</td><td>Lista paginada, filtro por estado y código.</td></tr>
+  <tr><td><code>GET /candidates?costCenterId=&amp;search=</code></td><td>create</td><td>Activos ASSIGNED/DEVALUATED del centro, sin devolución activa, con tenedor resuelto (evita exigir <code>assets:read</code>).</td></tr>
+  <tr><td><code>POST /</code></td><td>create</td><td>Crea el borrador con <code>costCenterId</code>, <code>assetIds</code> (1–100) y notas.</td></tr>
+  <tr><td><code>GET /:id</code></td><td>read</td><td>Cabecera, líneas (tag, serie, producto, tenedor, recibido) y si tiene guía.</td></tr>
+  <tr><td><code>POST /:id/lines</code>, <code>DELETE /:id/lines/:lineId</code></td><td>create</td><td>Agregar/quitar activos, solo en borrador.</td></tr>
+  <tr><td><code>POST /:id/document</code></td><td>create</td><td>Sube la guía (multipart, campo <code>file</code>, solo PDF), asigna el código la primera vez.</td></tr>
+  <tr><td><code>GET /:id/document</code></td><td>read</td><td>Entrega el PDF en línea (para imprimir).</td></tr>
+  <tr><td><code>POST /:id/send</code></td><td>create</td><td>Exige guía y al menos una línea; en una sola transacción revalida cada activo y crea sus movimientos <code>MOVE_TO_RETURNED</code>. Si alguno ya no es válido, no se envía nada y se informa cuáles.</td></tr>
+  <tr><td><code>POST /:id/receive</code></td><td>update</td><td><code>lineIds</code> opcional (omitido = todas las pendientes); cada una pasa a <code>RETURNED</code>. Cuando no quedan pendientes, la devolución pasa a RECEIVED.</td></tr>
+  <tr><td><code>POST /:id/cancel</code></td><td>create</td><td>Solo borrador.</td></tr>
+</table>
+<ul>
+  <li>Permisos <code>asset-returns:read|create|update</code> en <code>permission-catalog.ts</code>, <strong>sin</strong> <code>grantToUser</code>: el admin los asigna por rol. <code>create</code> = solicitante; <code>update</code> = recepción en Adquisiciones.</li>
+  <li><code>assetMovement.service.ts</code>: <code>MOVE_TO_RETURNED</code> desde ASSIGNED/DEVALUATED (estado destino <code>MOVE_TO_RETURNED</code>); <code>RETURNED</code> solo desde <code>MOVE_TO_RETURNED</code>. Ambos usan <code>createAssetMovement</code> con transacción externa y <code>lockAssetRow</code>.</li>
+  <li><code>documentStorage.ts</code>: <code>getAssetReturnsFolder()</code> = <code>uploads/devoluciones</code>. El nombre siempre se arma en el servidor (código numérico + fecha), nunca con texto del cliente.</li>
+  <li>Función pura <code>buildAssetReturnCode(costCenterCode, date)</code> con unit test.</li>
+  <li>Menú: «Devoluciones de Activos» (<code>/assets/returns</code>, permiso <code>asset-returns:read</code>, ícono <code>IoReturnDownBackOutline</code>, bajo «Productos»).</li>
+</ul>
+
+<h2>Efecto en la toma de inventario</h2>
+<ul>
+  <li>Un activo en <code>MOVE_TO_RETURNED</code> encontrado en la toma se <strong>rechaza</strong> con la instrucción «En tránsito hacia Adquisiciones (DEV…); se inventaría cuando se reciba». Se agrega a <code>inventoryAssetTransition.ts</code> (con test).</li>
+  <li>No se cuenta como faltante al cerrar (está en tránsito, no en el sitio). <code>RETURNED</code> no cambia.</li>
+  <li>Los tests actuales que crean <code>RETURNED</code> directo desde ASSIGNED pasan a hacerlo por <code>MOVE_TO_RETURNED</code> → <code>RETURNED</code>.</li>
+</ul>
+
+<h2>Frontend (<code>corporate-front/src/</code>)</h2>
+<ul>
+  <li><code>pages/devoluciones/AssetReturns.tsx</code> (<code>/assets/returns</code>): lista con filtro de estado y «Nueva devolución» (combo de centro de costo, búsqueda y selección de activos candidatos, notas). El detalle vive en la misma ruta con <code>?return=&lt;id&gt;</code>: el enrutado lo dicta <code>GET /auth/menu</code> y una ruta fuera del menú cae en ForbiddenPage (mismo criterio que la toma de inventario).</li>
+  <li><code>pages/devoluciones/AssetReturnDetail.tsx</code> (<code>?return=&lt;id&gt;</code>): líneas; en borrador: agregar/quitar, adjuntar guía, <strong>Imprimir guía</strong> (descarga el PDF con el token y abre el diálogo de impresión), «Enviar a Adquisiciones» y «Cancelar»; enviada: casillas de recepción y «Recibir seleccionados / Recibir todos» (solo con <code>asset-returns:update</code>), con contador «recibidos X de N».</li>
+  <li><code>types/assetReturn.ts</code>, <code>services/assetReturnService.ts</code> (subida con <code>FormData</code>, patrón de <code>goodsReceiptService</code>), rutas en <code>AppRoutes.tsx</code>, y <code>MOVE_TO_RETURNED</code> en <code>types/assetMovement.ts</code> y <code>inventoryLabels.ts</code>.</li>
+</ul>
+
+<h2>Orden de implementación</h2>
+<ol>
+  <li>Migración, estado y tipo de movimiento, guards de <code>RETURNED</code>/<code>MOVE_TO_RETURNED</code>, ajuste de tests existentes.</li>
+  <li><code>buildAssetReturnCode</code> + unit test; modelos y <code>assetReturn.service.ts</code> con tests de integración.</li>
+  <li>Controlador, rutas, permisos, menú y tests HTTP (incluida la subida multipart).</li>
+  <li>Regla nueva en la toma de inventario (rechazo y exclusión de faltantes).</li>
+  <li>Front: tipos, servicio, dos pantallas, rutas.</li>
+  <li>Documentación: bitácora, glosario (<code>MOVE_TO_RETURNED</code>, <code>asset-returns</code>), README raíz.</li>
+</ol>
+
+<h2>Fuera de alcance (con motivo)</h2>
+<ul>
+  <li>Qué pasa con un activo <code>RETURNED</code> después (re-disponibilizarlo, darlo de baja o enviarlo a soporte): hoy no hay salida de ese estado y <code>ASSIGNED</code> exige <code>AVAILABLE</code>. Es el siguiente paso natural, no se pidió.</li>
+  <li>Aviso por correo a Adquisiciones al enviar.</li>
+  <li>Revertir una devolución ya enviada.</li>
+  <li>Hoja resumen generada por el sistema: se imprime la guía adjunta.</li>
+</ul>
+
+<h2>Riesgos y verificación</h2>
+<ul>
+  <li><strong>Persistencia de <code>uploads</code> (decisión del usuario, incluida en este plan)</strong>: en Testing y Producción las carpetas de adjuntos vivían en la capa del contenedor y las 3 réplicas no las compartían. Se montan dos volúmenes nombrados compartidos, <code>api_uploads</code> → <code>/app/dist/src/uploads</code> y <code>api_downloads</code> → <code>/app/dist/src/downloads</code> (esta última guarda las cotizaciones que sube el proveedor), en <code>corporate-api/compose.prod.yml</code> y <code>compose.test.yml</code>; el <code>Dockerfile</code> crea las carpetas con dueño <code>node</code> antes del <code>chown</code> para que el volumen nuevo herede los permisos. En dev ya persiste por el bind mount <code>./:/app</code>. <code>docker compose down -v</code> borra estos volúmenes: respaldar antes.</li>
+  <li><code>tsc</code> (API y <code>-p tsconfig.app.json</code> en el front), ESLint, tests unit e integración en el stack Testing (<code>.\run.ps1 bdd test</code>, revisando la IP de <code>.env.test</code>).</li>
+  <li>Integración: crear borrador, un activo en una sola devolución activa, PDF válido/inválido, código con formato exacto, envío atómico (un activo inválido no deja cambios parciales), recepción parcial y total, cancelar libera activos, guards de movimientos.</li>
+  <li>Manual (no verificado hasta implementar): impresión de la guía en el navegador y el flujo completo con dos usuarios de roles distintos. Los usuarios deben volver a iniciar sesión y el admin asignar <code>asset-returns</code> a los roles.</li>
+</ul>
+
+<h2>Endurecimiento posterior (revisión de seguridad, 2026-09-21)</h2>
+<ul>
+  <li>Solo el solicitante o un administrador modifica un borrador (agregar/quitar, guía, enviar, cancelar); recibir lo prohíbe a quien solicitó o envió (admin exento). Máximo 10 borradores abiertos por solicitante.</li>
+  <li>Un activo <code>MOVE_TO_RETURNED</code> solo admite el movimiento <code>RETURNED</code>; el tenedor se registra al despachar; enviar exige que la guía exista en disco.</li>
+  <li>Guía: hasta 5 MB, inspección de contenido activo (incluye flujos comprimidos), tope de subidas simultáneas y por ventana, respuesta con <code>no-store</code>; ver/imprimir/descargar la guía usan la URL de la API (no blob:).</li>
+  <li>El detalle completo está en la bitácora (<code>.claude/README.md</code>, entrada «2026-09-21 (4)»).</li>
+</ul>
+
+<h2>Ajustes posteriores (2026-09-21, cierre de riesgos)</h2>
+<ul>
+  <li>La guía se <strong>sanea con qpdf</strong> al subir (se guarda la reescritura; JavaScript/archivos incrustados se rechazan) y solo se ofrece <strong>Descargar guía</strong> (sin ver ni imprimir en el navegador).</li>
+  <li><strong>Dos modos por tenedor</strong>: «Mis equipos» (centro de costo fijado por el activo, no se elige) y «Equipos de otro usuario» (el solicitante elige el centro de costo). No se mezclan; el administrador queda exento.</li>
+  <li>Detalle en la bitácora (<code>.claude/README.md</code>, entrada «2026-09-21 (5)»).</li>
+</ul>
+
+<footer class="doc-footer">Plan 004 · corporate-app · guardado en <code>.claude/planes/</code></footer>
+</div>
+</body>
+</html>

@@ -42,7 +42,15 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/package.json ./package.json
 
-RUN chown -R node:node /app
+# qpdf: sanea las guias de despacho subidas (library/pdfSanitizer.ts: revisa el arbol de objetos
+# real del PDF y guarda su reescritura). Sin el binario las subidas de PDF se rechazan (503).
+RUN apk add --no-cache qpdf
+
+# Carpetas de adjuntos creadas ANTES del chown: un volumen nombrado nuevo hereda
+# duenio y permisos del directorio de la imagen (ver compose.prod.yml/test.yml),
+# sin esto quedaria root y el usuario "node" no podria escribir.
+RUN mkdir -p /app/dist/src/uploads /app/dist/src/downloads \
+    && chown -R node:node /app
 USER node
 
 CMD ["node", "dist/index.js"]

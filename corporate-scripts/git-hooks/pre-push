@@ -1,0 +1,53 @@
+#!/bin/sh
+# Security gate: blocks `git push` to master unless the commit being pushed
+# has a matching local security-review marker written by
+# corporate-scripts/security-gate-mark.sh (or .ps1).
+#
+# Installed via `git config core.hooksPath corporate-scripts/git-hooks`
+# (one-time, per clone/machine -- core.hooksPath is not versioned by git).
+#
+# This is a local, developer-side attestation, not a cryptographic proof:
+# it stops an accidental push of unreviewed changes to master, it does not
+# defend against a developer who deliberately fabricates the marker.
+# Server-side enforcement (branch protection / required status check) is
+# the complement to this for real adversarial guarantees.
+
+set -eu
+
+remote_name="$1"
+marker_file=".security-gate/last-review.json"
+
+blocked=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/master)
+      if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+        continue # branch deletion, nothing to gate
+      fi
+      if [ ! -f "$marker_file" ]; then
+        echo "security-gate: BLOCKED push to master ($remote_name)." >&2
+        echo "  No security review marker found at $marker_file." >&2
+        echo "  Run a security review (cybersecurity-orchestrator / security-audit / security-review)" >&2
+        echo "  for commit $local_sha, then run:" >&2
+        echo "    corporate-scripts/security-gate-mark.sh $local_sha    (or .ps1 on Windows)" >&2
+        blocked=1
+        continue
+      fi
+      marked_sha=$(grep -o '"commit"[[:space:]]*:[[:space:]]*"[a-f0-9]\{7,40\}"' "$marker_file" | grep -o '[a-f0-9]\{7,40\}' | head -n1 || true)
+      if [ "$marked_sha" != "$local_sha" ]; then
+        echo "security-gate: BLOCKED push to master ($remote_name)." >&2
+        echo "  $marker_file is for commit ${marked_sha:-<none>}, but you are pushing $local_sha." >&2
+        echo "  Re-run the security review for the current commit, then:" >&2
+        echo "    corporate-scripts/security-gate-mark.sh $local_sha    (or .ps1 on Windows)" >&2
+        blocked=1
+        continue
+      fi
+      echo "security-gate: OK, $local_sha matches the reviewed commit in $marker_file." >&2
+      ;;
+  esac
+done
+
+if [ "$blocked" -eq 1 ]; then
+  exit 1
+fi
+exit 0

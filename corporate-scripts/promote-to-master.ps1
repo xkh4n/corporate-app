@@ -41,6 +41,9 @@ if ($dirty) {
     exit 1
 }
 
+# Rama desde la que se invoco: se restaura al terminar (el script hace checkout de release/master).
+$originalBranch = (git branch --show-current).Trim()
+
 Write-Host "Actualizando referencias remotas..." -ForegroundColor Cyan
 git fetch origin --quiet
 
@@ -56,13 +59,9 @@ git checkout -B $releaseBranch origin/master | Out-Null
 Write-Host "Mezclando origin/testing (sin commitear)..." -ForegroundColor Cyan
 git merge --no-commit --no-ff origin/testing
 $mergeExit = $LASTEXITCODE
-
-if ($mergeExit -ne 0) {
-    Write-Warning "El merge de testing -> $releaseBranch tiene conflictos reales (no relacionados a las rutas excluidas)."
-    Write-Warning "Resuelvelos a mano en el working tree, dejá todo en stage, y volvé a correr este mismo comando de nuevo NO hace falta -no vuelve a mergear si ya hay un merge en curso-."
-    Write-Warning "Si preferís abortar: git merge --abort"
-    exit 1
-}
+# Un merge con conflictos NO corta aqui: es lo normal cuando testing modifico un archivo de solo-testing que master
+# no tiene (modify/delete: p. ej. un *.integration.test.ts o compose.test.yml). Esos conflictos se resuelven solos
+# mas abajo, borrando el archivo; solo un conflicto en una ruta NO excluida detiene la promocion.
 
 # 3. Lee la lista única de rutas/patrones prohibidos.
 $excludedListPath = Join-Path $PSScriptRoot 'master-excluded-paths.txt'
@@ -90,9 +89,37 @@ function Test-ExcludedPath {
     return $false
 }
 
+$removed = @()
+
+# 3b. Conflictos del merge. Los de rutas excluidas se resuelven borrando el archivo (master no debe tenerlo);
+#     si queda alguno en una ruta normal, hay que resolverlo a mano.
+$unmerged = @(git diff --name-only --diff-filter=U)
+if ($mergeExit -ne 0 -and $unmerged.Count -eq 0) {
+    Write-Warning "El merge de testing -> $releaseBranch fallo sin dejar conflictos resolubles; se aborta."
+    git merge --abort 2>$null
+    git checkout $originalBranch 2>$null | Out-Null
+    exit 1
+}
+$realConflicts = @()
+foreach ($f in $unmerged) {
+    if (Test-ExcludedPath -RelPath $f -Patterns $patterns) {
+        git rm -f -q -- $f
+        $removed += $f
+    }
+    else {
+        $realConflicts += $f
+    }
+}
+if ($realConflicts.Count -gt 0) {
+    Write-Warning "El merge de testing -> $releaseBranch tiene conflictos reales (rutas NO excluidas):"
+    $realConflicts | ForEach-Object { Write-Warning "  - $_" }
+    Write-Warning "Resuelvelos a mano en el working tree y dejá todo en stage; luego 'git commit' y 'git push origin $releaseBranch --force-with-lease'."
+    Write-Warning "Si preferís abortar: git merge --abort  (y  git checkout $originalBranch)"
+    exit 1
+}
+
 # 4. Revisa SOLO los archivos que este merge realmente toca (no todo el repo).
 $changedFiles = git diff --cached --name-only
-$removed = @()
 
 foreach ($f in $changedFiles) {
     if (-not (Test-ExcludedPath -RelPath $f -Patterns $patterns)) { continue }
@@ -106,8 +133,8 @@ foreach ($f in $changedFiles) {
         git checkout HEAD -- $f
     } else {
         # Archivo nuevo que solo existia en testing -se saca del todo del merge.
-        git rm -f --cached -- $f | Out-Null
-        Remove-Item -Path $f -Force -ErrorAction SilentlyContinue
+        # "git rm -f" (sin --cached) quita el archivo del indice Y del working tree.
+        git rm -f -q -- $f
     }
     $removed += $f
 }
@@ -124,6 +151,7 @@ $staged = git diff --cached --stat
 if (-not $staged) {
     Write-Host "No hay cambios reales para promocionar (testing == master una vez excluidas sus rutas propias)." -ForegroundColor Yellow
     git merge --abort 2>$null
+    git checkout $originalBranch 2>$null | Out-Null
     exit 0
 }
 
@@ -208,3 +236,6 @@ if (-not $prOpened) {
 else {
     Write-Host "Compare/diff por si lo necesitás: $compareUrl" -ForegroundColor DarkGray
 }
+
+# Vuelve a la rama desde la que se invoco (el merge y el commit ya quedaron publicados en release/master).
+git checkout $originalBranch 2>$null | Out-Null

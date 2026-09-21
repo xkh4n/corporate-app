@@ -1,7 +1,10 @@
 import type { NextFunction, Request, Response } from "express";
 import multer, { MulterError } from "multer";
-import { BadRequestError } from "../library/errors";
+import { AppError, BadRequestError } from "../library/errors";
 import { sendOk } from "../library/response";
+import { createConcurrencyGate } from "../library/concurrencyGate";
+import { sanitizePdf } from "../library/pdfSanitizer";
+import { uploadRateLimiter } from "./rateLimit";
 
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
 
@@ -63,29 +66,60 @@ const ALLOWED_MIME_TYPES = new Set(Object.keys(EXTENSION_BY_MIME_TYPE));
 // consultar la BD (nationalId del proveedor, requestNumber) -no del nombre
 // original subido. El service escribe el buffer a disco el mismo, via
 // library/documentStorage.ts, una vez resueltos esos datos.
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_FILE_SIZE_BYTES },
-  fileFilter: (_req, file, callback) => {
-    if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
-      callback(new BadRequestError(`Tipo de archivo no permitido: ${file.mimetype}`));
-      return;
-    }
-    callback(null, true);
-  },
-});
+//
+// Un uploader por tamano maximo (la guia de despacho admite menos que el resto). Ademas del tamano se
+// acota la forma del multipart (1 archivo, pocos campos): sin eso una request podia mandar cientos de
+// partes pequenas.
+const uploaders = new Map<number, multer.Multer>();
+
+function getUploader(maxFileSizeBytes: number): multer.Multer {
+  let uploader = uploaders.get(maxFileSizeBytes);
+  if (!uploader) {
+    uploader = multer({
+      storage: multer.memoryStorage(),
+      limits: { fileSize: maxFileSizeBytes, files: 1, fields: 10, parts: 12 },
+      fileFilter: (_req, file, callback) => {
+        if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
+          callback(new BadRequestError(`Tipo de archivo no permitido: ${file.mimetype}`));
+          return;
+        }
+        callback(null, true);
+      },
+    });
+    uploaders.set(maxFileSizeBytes, uploader);
+  }
+  return uploader;
+}
+
+// Subidas EN CURSO a la vez, por proceso: con memoryStorage cada una retiene hasta 2 x el tamano del
+// archivo (los trozos + el buffer final). El limitador por ventana cuenta requests, no las simultaneas,
+// asi que una rafaga paralela podia agotar los 512 MB del contenedor. Peor caso por replica:
+// 8 x 2 x 15 MB = 240 MB.
+const uploadGate = createConcurrencyGate({ maxTotal: 8, maxPerKey: 2 });
 
 // Envuelve multer.single() para que un error de multer (tamano excedido,
 // campo inesperado) llegue al errorHandler como BadRequestError -mismo
-// formato {codigo, message} que el resto de la API, en vez del 500 generico
-// que tirar el MulterError sin convertir. El chequeo de magic bytes va ACA
-// (no en fileFilter): con memoryStorage, file.buffer todavia no existe
-// cuando fileFilter corre -llega recien cuando multer termina de leer el
-// stream completo, que es este callback.
-export function uploadSingle(fieldName: string) {
-  const middleware = upload.single(fieldName);
-  return (req: Request, res: Response, next: NextFunction): void => {
+// formato {codigo, message} que el resto de la API. El chequeo de magic bytes va
+// ACA (no en fileFilter): con memoryStorage, file.buffer todavia no existe cuando
+// fileFilter corre -llega recien cuando multer termina de leer el stream completo.
+export interface UploadOptions {
+  // Sanea el PDF con qpdf (library/pdfSanitizer.ts): rechaza contenido activo (JavaScript, Launch,
+  // archivos incrustados...) y REEMPLAZA req.file.buffer por la reescritura de qpdf. Opt-in: los
+  // adjuntos de compras (cotizaciones de proveedores, facturas) pueden traer formularios legitimos
+  // y no se tocan.
+  sanitizePdf?: boolean;
+  // Tamano maximo del archivo (por defecto 15 MB).
+  maxFileSizeBytes?: number;
+}
+
+export function uploadSingle(fieldName: string, options: UploadOptions = {}) {
+  const middleware = getUploader(options.maxFileSizeBytes ?? MAX_FILE_SIZE_BYTES).single(fieldName);
+  const receive = (req: Request, res: Response, next: NextFunction): void => {
     middleware(req, res, (err: unknown) => {
+      void handle(err);
+    });
+
+    async function handle(err: unknown): Promise<void> {
       if (err) {
         if (err instanceof MulterError) {
           next(new BadRequestError(`Error al subir el archivo: ${err.message}`));
@@ -98,7 +132,36 @@ export function uploadSingle(fieldName: string) {
         next(new BadRequestError("El contenido del archivo no coincide con su tipo declarado"));
         return;
       }
+      if (options.sanitizePdf && req.file && req.file.mimetype === "application/pdf") {
+        try {
+          // Lo que se guarda es la reescritura de qpdf, no el archivo subido.
+          req.file.buffer = await sanitizePdf(req.file.buffer);
+          req.file.size = req.file.buffer.length;
+        } catch (sanitizeErr) {
+          next(sanitizeErr);
+          return;
+        }
+      }
       next();
+    }
+  };
+  // El limite de subidas corre ANTES de multer: una request rechazada nunca llega a
+  // bufferear el archivo en memoria.
+  return (req: Request, res: Response, next: NextFunction): void => {
+    uploadRateLimiter(req, res, (limitErr?: unknown) => {
+      if (limitErr) {
+        next(limitErr);
+        return;
+      }
+      // Tope de subidas simultaneas: se reserva el cupo ANTES de leer el archivo y se libera al terminar la
+      // respuesta (o al cortarse la conexion).
+      const release = uploadGate.tryAcquire(String(req.user?.userId ?? req.ip ?? "anon"));
+      if (!release) {
+        next(new AppError(429, "Hay demasiadas subidas en curso, intente nuevamente en unos segundos"));
+        return;
+      }
+      res.once("close", release);
+      receive(req, res, next);
     });
   };
 }

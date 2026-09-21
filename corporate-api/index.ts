@@ -8,7 +8,7 @@ import { connectRedis } from "./src/databases/redis/connection";
 import { connectMongo } from "./src/databases/mongo/connection";
 import { migratePostgres } from "./src/databases/postgres/migrate";
 import { migrateMssql } from "./src/databases/mssql/migrate";
-import { seedBootstrapAdmin, seedGeography, seedMenuItems, seedPermissions } from "./src/databases/seed";
+import { seedBootstrapAdmin, seedGeography, seedMenuItems, seedPermissions, seedPrevisional } from "./src/databases/seed";
 import { seedCostCenters } from "./src/services/postgres/costCenter.service";
 import { seedProducts } from "./src/services/mongo/product.service";
 import { seedProductCategories } from "./src/services/mongo/productCategory.service";
@@ -20,7 +20,7 @@ async function bootstrap(): Promise<void> {
   await Promise.all([migratePostgres(), migrateMssql()]);
   // seedGeography es secuencial internamente (countries -> cities -> states);
   // seedCostCenters vive en Postgres, sin dependencia con la cadena anterior.
-  await Promise.all([seedGeography(), seedCostCenters(), seedProductCategories(), seedProducts(), seedPermissions()]);
+  await Promise.all([seedGeography(), seedCostCenters(), seedProductCategories(), seedProducts(), seedPermissions(), seedPrevisional()]);
   // Secuencial, NO dentro del Promise.all de arriba: seedMenuItems resuelve
   // cada permissionKey del catalogo contra la tabla permissions, que recien
   // queda poblada cuando seedPermissions() termina (ver menu-catalog.ts).

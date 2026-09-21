@@ -1,4 +1,4 @@
-import { Op, QueryTypes, Transaction } from "sequelize";
+import { Op, QueryTypes, Transaction, col, fn, where as sequelizeWhere } from "sequelize";
 import { postgres } from "../../databases/postgres/connection";
 import { AssetModel } from "../../models/postgres/asset.model";
 import { AssetStatusModel } from "../../models/postgres/assetStatus.model";
@@ -12,7 +12,11 @@ import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
 import type { ProductType } from "../../types/mongo/product.types";
-import type { AssetUpdateAttributes, CreateAssetsFromReceiptInput } from "../../types/postgres/asset.types";
+import type {
+  AssetUpdateAttributes,
+  CreateAssetFromInventoryInput,
+  CreateAssetsFromReceiptInput,
+} from "../../types/postgres/asset.types";
 
 const PAD_LENGTH = 9;
 
@@ -99,6 +103,69 @@ export async function getAssetByIdOrThrow(id: number, transaction?: Transaction)
   return asset;
 }
 
+// Coincidencia EXACTA por tag (listAssets solo busca con iLike, un tag
+// parcial devolveria varios). Normaliza espacios y mayusculas: el lector de
+// codigos de barras/QR puede agregar espacios o entregar el texto en minusculas.
+export async function getAssetByTag(tag: string, transaction?: Transaction): Promise<AssetModel | null> {
+  const normalized = tag.trim().toUpperCase();
+  if (!normalized) return null;
+  return AssetModel.findOne({
+    where: { tag: normalized },
+    include: [{ model: AssetStatusModel, as: "status" }],
+    transaction,
+  });
+}
+
+// TODAS las coincidencias de una serie (sin distinguir mayusculas ni espacios de
+// borde), con su estado. Usado por la toma de inventario para encontrar el
+// activo de un equipo por su serie y para no duplicar uno que ya existe: puede
+// haber mas de una en datos legados, y en ese caso quien llama debe rechazar en
+// vez de elegir una al azar.
+export async function findAssetsBySerial(serialNumber: string, transaction?: Transaction): Promise<AssetModel[]> {
+  if (!serialNumber.trim()) return [];
+  return AssetModel.findAll({
+    // Misma expresion que el indice ix_assets_serial_normalized y que la clave del advisory lock de la toma
+    // (lower + btrim), calculada en SQL a ambos lados: JS y Postgres discrepan con tabs y caracteres no ASCII.
+    where: sequelizeWhere(fn("lower", fn("btrim", col("serial_number"))), fn("lower", fn("btrim", serialNumber))),
+    include: [{ model: AssetStatusModel, as: "status" }],
+    order: [["id", "ASC"]],
+    transaction,
+  });
+}
+
+// Ubicacion = centro de costo. La toma de inventario mueve el activo al centro de
+// costo donde el auditor lo encontro y, si el activo no tenia producto (activo
+// legado), le completa el elegido. Corre dentro de la transaccion de quien llama.
+export async function updateAssetLocation(
+  assetId: number,
+  input: { costCenterId: number; productIdIfMissing?: string | null; updatedBy?: number },
+  transaction: Transaction,
+): Promise<void> {
+  await AssetModel.update(
+    {
+      costCenterId: input.costCenterId,
+      ...(input.productIdIfMissing ? { productId: input.productIdIfMissing } : {}),
+      ...(input.updatedBy !== undefined ? { updatedBy: input.updatedBy } : {}),
+    },
+    { where: { id: assetId }, transaction },
+  );
+}
+
+// SELECT...FOR UPDATE sin join (a diferencia de getAssetById, que incluye
+// status via belongsTo -Postgres rechaza FOR UPDATE sobre el lado nullable
+// de un LEFT JOIN). Bloquea la fila ANTES de re-leer el estado con join,
+// para serializar el guard de estado contra el UPDATE que lo sigue -mismo
+// patron que lockAndGetPreviousBalance en assetKardex.service.ts. Debe
+// llamarse dentro de la misma transaccion que el UPDATE de status.
+export async function lockAssetRow(id: number, transaction: Transaction): Promise<void> {
+  // NO KEY UPDATE (no UPDATE): igual de exclusivo para serializar los guards de estado, pero no
+  // bloquea los INSERT de otras transacciones que solo referencian la fila por FK (movimientos, lineas).
+  await postgres.query(`SELECT id FROM assets WHERE id = :id FOR NO KEY UPDATE`, {
+    replacements: { id },
+    transaction,
+  });
+}
+
 // Se llama desde services/mssql/goodsReceipt.service.ts al confirmar una
 // recepcion -escritura cross-engine real (MSSQL ya confirmado -> Postgres),
 // no atomica entre los dos motores: si esto falla despues de confirmado el
@@ -168,6 +235,37 @@ export async function createAssetsFromReceipt(input: CreateAssetsFromReceiptInpu
     where: { id: { [Op.in]: createdIds } },
     include: [{ model: AssetStatusModel, as: "status" }],
   });
+}
+
+// Alta de UN activo desde una toma de inventario (inventoryCount.service.ts):
+// el equipo existe fisicamente pero no en el sistema. Corre dentro de la
+// transaccion de quien llama para que activo + movimiento + linea de la toma
+// sean atomicos. Nace AVAILABLE (mismo primer estado operativo que un activo
+// recibido) y el estado real declarado por el auditor se aplica despues con
+// createAssetMovement/setAssetStatus. Sin goodsReceiptId ni asiento
+// ACQUISITION: no hay recepcion ni costo conocido.
+export async function createAssetFromInventory(
+  input: CreateAssetFromInventoryInput,
+  transaction: Transaction,
+): Promise<AssetModel> {
+  const availableStatus = await getAssetStatusByCodeOrThrow("AVAILABLE", transaction);
+  const tag = await generateAssetTag(TAG_PREFIX_BY_PRODUCT_TYPE[input.productType], transaction);
+  return AssetModel.create(
+    {
+      tag,
+      statusId: availableStatus.id,
+      serialNumber: input.serialNumber,
+      warrantyExpiresAt: null,
+      value: null,
+      receivedAt: new Date().toISOString().slice(0, 10),
+      goodsReceiptId: null,
+      costCenterId: input.costCenterId,
+      productId: input.productId,
+      createdBy: input.createdBy ?? null,
+      updatedBy: null,
+    },
+    { transaction },
+  );
 }
 
 export async function updateAsset(id: number, data: AssetUpdateAttributes): Promise<AssetModel> {

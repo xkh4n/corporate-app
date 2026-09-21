@@ -232,6 +232,19 @@ export async function listAssignableUsers(search: string): Promise<SafeUser[]> {
   return users.map(toSafeUser);
 }
 
+// Coincidencia EXACTA por RUT de un usuario activo (picker de la toma de inventario). Devuelve solo lo
+// necesario para mostrar y asignar; no expone el resto de los datos personales.
+export async function findActiveUserByDocumentId(
+  documentId: string,
+): Promise<{ userId: number; fullName: string } | null> {
+  const user = await UserModel.findOne({
+    where: { isActive: true },
+    include: [{ model: PersonModel, as: "person", required: true, where: { documentId: documentId.trim() } }],
+  });
+  if (!user?.person) return null;
+  return { userId: user.id, fullName: `${user.person.firstName} ${user.person.lastName}`.trim() };
+}
+
 export async function deactivateUser(id: number): Promise<void> {
   const user = await getUserByIdOrThrow(id);
   await user.update({ isActive: false });

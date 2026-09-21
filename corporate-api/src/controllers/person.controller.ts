@@ -7,6 +7,11 @@ import { sendList, sendOk, sendNoContent } from "../library/response";
 export const createPersonSchema = z.object({
   firstName: z.string().min(1).max(100),
   lastName: z.string().min(1).max(100),
+  // Opcionales en la API (createPerson tambien lo usan el seed del admin y los
+  // tests, sin estos datos); la pantalla de alta de colaborador los exige.
+  maternalLastName: z.string().min(1).max(100).optional(),
+  sex: z.enum(["M", "F"]).optional(),
+  nationality: z.union([z.literal(0), z.literal(1)]).optional(),
   documentId: z.string().min(1).max(20),
   email: z.string().email().max(150),
   phone: z.string().max(30).optional(),

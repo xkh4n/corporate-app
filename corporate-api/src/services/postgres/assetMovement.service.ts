@@ -1,7 +1,9 @@
+import { QueryTypes, Transaction } from "sequelize";
 import { postgres } from "../../databases/postgres/connection";
+import { AssetModel } from "../../models/postgres/asset.model";
 import { AssetMovementModel } from "../../models/postgres/assetMovement.model";
 import { AssetMovementUserModel } from "../../models/postgres/assetMovementUser.model";
-import { getAssetByIdOrThrow, setAssetStatus } from "./asset.service";
+import { getAssetByIdOrThrow, lockAssetRow, setAssetStatus } from "./asset.service";
 import { getAssetStatusByCodeOrThrow } from "./assetStatus.service";
 import { recordWriteOff } from "./assetKardex.service";
 import { getUserByIdOrThrow } from "../mssql/user.service";
@@ -28,9 +30,15 @@ const STATUS_CODE_BY_MOVEMENT_TYPE = {
   REASSIGNED: "ASSIGNED",
   SUPPORT: "SUPPORT",
   DECOMMISSIONED: "DECOMMISSIONED",
+  RETURNED: "RETURNED",
+  MOVE_TO_RETURNED: "MOVE_TO_RETURNED",
+  DEVALUATED: "DEVALUATED",
 } as const;
 
-const MOVEMENT_TYPES_REQUIRING_USERS = new Set(["ASSIGNED", "REASSIGNED"]);
+// Movimientos que dejan el activo en manos de un usuario: exigen usuario y
+// definen el tenedor vigente (listCurrentHoldersByAssetIds). DEVALUATED es una
+// baja reactivada en uso (valor 0), por eso tambien tiene tenedor.
+export const MOVEMENT_TYPES_REQUIRING_USERS = new Set(["ASSIGNED", "REASSIGNED", "DEVALUATED"]);
 
 // Incluye los usuarios asignados en cada movimiento (asset_movement_users,
 // escritos en createAssetMovement mas abajo) -antes quedaban invisibles via
@@ -52,9 +60,14 @@ export async function listMovementsByAsset(
 // userId es una referencia cross-engine hacia users (MSSQL), sin FK real
 // -validada aca contra el service de MSSQL antes de insertar, mismo criterio
 // que el resto de las referencias cross-engine de este proyecto.
-export async function createAssetMovement(input: CreateAssetMovementInput): Promise<AssetMovementModel> {
-  const asset = await getAssetByIdOrThrow(input.assetId);
-
+//
+// externalTransaction opcional: la toma de inventario crea el activo y su
+// movimiento en UNA sola transaccion (inventoryCount.service.ts). Sin ella,
+// el movimiento abre la suya como siempre.
+export async function createAssetMovement(
+  input: CreateAssetMovementInput,
+  externalTransaction?: Transaction,
+): Promise<AssetMovementModel> {
   const userIds = input.userIds ?? [];
   if (MOVEMENT_TYPES_REQUIRING_USERS.has(input.movementType) && userIds.length === 0) {
     throw new BadRequestError(`El movimiento '${input.movementType}' requiere al menos un usuario`);
@@ -63,22 +76,66 @@ export async function createAssetMovement(input: CreateAssetMovementInput): Prom
     await getUserByIdOrThrow(userId);
   }
 
-  // Guards nuevos (Fase E) -hoy no habia ninguno: se podia "asignar" un
-  // activo DECOMMISSIONED sin que nada lo impidiera.
-  if (input.movementType === "ASSIGNED" && asset.status?.code !== "AVAILABLE") {
-    throw new ConflictError(
-      `El activo ${asset.tag} no esta disponible para asignar (estado actual: ${asset.status?.code ?? "desconocido"})`,
-    );
-  }
-  if (input.movementType === "REASSIGNED" && asset.status?.code !== "ASSIGNED") {
-    throw new ConflictError(
-      `El activo ${asset.tag} no esta asignado, no se puede reasignar (estado actual: ${asset.status?.code ?? "desconocido"})`,
-    );
-  }
+  const applyMovement = async (transaction: Transaction): Promise<AssetMovementModel> => {
+    // Bloquea la fila del activo ANTES de leer su estado y evaluar los
+    // guards -sin esto, dos requests casi simultaneas para el mismo
+    // assetId leian AVAILABLE antes de que cualquiera confirmara su
+    // UPDATE y terminaban asignando la misma unidad fisica a usuarios
+    // distintos (hallazgo de auditoria; mismo patron ya usado en
+    // assetKardex.service.ts#lockAndGetPreviousBalance).
+    await lockAssetRow(input.assetId, transaction);
+    const asset = await getAssetByIdOrThrow(input.assetId, transaction);
+    // Dentro de la transaccion: consultarlo fuera tomaba otra conexion del pool mientras se retiene esta.
+    const newStatus = await getAssetStatusByCodeOrThrow(STATUS_CODE_BY_MOVEMENT_TYPE[input.movementType], transaction);
 
-  const newStatus = await getAssetStatusByCodeOrThrow(STATUS_CODE_BY_MOVEMENT_TYPE[input.movementType]);
+    // Un activo despachado en una devolucion (MOVE_TO_RETURNED) solo puede recibirse en Adquisiciones
+    // (RETURNED). Cualquier otro movimiento lo sacaria de la devolucion y dejaria la recepcion trabada.
+    if (asset.status?.code === "MOVE_TO_RETURNED" && input.movementType !== "RETURNED") {
+      throw new ConflictError(
+        `El activo ${asset.tag} esta en transito de devolucion: solo puede recibirse en Adquisiciones`,
+      );
+    }
 
-  const movement = await postgres.transaction(async (transaction) => {
+    // Guards nuevos (Fase E) -hoy no habia ninguno: se podia "asignar" un
+    // activo DECOMMISSIONED sin que nada lo impidiera.
+    if (input.movementType === "ASSIGNED" && asset.status?.code !== "AVAILABLE") {
+      throw new ConflictError(
+        `El activo ${asset.tag} no esta disponible para asignar (estado actual: ${asset.status?.code ?? "desconocido"})`,
+      );
+    }
+    if (input.movementType === "REASSIGNED" && asset.status?.code !== "ASSIGNED") {
+      throw new ConflictError(
+        `El activo ${asset.tag} no esta asignado, no se puede reasignar (estado actual: ${asset.status?.code ?? "desconocido"})`,
+      );
+    }
+
+    // Devolucion (plan 004): MOVE_TO_RETURNED despacha un activo en manos de
+    // alguien hacia Adquisiciones (solo desde ASSIGNED/DEVALUATED) y RETURNED
+    // lo da por recibido (solo desde MOVE_TO_RETURNED). Ninguno toca el Kardex
+    // ni el valor, y ninguno lleva tenedor: al despacharse el activo lo pierde.
+    // Ambos son internos (assetReturn.service.ts), no estan en el enum Zod del
+    // controlador: nadie devuelve sin guia. DEVALUATED: solo una baja (o un
+    // devaluado que cambia de usuario) puede pasar a estar en uso con valor 0;
+    // se crea unicamente desde la toma de inventario (tampoco esta en el enum).
+    if (
+      input.movementType === "MOVE_TO_RETURNED" &&
+      !["ASSIGNED", "DEVALUATED"].includes(asset.status?.code ?? "")
+    ) {
+      throw new ConflictError(
+        `El activo ${asset.tag} no esta asignado, no se puede despachar en devolucion (estado actual: ${asset.status?.code ?? "desconocido"})`,
+      );
+    }
+    if (input.movementType === "RETURNED" && asset.status?.code !== "MOVE_TO_RETURNED") {
+      throw new ConflictError(
+        `El activo ${asset.tag} no esta en transito de devolucion, no se puede recibir (estado actual: ${asset.status?.code ?? "desconocido"})`,
+      );
+    }
+    if (input.movementType === "DEVALUATED" && !["DECOMMISSIONED", "DEVALUATED"].includes(asset.status?.code ?? "")) {
+      throw new ConflictError(
+        `El activo ${asset.tag} no esta dado de baja, no se puede devaluar (estado actual: ${asset.status?.code ?? "desconocido"})`,
+      );
+    }
+
     const created = await AssetMovementModel.create(
       {
         assetId: input.assetId,
@@ -109,6 +166,12 @@ export async function createAssetMovement(input: CreateAssetMovementInput): Prom
 
     await setAssetStatus(input.assetId, newStatus.id, transaction, input.createdBy ?? undefined);
 
+    // Devaluado = valor 0 para poder hacerle seguimiento sin afectar el Kardex
+    // (su WRITE_OFF de la baja ya lo dejo en saldo 0, no se escribe otro asiento).
+    if (input.movementType === "DEVALUATED") {
+      await AssetModel.update({ value: "0.00" }, { where: { id: input.assetId }, transaction });
+    }
+
     // Baja del Kardex: la unidad deja de tener valor en libros al darse de
     // baja, en la MISMA transaccion que el resto del movimiento. Asignar
     // NO escribe al Kardex a proposito -mover un activo entre personas no
@@ -118,9 +181,36 @@ export async function createAssetMovement(input: CreateAssetMovementInput): Prom
     }
 
     return created;
-  });
+  };
 
-  return movement;
+  return externalTransaction ? applyMovement(externalTransaction) : postgres.transaction(applyMovement);
+}
+
+// Tenedor VIGENTE de cada activo, derivado del ULTIMO movimiento (de cualquier
+// tipo): si ese movimiento es ASSIGNED/REASSIGNED devuelve su primer usuario;
+// si es SUPPORT/DECOMMISSIONED (o no hay movimientos) el activo no tiene
+// tenedor y no aparece en el Map. No hay columna "asignado a" en assets, por
+// eso se deriva -y solo sirve para comparar, no para decidir permisos.
+export async function listCurrentHoldersByAssetIds(
+  assetIds: number[],
+  transaction?: Transaction,
+): Promise<Map<number, number>> {
+  const holders = new Map<number, number>();
+  if (assetIds.length === 0) return holders;
+  const rows = await postgres.query<{ asset_id: number; movement_type: string; user_id: number | null }>(
+    `SELECT DISTINCT ON (m.asset_id) m.asset_id, m.movement_type, mu.user_id
+       FROM asset_movements m
+       LEFT JOIN asset_movement_users mu ON mu.asset_movement_id = m.id
+      WHERE m.asset_id IN (:assetIds)
+      ORDER BY m.asset_id, m.movement_date DESC, m.id DESC, mu.id ASC`,
+    { replacements: { assetIds }, type: QueryTypes.SELECT, transaction },
+  );
+  for (const row of rows) {
+    if (MOVEMENT_TYPES_REQUIRING_USERS.has(row.movement_type) && row.user_id !== null) {
+      holders.set(row.asset_id, row.user_id);
+    }
+  }
+  return holders;
 }
 
 // Compone los datos del acta de entrega (library/pdf/assetHandoverPdf.ts)

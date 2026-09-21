@@ -5,6 +5,7 @@ import {
   userInvalidationKey,
 } from "../../models/redis/session.model";
 import { env } from "../../library/env";
+import { getIo } from "../../library/realtime/socketServer";
 
 // Whitelist de refresh tokens en Redis: un JWT firmado no se puede "invalidar"
 // por si mismo antes de que expire, asi que la revocacion real (logout,
@@ -73,6 +74,14 @@ export async function invalidateUserSessions(userId: number, reason: Invalidatio
   await redis.set(userInvalidationKey(userId), JSON.stringify({ validAfter, reason }), {
     EX: ttlSeconds,
   });
+
+  // El watermark de arriba solo se revisa en el handshake de Socket.IO (una
+  // vez por conexion, ver socketServer.ts#io.use) -sin esto, un socket ya
+  // conectado ANTES de esta invalidacion seguia recibiendo eventos push
+  // indefinidamente (hallazgo de auditoria de seguridad 2026-09-17). El
+  // adapter Redis (@socket.io/redis-adapter) hace que esto funcione sin
+  // importar en que replica este conectado ese usuario.
+  getIo()?.in(`user:${userId}`).disconnectSockets(true);
 }
 
 export async function getUserInvalidation(userId: number): Promise<UserInvalidation | null> {

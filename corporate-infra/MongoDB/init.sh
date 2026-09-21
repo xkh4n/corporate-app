@@ -48,6 +48,18 @@ APP_PASSWORD="$(cat "$MONGO_USER_PASSWORD_FILE")"
 LOGS_PASSWORD="$(cat "$MONGO_USER_LOGS_PASSWORD_FILE")"
 EXPORTER_PASSWORD="$(cat "$MONGO_EXPORTER_PASSWORD_FILE")"
 
+# Exportadas para que los --eval de mas abajo las lean via process.env en
+# runtime (mongosh corre sobre Node), en vez de interpolarlas directo en el
+# string JS ('${ROOT_PASSWORD}' etc.) -si el archivo de secreto contuviera
+# una comilla simple, esa interpolacion rompia el literal y el resto se
+# ejecutaba como codigo con privilegio de bootstrap (hallazgo de auditoria
+# de seguridad 2026-09-17). El generador real (ensure-*-secrets.sh/.ps1)
+# nunca produce ese charset, pero el script no debe asumirlo.
+export MONGO_INIT_ROOT_PASSWORD="$ROOT_PASSWORD"
+export MONGO_INIT_APP_PASSWORD="$APP_PASSWORD"
+export MONGO_INIT_LOGS_PASSWORD="$LOGS_PASSWORD"
+export MONGO_INIT_EXPORTER_PASSWORD="$EXPORTER_PASSWORD"
+
 echo "[mongo-init] Arrancando mongod temporal para el bootstrap del replica set..."
 gosu mongodb mongod "${MONGOD_ARGS[@]}" &
 MONGOD_PID=$!
@@ -150,7 +162,7 @@ else
     mongosh "${NOAUTH_ARGS[@]}" --eval "
         db.getSiblingDB('admin').createUser({
             user: '${MONGO_INITDB_ROOT_USERNAME}',
-            pwd: '${ROOT_PASSWORD}',
+            pwd: process.env.MONGO_INIT_ROOT_PASSWORD,
             roles: [{ role: 'root', db: 'admin' }]
         });
     "
@@ -174,7 +186,7 @@ else
     mongosh "${MONGOSH_AUTH[@]}" --eval "
         db.getSiblingDB('admin').createUser({
             user: '${MONGO_USER}',
-            pwd: '${APP_PASSWORD}',
+            pwd: process.env.MONGO_INIT_APP_PASSWORD,
             roles: [{ role: 'readWrite', db: '${MPONGO_DB_NAME}' }]
         });
     "
@@ -187,7 +199,7 @@ else
     mongosh "${MONGOSH_AUTH[@]}" --eval "
         db.getSiblingDB('admin').createUser({
             user: '${MONGO_USER_LOGS}',
-            pwd: '${LOGS_PASSWORD}',
+            pwd: process.env.MONGO_INIT_LOGS_PASSWORD,
             roles: [{ role: 'readWrite', db: '${MONGO_DB_LOGS}' }]
         });
     "
@@ -200,7 +212,7 @@ else
     mongosh "${MONGOSH_AUTH[@]}" --eval "
         db.getSiblingDB('admin').createUser({
             user: '${MONGO_EXPORTER_USER}',
-            pwd: '${EXPORTER_PASSWORD}',
+            pwd: process.env.MONGO_INIT_EXPORTER_PASSWORD,
             roles: [
                 { role: 'clusterMonitor', db: 'admin' },
                 { role: 'read', db: 'local' }
