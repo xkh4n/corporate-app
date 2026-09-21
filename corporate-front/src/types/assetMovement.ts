@@ -1,5 +1,12 @@
 // Espejo de corporate-api/src/models/postgres/assetMovement.model.ts (AssetMovementAttributes).
-export type AssetMovementType = "ASSIGNED" | "REASSIGNED" | "SUPPORT" | "DECOMMISSIONED";
+export type AssetMovementType =
+  | "ASSIGNED"
+  | "REASSIGNED"
+  | "SUPPORT"
+  | "DECOMMISSIONED"
+  | "RETURNED"
+  | "DEVALUATED"
+  | "MOVE_TO_RETURNED";
 
 export interface AssetMovementUser {
   id: number;

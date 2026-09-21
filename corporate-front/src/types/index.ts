@@ -2,6 +2,8 @@ export type * from "./address";
 export type * from "./api";
 export type * from "./asset";
 export type * from "./assetMovement";
+export type * from "./assetReturn";
+export type * from "./assetValuation";
 export type * from "./assetStatus";
 // `PermissionAction` also lives in ./auth, duplicada de ./permission; se omite aquí para evitar el conflicto de reexport.
 export type { PermissionKey, AuthUser, MeResponse, LoginResponse } from "./auth";
@@ -13,6 +15,7 @@ export type * from "./country";
 export type * from "./customer";
 export type * from "./employee";
 export type * from "./goodsReceipt";
+export type * from "./inventoryCount";
 export type * from "./menu";
 export type * from "./menuItem";
 export type * from "./notification";

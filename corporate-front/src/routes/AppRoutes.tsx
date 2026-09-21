@@ -21,6 +21,9 @@ import RequestAssetStatus from "../pages/solicitudes/RequestAssetStatus";
 import AssignAsset from "../pages/activos/AssignAsset";
 import AssetKardex from "../pages/activos/AssetKardex";
 import PrintAssetLabels from "../pages/activos/PrintAssetLabels";
+import AssetValuation from "../pages/activos/AssetValuation";
+import AssetReturns from "../pages/devoluciones/AssetReturns";
+import InventoryCounts from "../pages/inventario/InventoryCounts";
 import CreateProducts from "../pages/adquisiciones/productos/CreateProducts";
 import ListProducts from "../pages/adquisiciones/productos/ListProducts";
 import CreateProductCategory from "../pages/adquisiciones/category/CreateProductCategory";
@@ -68,6 +71,9 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/solicitudes/estado-activos": () => <RequestAssetStatus />,
   "/assets/kardex": () => <AssetKardex />,
   "/assets/labels": () => <PrintAssetLabels />,
+  "/inventory/counts": () => <InventoryCounts />,
+  "/assets/valuation": () => <AssetValuation />,
+  "/assets/returns": () => <AssetReturns />,
   "/roles/create": () => <NuevoRole />,
   "/roles/update": () => <AsignarPermissionToRole />,
   "/roles/read": () => <ListarRole />,

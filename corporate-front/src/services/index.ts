@@ -12,6 +12,7 @@ import {customerService} from "./customerService";
 import {employeeContractService} from "./employeeContractService";
 import {employeeService} from "./employeeService";
 import {goodsReceiptService} from "./goodsReceiptService";
+import {inventoryCountService} from "./inventoryCountService";
 import {menuItemService} from "./menuItemService";
 import {notificationService} from "./notificationService";
 import {permissionService} from "./permissionService";
@@ -50,6 +51,7 @@ export {
     employeeContractService,
     employeeService,
     goodsReceiptService,
+    inventoryCountService,
     menuItemService,
     notificationService,
     permissionService,
