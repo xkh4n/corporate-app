@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>002 — Toma de inventario de activos</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2933;
+    --muted: #52606d;
+    --border: #d9e2ec;
+    --code-bg: #f4f6f8;
+    --accent: #2563eb;
+    --block-bg: #f8fafc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0 0 4rem 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 2.5rem 1.5rem; }
+  header.doc-header {
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 1.25rem;
+    margin-bottom: 2rem;
+  }
+  header.doc-header .badge {
+    display: inline-block;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.85rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    margin-bottom: 0.75rem;
+  }
+  header.doc-header h1 { margin: 0 0 0.4rem 0; font-size: 1.6rem; }
+  header.doc-header .meta { color: var(--muted); font-size: 0.9rem; }
+  h2 {
+    margin-top: 2.5rem;
+    font-size: 1.25rem;
+    border-left: 4px solid var(--accent);
+    padding-left: 0.6rem;
+  }
+  h3 { margin-top: 1.6rem; font-size: 1.05rem; color: var(--fg); }
+  p { margin: 0.7rem 0; }
+  ul, ol { padding-left: 1.4rem; }
+  li { margin: 0.35rem 0; }
+  code {
+    background: var(--code-bg);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.85em;
+  }
+  blockquote {
+    margin: 1rem 0;
+    padding: 0.6rem 1rem;
+    background: var(--block-bg);
+    border-left: 4px solid var(--border);
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.9rem; }
+  th, td { border: 1px solid var(--border); padding: 0.5rem 0.7rem; text-align: left; vertical-align: top; }
+  th { background: var(--block-bg); }
+  .files-list { list-style: none; padding-left: 0; }
+  .files-list li {
+    font-family: Consolas, monospace;
+    font-size: 0.85rem;
+    background: var(--code-bg);
+    padding: 0.35rem 0.6rem;
+    border-radius: 6px;
+    margin: 0.3rem 0;
+  }
+  footer.doc-footer {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 002</span>
+  <h1>Toma de inventario de activos (Inicio / Fin de inventario con alta de etiquetas)</h1>
+  <div class="meta">corporate-app · corporate-api + corporate-front · Estado: aprobado, en implementación · 2026-09-21</div>
+</header>
+
+<h2>Contexto</h2>
+<p>
+La compra de equipamiento y su asignación están terminadas (recepción → activos → asignación con acta PDF,
+etiquetas ZPL, Kardex). Falta poder <strong>levantar en terreno qué hay realmente</strong>, incluidos equipos
+que hoy no existen en el sistema, y dejarlos etiquetados.
+</p>
+<p>Flujo pedido:</p>
+<ol>
+  <li>El auditor presiona <strong>«Inicio de Inventario»</strong>.</li>
+  <li>Ingresa equipos uno a uno: TAG (escaneado o escrito), categoría (combo) → producto (combo dependiente),
+    descripción, centro de costo, serie, usuario (colaborador por RUT) y estado (asignado, mantención,
+    disponible, dañado, baja).</li>
+  <li><strong>Por cada ingreso se valida si el TAG existe.</strong> Si no existe, se crea el activo con una
+    etiqueta nueva generada por el sistema y se guarda la serie.</li>
+  <li>El auditor presiona <strong>«Fin Inventario»</strong>: se cierra la toma y se pueden
+    <strong>imprimir las etiquetas nuevas</strong> (archivo <code>etiquetas.txt</code> en ZPL o impresión
+    directa por WebUSB).</li>
+</ol>
+
+<h2>Decisiones confirmadas</h2>
+<ul>
+  <li><strong>Tag no encontrado:</strong> se crea un <strong>activo real</strong> (fila en <code>assets</code>)
+    con un tag <strong>nuevo generado por el sistema</strong> (contador <code>ARR</code>/<code>SRV</code>/<code>ACT</code>
+    según el tipo de producto); se descarta el texto ingresado. Sin recepción de compra asociada.</li>
+  <li><strong>Estado «dañado»:</strong> se agrega <code>DAMAGED</code> a <code>asset_statuses</code>.</li>
+  <li><strong>Tag existente:</strong> se vincula el activo y solo se <strong>compara</strong> contra el sistema
+    (estado, tenedor, serie). No se modifica el activo existente; las diferencias se reportan y se corrigen con
+    los flujos actuales.</li>
+  <li><strong>Al cerrar:</strong> se congelan los activos del sistema que no se vieron (faltantes).</li>
+  <li><strong>Usuario:</strong> colaborador del sistema, buscado por RUT.</li>
+  <li><strong>Alcance:</strong> cualquier estado. <strong>Escaneo:</strong> lector físico ahora (emula teclado);
+    cámara en una fase 2.</li>
+</ul>
+
+<h2>Hechos del código que condicionan el diseño</h2>
+<ul>
+  <li>No existe toma de inventario, ubicaciones ni «tenedor vigente». El tenedor se deriva del último movimiento
+    <code>ASSIGNED</code>/<code>REASSIGNED</code> (<code>services/postgres/assetMovement.service.ts</code>).</li>
+  <li><code>assets</code> acepta <code>goodsReceiptId</code>, <code>costCenterId</code>, <code>productId</code> y
+    <code>serialNumber</code> nulos. Hoy solo <code>createAssetsFromReceipt</code> crea activos y exige recepción;
+    <code>generateAssetTag</code> y <code>TAG_PREFIX_BY_PRODUCT_TYPE</code> son privados de
+    <code>asset.service.ts</code>.</li>
+  <li><code>createAssetMovement</code> abre su propia transacción y no acepta una externa. <code>ASSIGNED</code>
+    exige estado <code>AVAILABLE</code>; <code>DECOMMISSIONED</code> escribe un <code>WRITE_OFF</code> de Kardex
+    (con saldo 0 queda un asiento en cero, inofensivo).</li>
+  <li>Activos en Postgres; colaboradores en MSSQL (referencia validada en servicio); productos y categorías en
+    Mongo. Todo lo que crea la toma es Postgres, así que activo + línea + movimiento son <strong>atómicos</strong>.</li>
+  <li>El front enruta solo por <code>GET /auth/menu</code>: una ruta fuera del menú cae en <code>ForbiddenPage</code>.
+    Por eso una sola ruta <code>/inventory/counts</code> con <code>?count=&lt;id&gt;</code>.</li>
+  <li>La impresión de etiquetas ya existe (<code>library/labels/assetLabelZpl.ts</code>,
+    <code>POST /assets/labels.zpl</code>, <code>lib/zplPrinting.ts</code>, configuración en
+    <code>pages/activos/PrintAssetLabels.tsx</code>).</li>
+</ul>
+
+<h2>1. Migración (Postgres)</h2>
+<p>Idempotente, en <code>migratePostgres()</code> (<code>databases/postgres/migrate.ts</code>), envuelta en
+<code>runDdl()</code> por la carrera entre las 3 réplicas de la API.</p>
+<ul>
+  <li><code>asset_statuses</code>: sembrar <code>DAMAGED</code> («Dañado») con <code>ON CONFLICT DO NOTHING</code>.
+    <code>AssetMovementType</code> no cambia: <code>DAMAGED</code> se asigna con <code>setAssetStatus</code>.</li>
+  <li><code>inventory_counts</code>: <code>id</code>, <code>number</code> (folio <code>IT-AAAA-NNNNNN</code>, único,
+    contador con <code>UPDATE ... RETURNING</code> en la misma transacción), <code>name</code>, <code>notes</code>,
+    <code>status</code> CHECK (<code>OPEN</code>,<code>CLOSED</code>), <code>started_at</code>, <code>closed_at</code>,
+    <code>created_by</code>, <code>closed_by</code>. Índice único parcial <code>(created_by) WHERE status='OPEN'</code>.</li>
+  <li><code>inventory_count_lines</code>: <code>inventory_count_id</code> (FK), <code>asset_id</code> (FK, siempre presente),
+    <code>asset_created</code>, <code>product_category_id</code>, <code>product_id</code>, <code>description</code>,
+    <code>cost_center_id</code> (FK), <code>serial_number</code>, <code>holder_user_id</code> (MSSQL, sin FK),
+    <code>status_code</code> CHECK (<code>ASSIGNED</code>,<code>SUPPORT</code>,<code>AVAILABLE</code>,<code>DAMAGED</code>,<code>DECOMMISSIONED</code>),
+    snapshot del sistema si fue vinculado (<code>system_status_code</code>, <code>system_holder_user_id</code>,
+    <code>system_serial_number</code>). Único <code>(inventory_count_id, asset_id)</code>.</li>
+  <li><code>inventory_count_missing_assets</code>: se llena al cerrar para que el reporte de una toma cerrada no cambie.
+    Faltantes = activos con cualquier estado excepto <code>DECOMMISSIONED</code> que no aparecen en ninguna línea.</li>
+  <li>Diferencias por línea vinculada (función pura): <code>STATUS_MISMATCH</code>, <code>HOLDER_MISMATCH</code>,
+    <code>SERIAL_MISMATCH</code> (solo si ambas series existen y difieren). Las líneas con <code>asset_created</code>
+    se reportan como «Alta nueva».</li>
+</ul>
+
+<h2>2. Modelos y tipos</h2>
+<ul>
+  <li><code>models/postgres/inventoryCount.model.ts</code>, <code>inventoryCountLine.model.ts</code>,
+    <code>inventoryCountMissingAsset.model.ts</code>, importados en <code>databases/registerModels.ts</code>.</li>
+  <li><code>types/postgres/inventoryCount.types.ts</code>.</li>
+</ul>
+
+<h2>3. Refactors mínimos sobre lo existente</h2>
+<ul>
+  <li><code>asset.service.ts</code>: exportar <code>createAssetFromInventory(input, transaction)</code> (tag por
+    <code>generateAssetTag</code>, nace <code>AVAILABLE</code>, sin Kardex de alta porque no hay valor) y
+    <code>getAssetByTag(tag)</code> (coincidencia exacta).</li>
+  <li><code>assetMovement.service.ts</code>: <code>createAssetMovement(input, transaction?)</code> acepta transacción
+    externa; nuevo <code>listCurrentHoldersByAssetIds(ids)</code> (<code>DISTINCT ON</code>).</li>
+</ul>
+
+<h2>4. Servicio de inventario</h2>
+<ul>
+  <li><code>startInventoryCount</code> (crea o devuelve la abierta del usuario), <code>listInventoryCounts</code>,
+    <code>getInventoryCountByIdOrThrow</code>, <code>lookupAssetByTag</code> (orientativo; el servidor revalida).</li>
+  <li><code>addLine</code>: valida antes de la transacción categoría, producto (debe pertenecer a la categoría),
+    centro de costo y colaborador. En transacción con <code>lock: SHARE</code> sobre la cabecera (debe estar
+    <code>OPEN</code>): tag existente y no repetido → línea vinculada con snapshot; tag inexistente o vacío →
+    <code>createAssetFromInventory</code> y según el estado: <code>ASSIGNED</code>/<code>SUPPORT</code>/<code>DECOMMISSIONED</code>
+    vía <code>createAssetMovement</code> (colaborador obligatorio en <code>ASSIGNED</code>), <code>DAMAGED</code> vía
+    <code>setAssetStatus</code>. La serie es obligatoria al crear y se rechaza si ya pertenece a otro activo.</li>
+  <li><code>updateLine</code>/<code>deleteLine</code>: solo con la toma <code>OPEN</code>; una línea con
+    <code>asset_created</code> no se elimina (la etiqueta puede estar impresa), solo se edita.</li>
+  <li><code>closeInventoryCount</code>: <code>FOR UPDATE</code> sobre la cabecera, inserta faltantes, marca
+    <code>CLOSED</code>, devuelve los ids de activos creados. Toma cerrada inmutable.</li>
+  <li><code>getInventoryCountReport</code>: nombres de colaborador resueltos en lectura desde MSSQL (no se copia PII).</li>
+</ul>
+
+<h2>5. Controlador, rutas, permisos y menú</h2>
+<p><code>/inventory-counts</code>, rutas literales antes de <code>/:id</code>:</p>
+<ul>
+  <li><code>GET /holders?search=</code> (reusa <code>listAssignableUsers</code>), <code>POST /start</code>, <code>GET /</code>,
+    <code>GET /:id</code>, <code>GET /:id/lookup?tag=</code>.</li>
+  <li><code>GET|POST /:id/lines</code>, <code>PUT|DELETE /:id/lines/:lineId</code>, <code>POST /:id/close</code>.</li>
+  <li><code>GET /:id/report</code>, <code>GET /:id/report.pdf</code> (<code>library/pdf/inventoryCountReportPdf.ts</code>, membrete y
+    paleta de <code>assetHandoverPdf.ts</code>).</li>
+  <li><code>GET /:id/labels.zpl</code>: ZPL de solo los activos creados por la toma, servido como <code>etiquetas.txt</code>,
+    con las mismas opciones que <code>POST /assets/labels.zpl</code>. El auditor no necesita <code>assets:read</code>.</li>
+  <li>Permisos <code>inventory-counts:create|read|update</code> en <code>databases/permission-catalog.ts</code>,
+    <strong>sin</strong> <code>grantToUser</code> (el admin asigna el rol al auditor). Es un permiso sensible: crea activos.</li>
+  <li>Menú «Toma de Inventario», link <code>/inventory/counts</code>, ícono <code>IoClipboardOutline</code>, en
+    <code>databases/menu-catalog.ts</code>.</li>
+  <li>El auditor también necesita <code>products:read</code> y <code>product-categories:read</code> para los combos.</li>
+</ul>
+
+<h2>6. Frontend</h2>
+<ul>
+  <li><code>types/inventoryCount.ts</code>, <code>services/inventoryCountService.ts</code>, reexportados en los <code>index.ts</code>.</li>
+  <li><code>pages/inventario/InventoryCounts.tsx</code> en <code>routes/AppRoutes.tsx</code>, con
+    <code>RequirePermissions all={["inventory-counts:read"]}</code>:
+    <ul>
+      <li><strong>Sin toma abierta:</strong> botón «Inicio de Inventario» y listado de tomas anteriores.</li>
+      <li><strong>Toma abierta:</strong> input de escaneo enfocado, Enter → <code>lookup</code> («Vinculado» o «No existe, se
+        generará una etiqueta nueva»); formulario con categoría → producto, descripción, centro de costo, serie,
+        colaborador por RUT y estado; tabla con badges; botón «Fin Inventario» con confirmación.</li>
+      <li><strong>Tras cerrar:</strong> resumen, «Descargar etiquetas.txt», «Imprimir etiquetas» (WebUSB) y PDF del reporte.</li>
+    </ul>
+  </li>
+  <li>Extraer las opciones de etiqueta de <code>PrintAssetLabels.tsx</code> a <code>lib/labelOptions.ts</code>.</li>
+</ul>
+
+<h2>Fase 2: escaneo con cámara</h2>
+<ul>
+  <li><code>Permissions-Policy: camera=(self)</code> en <code>nginx.conf.template</code> y <code>nginx.conf.prod.template</code>;
+    revisar la CSP de producción (sin <code>blob:</code> en <code>img-src</code>).</li>
+  <li>Componente con <code>BarcodeDetector</code> (solo Chromium) y librería de respaldo; <code>isCameraSupported()</code>.
+    Coordinar con <code>devops-infra-lead</code>. Un paquete npm nuevo exige <code>docker compose down -v</code> antes de reconstruir.</li>
+</ul>
+
+<h2>Orden de implementación</h2>
+<ol>
+  <li>Guardar este plan en <code>.claude/planes/002-toma-inventario-activos.html</code>.</li>
+  <li>Migración (<code>DAMAGED</code>, tablas, contador), modelos, tipos y <code>registerModels</code>.</li>
+  <li>Refactors de <code>asset.service.ts</code> y <code>assetMovement.service.ts</code> (tests actuales en verde), servicio de
+    inventario y función pura de diferencias.</li>
+  <li>Controlador, rutas, permisos y menú.</li>
+  <li>PDF del reporte y endpoint <code>labels.zpl</code>.</li>
+  <li>Frontend.</li>
+  <li>Documentación: glosario, bitácora en <code>.claude/README.md</code>, <code>README.md</code> raíz.</li>
+  <li>Fase 2 (cámara), por separado.</li>
+</ol>
+
+<h2>Fuera de alcance (con motivo)</h2>
+<ul>
+  <li>Modificar activos existentes desde la toma: se decidió solo comparar y reportar.</li>
+  <li>Movimiento de devolución a <code>AVAILABLE</code>: hueco conocido del flujo actual.</li>
+  <li>Ubicaciones/sedes físicas: no existen ni se pidieron.</li>
+  <li>Valorización en Kardex de los activos nuevos: no hay costo conocido.</li>
+  <li>Autoverificación por el colaborador y exportación CSV.</li>
+</ul>
+
+<h2>Verificación</h2>
+<ol>
+  <li><code>tsc --noEmit</code> en <code>corporate-api</code> y <code>tsc -p tsconfig.app.json --noEmit</code> en <code>corporate-front</code>.</li>
+  <li>Tests existentes de activos y Kardex siguen verdes tras el refactor.</li>
+  <li>Tests nuevos unit (diferencias) e integration (<code>inventoryCount.service.integration.test.ts</code>) con el stack Testing
+    (<code>.\run.ps1 bdd test</code>): vinculado sin diferencias; cada diferencia; alta con tag generado; alta
+    <code>ASSIGNED</code> sin colaborador; serie duplicada; producto fuera de categoría; mismo activo dos veces; segundo
+    «Inicio» reanuda; toma cerrada inmutable; faltantes congelados; cierre concurrente; <code>labels.zpl</code> solo con
+    activos de la toma.</li>
+  <li><code>.\run.ps1 backend dev</code>: migración idempotente en las 3 réplicas, <code>DAMAGED</code> sembrado, permisos y menú.</li>
+  <li>Flujo manual con lector: Inicio, tag existente, tag inexistente, uno dañado y uno asignado, Fin, <code>etiquetas.txt</code>
+    e impresión. Los usuarios deben volver a iniciar sesión para ver menú y permisos nuevos.</li>
+  <li>Limpiar los datos de prueba de la BD de desarrollo al terminar.</li>
+</ol>
+
+<h2>Archivos críticos</h2>
+<ul class="files-list">
+  <li>corporate-api/src/databases/postgres/migrate.ts</li>
+  <li>corporate-api/src/databases/registerModels.ts</li>
+  <li>corporate-api/src/databases/permission-catalog.ts</li>
+  <li>corporate-api/src/databases/menu-catalog.ts</li>
+  <li>corporate-api/src/models/postgres/inventoryCount*.model.ts (nuevos)</li>
+  <li>corporate-api/src/services/postgres/inventoryCount.service.ts (nuevo)</li>
+  <li>corporate-api/src/services/postgres/asset.service.ts</li>
+  <li>corporate-api/src/services/postgres/assetMovement.service.ts</li>
+  <li>corporate-api/src/controllers/inventoryCount.controller.ts (nuevo)</li>
+  <li>corporate-api/src/routes/inventoryCount.routes.ts (nuevo) y routes/index.ts</li>
+  <li>corporate-api/src/library/pdf/inventoryCountReportPdf.ts (nuevo)</li>
+  <li>corporate-front/src/pages/inventario/InventoryCounts.tsx (nuevo)</li>
+  <li>corporate-front/src/services/inventoryCountService.ts y types/inventoryCount.ts (nuevos)</li>
+  <li>corporate-front/src/lib/labelOptions.ts (nuevo) y pages/activos/PrintAssetLabels.tsx</li>
+  <li>corporate-front/src/routes/AppRoutes.tsx</li>
+</ul>
+
+<footer class="doc-footer">Registro de mejoras corporate-app · .claude/planes/002-toma-inventario-activos.html</footer>
+
+</div>
+</body>
+</html>

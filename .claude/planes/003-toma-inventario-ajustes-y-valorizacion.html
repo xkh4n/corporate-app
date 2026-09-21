@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>003 — Ajustes a la toma de inventario y valorización</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:900px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.5rem; font-size:1.25rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }
+  th, td { border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  .files-list { list-style:none; padding-left:0; }
+  .files-list li { font-family:Consolas,monospace; font-size:.85rem; background:var(--code-bg); padding:.35rem .6rem; border-radius:6px; margin:.3rem 0; }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 003</span>
+  <h1>Ajustes a la toma de inventario y pantalla de valorización</h1>
+  <div class="meta">corporate-app · corporate-api + corporate-front · Estado: aprobado, en implementación · 2026-09-21 · continúa el plan 002</div>
+</header>
+
+<h2>Contexto</h2>
+<p>La toma de inventario (plan 002) quedó implementada y verificada con tests. El usuario cambia varias decisiones:</p>
+<ol>
+  <li><strong>Búsqueda por TAG o Serie</strong> con radio button y un campo de valor. Con TAG se carga la serie; con Serie se resuelve internamente si existe el TAG.</li>
+  <li><strong>Los activos existentes ahora se actualizan</strong> (antes solo se comparaban): quedan asignados al usuario ingresado.</li>
+  <li><strong>Devolución:</strong> un activo «en devolución» queda en SOPORTE, con la instrucción de enviarlo a Soporte TI o Adquisiciones TI.</li>
+  <li><strong>Ubicación = centro de costo</strong>: también se actualiza en el activo existente.</li>
+  <li><strong>Valorización posterior:</strong> pantalla aparte, para Adquisiciones TI, que asigna valor a los activos sin valor.</li>
+  <li>Autoverificación del colaborador y CSV: no se necesitan.</li>
+</ol>
+
+<h2>Decisiones confirmadas</h2>
+<ul>
+  <li>Estado <code>RETURNED</code> («Devolución») y movimiento <code>RETURNED</code> (ASSIGNED/DEVALUATED → RETURNED), solo API, sin pantalla.</li>
+  <li>Para un activo existente se respeta el estado elegido por el auditor, ASIGNADO por defecto.</li>
+  <li>Estado <code>DEVALUATED</code> («Devaluado», en lugar de <code>REUSED</code>): un activo DE BAJA encontrado en uso queda asignado, con valor 0 y sin tocar el Kardex (su <code>WRITE_OFF</code> ya lo dejó en saldo 0). SOPORTE y DAÑADO se reasignan normalmente.</li>
+  <li>Permiso <code>asset-valuation</code> (<code>read</code>/<code>update</code>), sin acceso por defecto.</li>
+</ul>
+
+<h2>Reglas de transición para un activo existente</h2>
+<p>Función pura <code>planExistingAssetChange</code> en <code>library/inventoryAssetTransition.ts</code>: fuente única de verdad para aplicar el cambio y para calcular los estados permitidos del <code>lookup</code>.</p>
+<table>
+  <tr><th>Sistema</th><th>Declarado</th><th>Resultado</th></tr>
+  <tr><td>RETURNED</td><td>cualquiera</td><td>SOPORTE (mov. SUPPORT) + instrucción Soporte TI / Adquisiciones TI</td></tr>
+  <tr><td>DECOMMISSIONED</td><td>ASSIGNED</td><td>DEVALUATED con usuario, <code>value = 0</code>, sin Kardex</td></tr>
+  <tr><td>DECOMMISSIONED</td><td>DECOMMISSIONED / otro</td><td>sin cambio / rechazado</td></tr>
+  <tr><td>DEVALUATED</td><td>ASSIGNED</td><td>sigue DEVALUATED (mov. nuevo si cambia el usuario)</td></tr>
+  <tr><td>DEVALUATED</td><td>AVAILABLE</td><td>rechazado</td></tr>
+  <tr><td>AVAILABLE / RECEIVED</td><td>ASSIGNED</td><td>(RECEIVED→AVAILABLE) + mov. ASSIGNED</td></tr>
+  <tr><td>ASSIGNED</td><td>ASSIGNED</td><td>mismo usuario: sin cambio; otro: REASSIGNED</td></tr>
+  <tr><td>SUPPORT / DAMAGED</td><td>ASSIGNED</td><td>→ AVAILABLE + mov. ASSIGNED</td></tr>
+  <tr><td>ASSIGNED</td><td>AVAILABLE</td><td>rechazado (registre la devolución)</td></tr>
+  <tr><td>cualquiera salvo DECOMMISSIONED/RETURNED</td><td>SUPPORT · DAMAGED · DECOMMISSIONED</td><td>mov. SUPPORT · setStatus DAMAGED · mov. DECOMMISSIONED</td></tr>
+  <tr><td>RECEIVED/AVAILABLE/SUPPORT/DAMAGED</td><td>AVAILABLE</td><td>setStatus AVAILABLE</td></tr>
+</table>
+<p>En todo cambio efectivo el centro de costo del activo pasa al ingresado.</p>
+
+<h2>Cambios de datos (Postgres)</h2>
+<ul>
+  <li><code>asset_statuses</code>: sembrar <code>RETURNED</code> y <code>DEVALUATED</code>.</li>
+  <li><code>asset_movements.movement_type</code>: ensanchar el CHECK (DROP + ADD con <code>runDdl</code>) con <code>RETURNED</code> y <code>DEVALUATED</code>.</li>
+  <li><code>inventory_count_lines</code>: agregar <code>system_cost_center_id</code>, <code>resulting_status_code</code>, <code>asset_modified</code>; quitar <code>system_serial_number</code>.</li>
+</ul>
+
+<h2>API</h2>
+<ul>
+  <li>Movimientos <code>RETURNED</code> (en el enum Zod de <code>POST /asset-movements</code>) y <code>DEVALUATED</code> (solo interno). Tipos con tenedor: ASSIGNED, REASSIGNED, DEVALUATED.</li>
+  <li><code>lookup</code> y <code>addLine</code> por <code>TAG</code> o <code>SERIAL</code>; el lookup devuelve tag, serie, <code>allowedStatusCodes</code>, <code>forcedStatusCode</code> e <code>instruction</code>.</li>
+  <li>Rama de activo existente atómica: bloquea, aplica el plan, actualiza ubicación, guarda snapshot y resultado. Quitar una línea solo si no creó ni modificó el activo.</li>
+  <li>Reporte y PDF muestran los cambios (estado, usuario, centro de costo) y la instrucción de Soporte.</li>
+  <li><code>/asset-valuation</code>: <code>GET</code> de activos sin valor (excluye DECOMMISSIONED/DEVALUATED) y <code>POST</code> en lote (hasta 200) con resultado por ítem; fija <code>assets.value</code> y escribe el asiento <code>ACQUISITION</code>. Valor &gt; 0.</li>
+</ul>
+
+<h2>Frontend</h2>
+<ul>
+  <li>Captura con radio TAG/Serie y un campo de valor; estados limitados a los permitidos; banner con la instrucción.</li>
+  <li>Reporte con cambios y enlace a la valorización.</li>
+  <li>Pantalla <code>/assets/valuation</code> (Valorización de Activos) con edición de valor en lote.</li>
+</ul>
+
+<h2>Orden de implementación</h2>
+<ol>
+  <li>Guardar este plan en <code>.claude/planes/</code>.</li>
+  <li>Migración y movimientos <code>RETURNED</code>/<code>DEVALUATED</code>.</li>
+  <li>Transición pura y cálculo de cambios, con unit tests.</li>
+  <li>Servicio de inventario (lookup, activo existente, reglas de quitar).</li>
+  <li>Controlador, rutas, PDF y tests HTTP.</li>
+  <li>Valorización.</li>
+  <li>Frontend.</li>
+  <li>Documentación.</li>
+</ol>
+
+<h2>Fuera de alcance</h2>
+<ul>
+  <li>Pantalla para registrar devoluciones (solo el movimiento en la API).</li>
+  <li>Actas de entrega desde la toma.</li>
+  <li>Corregir un valor ya cargado desde la valorización (ajuste manual de contabilidad).</li>
+  <li>Cámara (fase 2 del plan 002), autoverificación y CSV.</li>
+</ul>
+
+<h2>Verificación</h2>
+<ol>
+  <li><code>tsc --noEmit</code> en API y front; ESLint.</li>
+  <li>Unit tests de la transición y de los cambios.</li>
+  <li>Integración con el stack Testing: movimientos nuevos, cada transición de la toma, valorización (lote, rechazos, Kardex) y capa HTTP.</li>
+  <li>Migración idempotente en las 3 réplicas; usuarios deben volver a iniciar sesión.</li>
+  <li>Flujo manual en navegador (pendiente hasta que se pruebe).</li>
+</ol>
+
+<h2>Archivos críticos</h2>
+<ul class="files-list">
+  <li>corporate-api/src/library/inventoryAssetTransition.ts (nuevo)</li>
+  <li>corporate-api/src/library/inventoryCountChanges.ts (nuevo)</li>
+  <li>corporate-api/src/services/postgres/inventoryCount.service.ts</li>
+  <li>corporate-api/src/services/postgres/assetMovement.service.ts</li>
+  <li>corporate-api/src/services/postgres/assetValuation.service.ts (nuevo)</li>
+  <li>corporate-api/src/databases/postgres/migrate.ts</li>
+  <li>corporate-front/src/pages/inventario/InventoryCapture.tsx</li>
+  <li>corporate-front/src/pages/activos/AssetValuation.tsx (nuevo)</li>
+</ul>
+
+<footer class="doc-footer">Registro de mejoras corporate-app · .claude/planes/003-toma-inventario-ajustes-y-valorizacion.html</footer>
+</div>
+</body>
+</html>

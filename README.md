@@ -16,10 +16,10 @@ observabilidad (métricas + logs) desde el día uno.
 | Módulo | Estado |
 |---|---|
 | `corporate-infra` (bases de datos) | ✅ Construido, hardenizado y validado con instalación limpia real |
-| `corporate-api` (backend) | ✅ Construido: auth, RBAC, ERP core, flujo de compras, activos (Kardex, ZPL, handover), tiempo real, remuneraciones y previsión |
+| `corporate-api` (backend) | ✅ Construido: auth, RBAC, ERP core, flujo de compras, activos (Kardex, ZPL, handover, toma de inventario), tiempo real, remuneraciones y previsión |
 | `corporate-mailer` (servicio de correo) | ✅ Construido: adjuntos de OC, notificaciones, SMTP |
 | `corporate-monitoring` (observabilidad) | ✅ Construido: métricas, logs, dashboards, todo detrás de TLS |
-| `corporate-front` (frontend) | ✅ Construido: React 19/TypeScript/Tailwind v4, menú dinámico desde BD, activos, adquisiciones, solicitudes, personas, remuneraciones, previsión, permissions |
+| `corporate-front` (frontend) | ✅ Construido: React 19/TypeScript/Tailwind v4, menú dinámico desde BD, activos (incl. toma de inventario), adquisiciones, solicitudes, personas, remuneraciones, previsión, permissions |
 | Ambientes `prod`/`test` | ✅ Compose/Dockerfiles existen; `dev` es el único validado en clean-install real |
 
 ## Arquitectura general
@@ -268,6 +268,24 @@ src/
   (entrada/salida, costo promedio móvil), **impresión de etiquetas ZPL**, asignación a colaboradores,
   **flujo de entrega (handover) con PDF** generado dinámicamente, trazabilidad de movimientos
   incluyendo responsables.
+- **Toma de inventario física**: un auditor abre una toma («Inicio de Inventario»), ingresa equipos
+  identificándolos por **TAG** (lector USB/Bluetooth o escrito) o por **serie**, y la cierra («Fin Inventario»).
+  El servidor valida si el activo existe: si existe, la toma lo **actualiza** (queda asignado al usuario
+  ingresado, o el estado que indique el auditor, y en el centro de costo donde se encontró; un activo en
+  devolución queda en mantención con la instrucción de enviarlo a Soporte TI / Adquisiciones TI; una baja
+  encontrada en uso queda `DEVALUATED`, valor 0, sin afectar el Kardex); si no existe, se crea con una
+  etiqueta nueva. Al cerrar se listan los activos del sistema no encontrados, se descarga el informe en PDF
+  con los cambios aplicados y se imprimen las etiquetas nuevas (`etiquetas.txt` ZPL o WebUSB). Permiso
+  `inventory-counts`, sin acceso por defecto (lo asigna el admin al rol del auditor).
+- **Valorización de activos**: pantalla para Adquisiciones TI que asigna valor por primera vez a los
+  activos sin valor (p. ej. los dados de alta por una toma) y registra su asiento de alta en el Kardex.
+  Permiso `asset-valuation`, sin acceso por defecto.
+- **Devolución de activos**: el solicitante arma una devolución de UN centro de costo, adjunta la guía de
+  despacho (PDF, guardada como `DEV<centro><aaaammddHHmmssSSS>.pdf`), la imprime y la envía a Adquisiciones TI
+  (los activos pasan a `MOVE_TO_RETURNED`); Adquisiciones recibe cada activo (parcial o total) y pasan a
+  `RETURNED`. Permiso `asset-returns`, sin acceso por defecto; solo el solicitante o un administrador modifica una
+  devolución y quien la solicitó o envió no puede recibirla. La guía es un PDF de hasta 5 MB que se sanea con qpdf al subir (sin contenido activo) y solo se descarga; se devuelven «mis equipos» (centro de costo fijado por el equipo) o equipos de otro usuario (centro de costo elegido).
+  Los adjuntos (`uploads`/`downloads`) persisten en volúmenes nombrados compartidos por las 3 réplicas.
 - **Notificaciones en tiempo real**: eventos de cambio de estado (`socket.io` + `@socket.io/redis-adapter`,
   escalado entre 3 réplicas) sin polling.
 - **Envío de correos**: `corporate-mailer` gestiona adjuntos (PDF, facturas), notificaciones

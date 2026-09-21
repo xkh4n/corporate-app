@@ -18,6 +18,329 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-21 (5) — Cierre de los riesgos abiertos de la revisión de seguridad
+
+### Contexto
+
+La entrada (4) dejó cinco puntos abiertos. Decisiones del usuario: **reescribir la guía con `qpdf`**; **solo
+"Descargar guía"** (sin ver ni imprimir en el navegador); **probar en Testing** `read_only` y `lock_timeout`; **solo el
+auditor** quita o modifica en la toma; y en devoluciones **el titular no modifica la asignación ni el centro de costo de
+sus propios equipos**. Esta entrada reemplaza lo que la (4) decía sobre esos puntos.
+
+### Hecho
+
+- **Guía de despacho saneada con qpdf** (`library/pdfSanitizer.ts`, reemplaza a `pdfActiveContent.ts`, que se eliminó):
+  `qpdf --json` entrega el árbol de objetos tal como lo lee un visor (incluye object streams, descifrado, sin depender de
+  un `/Length` falso), se recorre y se rechaza JavaScript, `/EF`, `/Launch`, `/GoToR`, `/SubmitForm`, multimedia, XFA, etc.
+  Lo que se **guarda** es la reescritura de qpdf del mismo archivo (sin basura antes/después: los polyglots quedan sin la
+  carga; sin cifrado). Sin zip bomb (no descomprime flujos), `timeout` 15 s, salida ≤ 16 MB, máximo 2 qpdf a la vez, entorno
+  mínimo, temporales en `/tmp`. **Falla cerrada**: sin el binario la subida responde 503. qpdf entra en `Dockerfile` y
+  `Dockerfile.dev` (`apk add qpdf`); en el equipo de desarrollo hace falta `winget install QPDF.QPDF` para los tests que
+  suben PDF (`QPDF_BIN` o PATH; sin él esos tests se omiten).
+- **Solo descarga**: se quitaron "Ver guía" e "Imprimir guía"; el servidor entrega la guía como `attachment`.
+- **Toma de inventario, solo el auditor**: ingresar (incluye cambiar estado, usuario y centro de costo de un activo real),
+  consultar, corregir y quitar equipos, y cerrar exigen ser el auditor que abrió la toma o un administrador (403, evaluado
+  antes que el estado). Ya no hay escritura compartida entre auditores. El front oculta la captura al que no es el auditor.
+- **Devoluciones, dos modos por tenedor** (`asset_returns.holder_scope`, `OWN`/`OTHERS`): "Mis equipos" solo admite
+  activos asignados al solicitante y el **centro de costo lo define el activo** (no hay selector; si abarcan varios centros
+  se hace una devolución por centro); "Equipos de otro usuario" exige elegir el centro de costo y **rechaza** activos del
+  propio solicitante. Una devolución no mezcla modos. El administrador queda exento. Lo exige el servidor (409/400); los
+  candidatos se filtran en la BD por tenedor vigente (`GET /asset-returns/candidates?scope=`).
+- **Migración de Postgres**: las 3 réplicas se serializan con `pg_advisory_xact_lock` (una migra a la vez) y cada DDL corre
+  con `SET LOCAL lock_timeout = 30 s` (espera al lock 120 s).
+- **`read_only: true`** + `tmpfs /tmp` (64 MB, `noexec`) en las réplicas de API de Testing y Producción.
+
+### Verificación
+
+- API: `tsc` limpio y **237 tests** en verde (28 archivos; incluye qpdf real: object stream comprimido, cifrado, polyglot,
+  falla cerrada); front: `tsc`, ESLint y 68 tests en verde.
+- **Probado en Testing con `run.ps1 backend test`** (imagen reconstruida): las 3 réplicas healthy con rootfs de solo
+  lectura, volúmenes `api_uploads`/`api_downloads` montados, migración serializada (cada una obtuvo el lock en ms y aplicó
+  sin errores); el saneador dentro del contenedor (qpdf 12.3.2 de Alpine) acepta un PDF normal, rechaza JavaScript y basura y
+  elimina el trailer de un polyglot; un archivo escrito en `uploads` por una réplica lo lee otra y **sobrevive a
+  `up --force-recreate`**; con `asset_returns` bloqueada (`ACCESS EXCLUSIVE`) una réplica falló a los 30 s con
+  `canceling statement due to lock timeout` en lugar de congelarse. Las réplicas de Testing no tenían adjuntos previos.
+- **No verificado**: la UI en un navegador; el flujo HTTP completo contra Testing con sesión real (cubierto por los tests
+  de rutas); Producción no se tocó (solo el compose).
+
+### Riesgos que siguen
+
+- El `RUT`/nombre de quien tiene cada equipo lo ve cualquier titular de `asset-returns:create` en el modo "otros".
+- `createAssetsFromReceipt` y `PUT /assets` no toman el advisory lock de serie (preexistente).
+- Con el arranque fallido por `lock_timeout` el cierre imprime "Socket already opened" de Redis (ruido del apagado,
+  preexistente); el contenedor se reinicia y reintenta.
+
+---
+
+## 2026-09-21 (4) — Revisión de seguridad previa a los commits
+
+### Contexto
+
+Antes de commitear la toma de inventario, la valorización y las devoluciones, el usuario pidió validar la
+seguridad y resolver **todos** los riesgos, incluso los menores. Se hizo una revisión propia y una auditoría en
+paralelo con cinco agentes de solo lectura (`security-engineer`, `penetration-tester`, `docker-expert`,
+`security-auditor`, `database-administrator`), cada uno con un alcance distinto; después una segunda ronda de
+un agente sobre los propios fixes. Decisiones del usuario: **solo el solicitante o un administrador modifica una
+devolución**, y **`inventory-counts:create` se asigna solo a quienes hacen inventario físico** (es un permiso fuerte:
+ahora reasigna activos y cambia su estado).
+
+### Hecho
+
+- **Propiedad y separación de funciones (devoluciones)**: agregar/quitar activos, adjuntar la guía, enviar y cancelar
+  exigen ser el solicitante o admin (403); recibir lo prohíbe a quien solicitó o envió (admin exento). Tope de 10
+  borradores abiertos por solicitante (un borrador reserva sus activos). El tenedor se lee bajo el lock del activo y
+  se refresca al despachar; enviar exige que la guía exista en disco; el primer adjunto fallido borra su archivo huérfano.
+- **Integridad de la máquina de estados**: un activo `MOVE_TO_RETURNED` solo admite `RETURNED` (antes un `SUPPORT` o una
+  baja por la API genérica dejaba la devolución trabada para siempre).
+- **Toma de inventario**: solo el creador o admin cierra la toma; el tenedor de una línea se guarda solo si el estado
+  resultante es `ASSIGNED`/`DEVALUATED`; la validación del colaborador pasó a `POST /inventory-counts/holders/lookup`
+  (RUT exacto, devuelve solo `{userId, fullName}`: ya no hay búsqueda parcial que enumere personas ni RUT en la URL);
+  medidas de etiqueta ≤ 300 mm.
+- **Valorización**: valor ≥ 0,01 (un `0.004` redondeaba a 0); `PUT /assets/:id` ya no acepta `value` (permiso
+  otorgado a todo usuario que dejaba fijar un costo sin asiento de Kardex). Menú y pantalla de valorización usan
+  `asset-valuation:read`; guardar exige `:update`.
+- **Subidas de archivos**: guía ≤ 5 MB; multipart acotado (1 archivo, pocos campos); tope de subidas **simultáneas**
+  (8 por proceso, 2 por usuario) además del límite de 60 por 15 min; el inspector de PDF (`library/pdfActiveContent.ts`)
+  rechaza JavaScript/Launch/archivos incrustados (también en flujos Flate y con nombres escapados), PDF cifrados,
+  filtros no verificables y zip bombs. `Cache-Control: no-store` en la descarga (la CSP `sandbox` se probó y se
+  retiró: bloquea el visor de PDF).
+- **Almacenamiento**: `saveBuffer` atómico (temporal + rename), `deleteIfExists` sin carrera y `findFileByPrefix` exacto
+  (`OC-1` ya no casa con `OC-10.pdf`: bug preexistente que podía adjuntar el archivo de otra orden o proveedor).
+  Corregido además un `\n` literal que dejé en el `Dockerfile` (creaba un directorio `/app/n`).
+- **Paginación y búsqueda**: lista permitida de `sortBy` y `limit` máximo por endpoint nuevo (`?sortBy=value` dejaba
+  deducir el ranking de valor de los activos), tope de `page`, escape de `%`/`_` en las búsquedas Postgres.
+- **Postgres**: el CHECK de `movement_type` se reescribe en una sola sentencia y solo si cambia (antes cada arranque de
+  cada réplica hacía DROP+ADD con ACCESS EXCLUSIVE); se verifica que los índices únicos parciales existan de verdad
+  (`runDdl` traga el `unique_violation`); `asset_return_lines` sin `ON DELETE CASCADE`; CHECK de coherencia
+  (`NOT VALID`) y FK faltante; índices nuevos (`assets(cost_center_id)`, serie normalizada, último movimiento, etc.);
+  `lockAssetRow` con `FOR NO KEY UPDATE`; el estado del activo se consulta dentro de la transacción (antes tomaba una
+  segunda conexión del pool); clave del advisory lock de serie normalizada en SQL.
+- **Front**: `window.open` con `opener = null`, descargas con `<a>` anclado y revocación diferida, WebUSB siempre cierra el
+  dispositivo, gate de valorización sin petición previa al permiso.
+
+- **Segunda ronda (re-auditoría de los propios fixes)**: el inspector escaneaba el archivo completo y una secuencia
+  `/JS ` aparece por azar en datos binarios (medido: ~27 % de falsos positivos en PDF con imágenes). Ahora solo
+  inspecciona el texto fuera de los flujos y descodifica las capas de los flujos (Flate anidado, ASCII85 —lo que usa
+  ReportLab— y ASCIIHex, hasta 3 niveles, con tope); un object stream sin comprimir también se revisa; `/JS` solo cuenta
+  con su valor; se rechazan además RunLength y LZW. "Ver guía" e "Imprimir guía" pasan a usar la URL de la API (mismo
+  origen, cookie de sesión) en vez de una URL `blob:`, que la CSP de nginx (`default-src 'self'`, sin `frame-src` ni
+  `object-src` para blob) habría bloqueado; se agregó "Descargar guía". Límite de 30 consultas/min por usuario en
+  `holders/lookup`; el tope de 10 borradores se serializa con un advisory lock (dos POST simultáneos creaban 11);
+  `deleteIfExists` ya no lanza (un 500 tras cancelar ya confirmado); temporales con UUID; la búsqueda por serie
+  normaliza en SQL a ambos lados (`lower(btrim())`, como el índice y el advisory lock); las constraints `NOT VALID` se
+  validan al arrancar (best-effort); `canReceive` del front excluye al solicitante; valorización valida ≥ 0,01 en el cliente.
+
+### Decisiones y riesgos aceptados
+
+- Sigue siendo una **heurística**, no un saneado real, el inspector de PDF (un PDF construido con cuidado, p. ej. con
+  `/Length` falso, puede esquivarlo); la defensa de fondo es el sandbox del visor PDF del navegador. Si se quiere
+  garantía fuerte: reescribir la guía con `qpdf` al subir.
+- Agregar equipos a una toma abierta sigue siendo compartido entre auditores (deliberado); cualquier titular de
+  `asset-returns:create` puede elegir cualquier centro de costo (lo elige el solicitante) y ver quién tiene cada activo.
+- No se aplicó `read_only: true` al contenedor de la API ni un `lock_timeout`/`pg_advisory_lock` alrededor de la
+  migración: requieren probarse en Testing. `createAssetsFromReceipt`/`PUT /assets` no toman el advisory lock de serie
+  (preexistente).
+- Backup de los volúmenes de adjuntos (no automático): `docker run --rm -v <proyecto>_api_uploads:/d:ro -v $PWD:/b alpine tar czf /b/uploads.tgz -C /d .`
+  Los adjuntos que hoy viven en la capa de escritura de cada réplica de Testing/Producción no se migran solos.
+
+### Verificación
+
+`tsc` limpio (API y front), ESLint limpio en el front, API 232 tests y front 68 en verde; las 3 réplicas de dev
+aplican la migración nueva sin error. **No verificado**: la UI en un navegador (en particular si el visor de PDF de
+Chrome/Edge abre e imprime la guía servida por la API con la CSP de helmet: si no, queda "Descargar guía"), un
+`up --build` real con los volúmenes.
+El marcador del gate (`.security-gate/last-review.json`) no se actualizó: solo aplica a pushes a `master`.
+
+---
+
+## 2026-09-21 (3) — Devolución de activos a Adquisiciones (guía de despacho) y persistencia de `uploads`
+
+### Contexto
+
+Con la toma de inventario ya validada en desarrollo, el usuario pidió una pantalla para devolver uno o varios
+activos con guía de despacho. Plan aprobado y guardado en
+[`planes/004-devolucion-de-activos.html`](planes/004-devolucion-de-activos.html). Además pidió mantener la
+persistencia de `uploads`. **Esta entrada reemplaza lo que la anterior decía sobre `RETURNED` («solo API,
+por `POST /asset-movements`»): ahora solo se crea por el flujo de devoluciones.**
+
+### Hecho
+
+- **Flujo**: `DRAFT` (se arma y se adjunta la guía) → `SENT` (botón «Enviar a Adquisiciones»: los activos pasan
+  a `MOVE_TO_RETURNED`, todo o nada, y pierden su tenedor) → `RECEIVED` (Adquisiciones recibe cada activo, o
+  «Recibir todos»; cada uno pasa a `RETURNED`). «Recibida parcialmente» no es un estado: es `SENT` con líneas
+  recibidas. `CANCELLED` solo desde borrador (libera los activos y borra el PDF).
+- **Un centro de costo por devolución**; solo se agregan activos `ASSIGNED`/`DEVALUATED` de ese centro y sin otra
+  devolución vigente (índice único parcial `ux_asset_return_lines_active_asset`, además del guard de aplicación).
+- **Guía = código**: solo PDF (magic bytes con el middleware de subida existente), guardada como
+  `uploads/devoluciones/DEV<centro><aaaammddHHmmssSSS>.pdf` (`library/assetReturnCode.ts`, hora local del
+  servidor). El código se asigna al adjuntar por primera vez y es `UNIQUE`; el `UPDATE` con el código va antes de
+  escribir el archivo, dentro de la transacción, para no pisar el PDF de otra devolución. Se ve e imprime desde la pantalla.
+- **API `/api/asset-returns`**: `GET /`, `GET /candidates`, `POST /`, `GET /:id`, `POST /:id/lines`,
+  `DELETE /:id/lines/:lineId`, `POST|GET /:id/document`, `POST /:id/send`, `POST /:id/receive`, `POST /:id/cancel`.
+  Permisos `asset-returns:read|create|update` sin `grantToUser` (`create` = solicitante, `update` = recepción en
+  Adquisiciones). Menú «Devoluciones de Activos» (`/assets/returns`, detalle con `?return=<id>`).
+- **Movimientos**: `MOVE_TO_RETURNED` (solo desde ASSIGNED/DEVALUATED) y `RETURNED` (**solo desde
+  `MOVE_TO_RETURNED`**); ambos fuera del enum Zod de `POST /asset-movements`. Sin efecto en Kardex ni en el valor.
+- **Toma de inventario**: un activo `MOVE_TO_RETURNED` se rechaza con la instrucción «en tránsito hacia
+  Adquisiciones» (`allowedStatusCodes` vacío) y no cuenta como faltante al cerrar.
+- **Persistencia de adjuntos**: `compose.prod.yml` y `compose.test.yml` de `corporate-api` montan los volúmenes
+  nombrados `api_uploads` y `api_downloads` (compartidos por las 3 réplicas; `downloads` guarda las cotizaciones
+  que sube el proveedor); el `Dockerfile` crea las carpetas con dueño `node`. En dev ya persistía por el bind mount.
+- Migración: estado `MOVE_TO_RETURNED`, CHECK de `asset_movements.movement_type` ensanchado, tablas
+  `asset_returns` y `asset_return_lines`.
+
+### Decisiones
+
+- Enviar y adjuntar son pasos separados: imprimir no cambia el estado (el navegador no puede confirmar que se imprimió).
+- Los activos pierden su tenedor al despacharse; la línea de la devolución conserva quién lo tenía.
+- Una devolución ya enviada no se revierte desde la pantalla.
+
+### Verificación
+
+`tsc` limpio (API y front), ESLint limpio en el front, API 199 tests en verde contra el stack de Testing
+(unit del código y de la transición; integración del servicio: candidatos, carreras, guía, envío atómico,
+recepción parcial y total, cancelación, toma con activo en tránsito; HTTP con subida multipart), front 68 unit
+tests. Las 3 réplicas de dev migraron sin error. Los compose de prod/test renderizan los volúmenes con
+`docker compose config` (variables de relleno). **No verificado**: la UI en un navegador real, la impresión de la
+guía (iframe oculto) y su apertura en pestaña nueva, un `docker compose up --build` real de Testing/Producción con
+los volúmenes nuevos, ni el flujo con dos usuarios de roles distintos.
+
+### Riesgos y pendiente
+
+- Un activo `RETURNED` no tiene salida (re-disponibilizarlo, baja o soporte): `ASSIGNED` exige `AVAILABLE`. Es el paso siguiente natural.
+- El nombre del archivo usa la hora local del servidor (zona horaria del contenedor).
+- Sin aviso por correo a Adquisiciones al enviar.
+- El admin debe asignar `asset-returns` a los roles (solicitante: `read`+`create`; Adquisiciones: `read`+`update`)
+  y `cost-centers:read` a quien arma devoluciones; los usuarios deben volver a iniciar sesión.
+- Al recrear los contenedores de Testing/Producción por primera vez con los volúmenes nuevos, los adjuntos que
+  ya estuvieran en la capa de la imagen anterior no se migran solos.
+
+### Impacto en la documentación pública
+
+`README.md` raíz: nueva viñeta de devoluciones de activos.
+
+---
+
+## 2026-09-21 (2) — Ajustes a la toma de inventario y valorización de activos
+
+### Contexto
+
+El usuario cambió varias decisiones de la entrada anterior. Plan aprobado y guardado en
+[`planes/003-toma-inventario-ajustes-y-valorizacion.html`](planes/003-toma-inventario-ajustes-y-valorizacion.html).
+**Esta entrada reemplaza lo que la anterior decía sobre "solo comparar y reportar" y "no valorizar".**
+
+### Hecho
+
+- **Búsqueda por TAG o Serie** (radio + un campo de valor). TAG existente carga la serie del activo; por
+  serie se resuelve el TAG. Serie repetida en varios activos se rechaza (se ingresa por TAG). API:
+  `GET .../lookup?by=TAG|SERIAL&value=` y `POST .../lines` con `lookupBy`.
+- **Los activos existentes se actualizan** según el estado declarado (ASIGNADO por defecto) y quedan en el
+  centro de costo (ubicación) donde se encontraron. Reglas en una función pura,
+  `library/inventoryAssetTransition.ts` (tabla en el plan 003), que también decide los estados que ofrece el combo.
+- **`RETURNED`** (Devolución): estado + movimiento `RETURNED` (ASSIGNED/DEVALUATED → RETURNED), solo API. Un activo
+  en devolución encontrado en la toma queda en SOPORTE con la instrucción de enviarlo a Soporte TI / Adquisiciones TI.
+- **`DEVALUATED`** (Devaluado; el usuario prefirió este nombre a `REUSED`): una baja encontrada en uso queda asignada,
+  con `assets.value = 0` y sin asiento de Kardex (su `WRITE_OFF` ya la dejó en saldo 0). Movimiento interno, fuera
+  del enum Zod de `POST /asset-movements`.
+- Una línea solo se puede quitar si no creó ni modificó el activo (`asset_modified`); solo se edita la descripción.
+- **Valorización** (`/api/asset-valuation`, pantalla `/assets/valuation`): lista activos con `value` NULL (excluye
+  baja y devaluados) y los valoriza en lote (máx. 200, cada uno en su transacción, resultado por ítem), fijando
+  `assets.value` y escribiendo el asiento `ACQUISITION`. Valor > 0; un valor ya cargado no se corrige aquí.
+  Permisos `asset-valuation:read|update`, sin `grantToUser`.
+- Migración: estados `RETURNED`/`DEVALUATED`, CHECK de `asset_movements.movement_type` ensanchado
+  (`asset_movements_movement_type_allowed`), columnas nuevas en `inventory_count_lines`.
+- Autoverificación del colaborador y CSV: descartados por el usuario.
+
+### Decisiones
+
+- Con centro de costo distinto al del sistema, el activo se mueve aunque el estado no cambie (el plan solo lo
+  decía para cambios de estado; se aplicó siempre porque ubicación = centro de costo).
+- SOPORTE y DAÑADO reasignados a un usuario pasan antes por AVAILABLE (guard de `ASSIGNED`), sin movimiento intermedio.
+- Un asignado no puede quedar DISPONIBLE desde la toma (falta el movimiento de devolución a AVAILABLE, que sigue
+  siendo un hueco): se rechaza con el mensaje "registre su devolución".
+- Las asignaciones hechas por la toma no generan acta de entrega (no captura supervisor, MAC ni accesorios).
+
+### Verificación
+
+`tsc` limpio (API y front), ESLint limpio sobre lo tocado, API 175 tests en verde contra el stack de Testing
+(unit de la transición y de los cambios; integración de cada transición, de los movimientos nuevos, de la
+valorización y de la capa HTTP), front 68 unit tests. **No verificado**: la UI en un navegador real (radio
+TAG/Serie, combo de estados restringido, pantalla de valorización), WebUSB, lector físico y el PDF a simple vista.
+
+### Riesgos y pendiente
+
+- `inventory-counts:create` ahora también reasigna y cambia estado de activos existentes: es un permiso más
+  poderoso que en la primera versión.
+- Sigue sin existir una pantalla para registrar devoluciones; `RETURNED` solo se puede crear por `POST /asset-movements`.
+- Fase 2 (cámara), sin UI de edición de línea y `z.coerce.boolean()` de `GET /assets/:id/label.zpl`, como antes.
+- Usuarios deben volver a iniciar sesión para ver el menú «Valorización de Activos» y los permisos nuevos.
+
+### Impacto en la documentación pública
+
+Sección de funcionalidades del `README.md` raíz (toma de inventario y valorización).
+
+---
+
+## 2026-09-21 — Toma de inventario de activos (Inicio / Fin de inventario)
+
+### Contexto
+
+Con el flujo compra → recepción → asignación de equipamiento terminado, faltaba **levantar en terreno
+qué hay realmente**, incluidos equipos que no existen en el sistema. Plan aprobado y guardado en
+[`planes/002-toma-inventario-activos.html`](planes/002-toma-inventario-activos.html).
+
+### Hecho
+
+**Postgres** (`migrate.ts`, `migrateInventoryCounts`, idempotente): `inventory_counts` (folio
+`IT-AAAA-NNNNNN`, índice único parcial: un auditor no tiene dos tomas `OPEN`), `inventory_count_lines`,
+`inventory_count_missing_assets`, `inventory_count_counters`. `asset_statuses` suma `DAMAGED`.
+
+**API (`/api/inventory-counts`)**: `POST /start` (retoma la abierta si existe), `GET /`, `GET /:id`,
+`GET /:id/lookup?tag=`, `GET|POST /:id/lines`, `PUT|DELETE /:id/lines/:lineId`, `POST /:id/close`,
+`GET /:id/report`, `GET /:id/report.pdf`, `GET /:id/labels.zpl` (sirve `etiquetas.txt`),
+`GET /holders?search=`. Permisos `inventory-counts:read|create|update`, sin `grantToUser`.
+`GET /products` acepta `?categoryId=` (combo categoría → producto).
+
+**Front**: una sola ruta `/inventory/counts` (el menú dicta el ruteo) con `?count=<id>`: listado + «Inicio
+de Inventario», captura con input de escaneo y «Fin Inventario», y reporte con panel de etiquetas nuevas.
+Opciones de etiqueta extraídas a `lib/labelOptions.ts` + `components/LabelConfigFields.tsx`
+(`PrintAssetLabels` las reutiliza).
+
+### Decisiones
+
+- Tag inexistente → se crea un **activo real** con tag **generado por el sistema** (se descarta el texto
+  ingresado), sin recepción ni asiento de Kardex (no hay costo). Nace `AVAILABLE` y se lleva al estado
+  declarado con un movimiento real (`ASSIGNED`/`SUPPORT`/`DECOMMISSIONED`) o `setAssetStatus` (`DAMAGED`).
+- Tag existente → solo se **vincula y compara**; el activo no se modifica.
+- Faltantes: todo activo salvo `DECOMMISSIONED` que no se vio; se congelan al cerrar.
+- Serie obligatoria al crear; una serie ya existente se rechaza indicando el tag (advisory lock por serie
+  porque `assets` no tiene UNIQUE sobre ella).
+- Una línea con activo creado por la toma no se elimina (su etiqueta ya existe) y solo edita descripción.
+- `createAssetMovement(input, transaction?)` acepta transacción externa; nuevo `listCurrentHoldersByAssetIds`.
+
+### Verificación
+
+`tsc --noEmit` (API) y `tsc -p tsconfig.app.json --noEmit` (front) limpios; ESLint limpio sobre lo nuevo;
+API 134 tests + 23 nuevos en verde contra el stack de Testing (servicio y capa HTTP: 401/403/400/404/409,
+flujo completo, PDF `%PDF`, `etiquetas.txt`); front 68 unit tests. **No verificado**: la UI en un navegador
+real, la impresión WebUSB, la lectura con un lector físico, y el PDF a simple vista (solo se comprobó que
+pagina en 2 hojas apaisadas).
+
+### Riesgos y pendiente
+
+- Fase 2: escaneo con cámara (nginx `Permissions-Policy: camera=(self)` en las 2 plantillas + CSP + librería).
+- Sin UI para editar una línea; corregir un equipo dado de alta se hace con los movimientos del activo.
+- Hallazgo previo, no tocado: `GET /assets/:id/label.zpl` usa `z.coerce.boolean()` y trata `showBorder=false`
+  como `true` (cualquier string no vacío es `true`); la toma usa un parseo explícito.
+- El auditor necesita además `products:read` y `product-categories:read` (el rol lo arma el admin).
+- Usuarios deben volver a iniciar sesión para ver el menú y los permisos nuevos.
+
+### Impacto en la documentación pública
+
+Sección de funcionalidades del `README.md` raíz (toma de inventario) y estado de `corporate-api`/`corporate-front`.
+
+---
+
 ## 2026-09-20 — Remuneraciones y previsión al crear un colaborador
 
 ### Contexto
