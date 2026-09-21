@@ -21,6 +21,9 @@ import RequestAssetStatus from "../pages/solicitudes/RequestAssetStatus";
 import AssignAsset from "../pages/activos/AssignAsset";
 import AssetKardex from "../pages/activos/AssetKardex";
 import PrintAssetLabels from "../pages/activos/PrintAssetLabels";
+import AssetValuation from "../pages/activos/AssetValuation";
+import AssetReturns from "../pages/devoluciones/AssetReturns";
+import InventoryCounts from "../pages/inventario/InventoryCounts";
 import CreateProducts from "../pages/adquisiciones/productos/CreateProducts";
 import ListProducts from "../pages/adquisiciones/productos/ListProducts";
 import CreateProductCategory from "../pages/adquisiciones/category/CreateProductCategory";
@@ -30,7 +33,15 @@ import LinkSupplierProducts from "../pages/adquisiciones/supplierProducts/LinkSu
 import NuevaPantalla from "../pages/pantallas/NuevaPantalla";
 import AsignarPermisos from "../pages/pantallas/AsignarPermisos";
 import { AsignarPermissionToRole, NuevoRole } from "../pages/permissions";
-import { ListarRole, CreatePersonPage, NuevoCargo } from "../pages/personas";
+import {
+  ListarRole,
+  CreatePersonPage,
+  NuevoCargo,
+  AsignarAfp,
+  AsignarSalud,
+  CcafMutualEmpresa,
+  ConfiguracionRemuneraciones,
+} from "../pages/personas";
 import { flattenMenuLinks } from "../lib/menu";
 
 // Vistas reales ya implementadas, mapeadas por el "link" exacto del
@@ -60,10 +71,17 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/solicitudes/estado-activos": () => <RequestAssetStatus />,
   "/assets/kardex": () => <AssetKardex />,
   "/assets/labels": () => <PrintAssetLabels />,
+  "/inventory/counts": () => <InventoryCounts />,
+  "/assets/valuation": () => <AssetValuation />,
+  "/assets/returns": () => <AssetReturns />,
   "/roles/create": () => <NuevoRole />,
   "/roles/update": () => <AsignarPermissionToRole />,
   "/roles/read": () => <ListarRole />,
   "/employees/cargos": () => <NuevoCargo />,
+  "/employees/previsional/afp": () => <AsignarAfp />,
+  "/employees/previsional/salud": () => <AsignarSalud />,
+  "/company/previsional": () => <CcafMutualEmpresa />,
+  "/payroll/settings": () => <ConfiguracionRemuneraciones />,
 };
 
 // Fuerza /change-password antes de cualquier otra ruta protegida mientras

@@ -19,6 +19,9 @@
 *.unit.test.ts
 *.integration.test.ts
 
+# Fixtures de los tests (PDF de prueba): solo los importan los *.test.ts.
+corporate-api/test/pdfFixtures.ts
+
 # Config del test runner: sin *.test.ts en master, queda huérfana ahí.
 corporate-api/vitest.config.ts
 corporate-front/vitest.config.ts

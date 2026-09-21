@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import PDFDocument from "pdfkit";
-import { getQuoteRequestFolder } from "../documentStorage";
+import { getQuoteRequestFolder, sanitizeFilenameSegment } from "../documentStorage";
 
 export interface QuoteRequestPdfItem {
   no: number;
@@ -71,7 +71,10 @@ export function archiveQuoteRequestPdf(
 ): void {
   if (!nationalId) return;
   const folder = getQuoteRequestFolder(requestNumber);
-  const filePath = path.join(folder, `SOLCOT-${nationalId}.pdf`);
+  // nationalId es texto libre controlado por el usuario (a diferencia de
+  // requestNumber, generado por el sistema) -se sanea igual que
+  // documentNumber para no permitir separadores de ruta ni "..".
+  const filePath = path.join(folder, `SOLCOT-${sanitizeFilenameSegment(nationalId)}.pdf`);
   if (fs.existsSync(filePath)) return;
   fs.mkdirSync(folder, { recursive: true });
   doc.pipe(fs.createWriteStream(filePath));

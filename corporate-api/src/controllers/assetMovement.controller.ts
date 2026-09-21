@@ -11,8 +11,8 @@ import { sendList, sendOk } from "../library/response";
 // formateo en vivo del frontend, ver lib/macAddress.ts) -opcional en ambos
 // schemas, el acta la muestra en blanco si no viene.
 const MAC_ADDRESS_REGEX = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
-// storageCapacity/ramCapacity: mismas opciones que el formulario de
-// AntherxSoft (Almacenamiento/Memoria RAM), portadas 1:1.
+// storageCapacity/ramCapacity: opciones fijas de Almacenamiento/Memoria RAM
+// del acta de entrega.
 const handoverFieldsSchema = z.object({
   supervisorName: z.string().max(150).optional(),
   macAddress: z.string().regex(MAC_ADDRESS_REGEX, "Formato de MAC invalido").optional(),
@@ -26,6 +26,10 @@ const handoverFieldsSchema = z.object({
 export const createAssetMovementSchema = z
   .object({
     assetId: z.number().int().positive(),
+    // DEVALUATED, MOVE_TO_RETURNED y RETURNED no estan a proposito: DEVALUATED
+    // solo lo crea la toma de inventario (baja reactivada, valor 0) y los otros
+    // dos solo el flujo de devoluciones con guia (assetReturn.service.ts). No
+    // deben poder dispararse desde la API generica.
     movementType: z.enum(["ASSIGNED", "REASSIGNED", "SUPPORT", "DECOMMISSIONED"]),
     userIds: z.array(z.number().int().positive()).optional(),
     notes: z.string().max(255).optional(),

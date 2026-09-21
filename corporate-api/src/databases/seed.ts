@@ -6,6 +6,11 @@ import { seedCountries } from "../services/mssql/country.service";
 import { seedCities } from "../services/mssql/city.service";
 import { seedStates } from "../services/mssql/state.service";
 import { seedCostCenters } from "../services/postgres/costCenter.service";
+import {
+  seedApvInstitutions,
+  seedPrevisionalInstitutions,
+  seedPrevisionalRates,
+} from "../services/mssql/previsionalInstitution.service";
 import { PermissionModel } from "../models/postgres/permission.model";
 import { RolePermissionModel } from "../models/postgres/rolePermission.model";
 import { MenuItemModel } from "../models/postgres/menuItem.model";
@@ -24,6 +29,15 @@ export async function seedGeography(): Promise<void> {
   await seedCountries();
   await seedCities();
   await seedStates();
+}
+
+// Catalogos de la nomina Previred. seedPrevisionalRates resuelve cada tasa
+// contra previsional_institutions, asi que va DESPUES de las instituciones;
+// seedApvInstitutions no depende de nada.
+export async function seedPrevisional(): Promise<void> {
+  await seedPrevisionalInstitutions();
+  await seedPrevisionalRates();
+  await seedApvInstitutions();
 }
 
 // Siembra el catalogo de permisos (databases/permission-catalog.ts) y las
@@ -70,6 +84,23 @@ export async function seedPermissions(): Promise<void> {
       userPermissions.map((permission) => ({ roleId: userRole.id, permissionId: permission.id })),
       { ignoreDuplicates: true },
     );
+
+    // Revocacion explicita, no solo "dejar de otorgar": este seed es
+    // aditivo (ignoreDuplicates arriba), asi que sacar grantToUser del
+    // catalogo NO alcanza para instalaciones que ya sembraron la fila
+    // RolePermission en un arranque anterior. purchase-requests:read salio
+    // de userGrantableKeys por el hallazgo de auditoria de PII
+    // cross-departamental (ver permission-catalog.ts) -sin este DELETE la
+    // vulnerabilidad seguia viva en cualquier ambiente ya desplegado antes
+    // de este fix. Idempotente: no-op si la fila ya no existe.
+    const revokedFromUser = allPermissions.filter(
+      (permission) => `${permission.resource}:${permission.action}` === "purchase-requests:read",
+    );
+    if (revokedFromUser.length > 0) {
+      await RolePermissionModel.destroy({
+        where: { roleId: userRole.id, permissionId: revokedFromUser.map((permission) => permission.id) },
+      });
+    }
   }
 }
 

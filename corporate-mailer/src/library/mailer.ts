@@ -21,6 +21,12 @@ export interface SendMailInput {
 // usuario/password -por eso no hubo que esperar a que el usuario decidiera
 // el proveedor para construir este servicio. Se crea una sola vez a nivel
 // de modulo, no por request.
+// pool:true + maxConnections/maxMessages: sin esto, CADA request abria su
+// propia conexion SMTP nueva sin tope -una rafaga de requests concurrentes
+// (intencional o por un bug de reintento) saturaba las conexiones salientes
+// del unico proveedor SMTP configurado (hallazgo de auditoria de seguridad
+// 2026-09-17). Los limites son conservadores a proposito: este servicio
+// corre con 256M/0.5 cpu en produccion (compose.prod.yml).
 const transporter = nodemailer.createTransport({
   host: env.smtp.host,
   port: env.smtp.port,
@@ -29,6 +35,9 @@ const transporter = nodemailer.createTransport({
     user: env.smtp.user,
     pass: readSecretFromEnv(env.smtp.passwordFileVar),
   },
+  pool: true,
+  maxConnections: 5,
+  maxMessages: 100,
 });
 
 export async function sendMail(input: SendMailInput): Promise<void> {

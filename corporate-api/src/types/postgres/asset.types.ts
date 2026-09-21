@@ -1,3 +1,5 @@
+import type { ProductType } from "../mongo/product.types";
+
 export interface AssetAttributes {
   id: number;
   tag: string;
@@ -39,6 +41,18 @@ export interface CreateAssetsFromReceiptInput {
   value?: string | null;
   receivedAt?: string | null;
   finalStatusCode?: string;
+  createdBy?: number | null;
+}
+
+// Alta de un activo desde una toma de inventario (createAssetFromInventory): no
+// hay recepcion ni valor conocido, asi que no lleva goodsReceiptId ni asiento
+// de Kardex. productType lo resuelve quien llama (ya leyo el producto para
+// validarlo) y define el prefijo del tag (ARR/SRV/ACT).
+export interface CreateAssetFromInventoryInput {
+  productId: string;
+  productType: ProductType;
+  costCenterId: number;
+  serialNumber: string;
   createdBy?: number | null;
 }
 

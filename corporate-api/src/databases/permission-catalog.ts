@@ -52,6 +52,23 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "users", action: "update", description: "Editar usuarios (incluye password)" },
   { resource: "users", action: "delete", description: "Desactivar usuarios" },
 
+  // Cotizaciones previsionales (nomina Previred). Todo admin-only por defecto:
+  // el perfil trae el plan de isapre y el numero de FUN de cada colaborador.
+  { resource: "previsional-institutions", action: "read", description: "Consultar AFP, salud, CCAF y mutualidades" },
+  { resource: "previsional-profiles", action: "read", description: "Consultar la afiliacion previsional de un colaborador" },
+  { resource: "previsional-profiles", action: "update", description: "Asignar AFP y salud a un colaborador" },
+  { resource: "previred-settings", action: "read", description: "Consultar la CCAF y mutual de la empresa" },
+  { resource: "previred-settings", action: "update", description: "Definir la CCAF y mutual de la empresa" },
+
+  // Remuneraciones. Sueldo base y gratificacion de cada colaborador son datos
+  // sensibles: admin-only por defecto, igual que el perfil previsional.
+  { resource: "employee-contracts", action: "read", description: "Consultar contratos y sueldo de un colaborador" },
+  { resource: "employee-contracts", action: "create", description: "Crear el contrato (sueldo y gratificacion) de un colaborador" },
+  { resource: "payroll-settings", action: "read", description: "Consultar el sistema de gratificacion de la empresa" },
+  { resource: "payroll-settings", action: "update", description: "Definir el sistema de gratificacion de la empresa" },
+  { resource: "payroll-parameters", action: "read", description: "Consultar parametros de remuneraciones (IMM)" },
+  { resource: "payroll-parameters", action: "update", description: "Registrar parametros de remuneraciones (IMM)" },
+
   // Maestros/config: admin-only por defecto (create/update).
   { resource: "business-partners",action: "read",description: "Consultar terceros",grantToUser: true,},
   { resource: "business-partners", action: "create", description: "Crear terceros" },
@@ -92,13 +109,21 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "employees", action: "update", description: "Editar colaboradores" },
 
   { resource: "products", action: "create", description: "Crear productos" },
-  { resource: "products", action: "read", description: "Listar productos" },
+  // grantToUser: CreateRequest.tsx llama productService.list() para el
+  // selector de productos al crear una solicitud de compra -mismo flujo
+  // operativo que purchase-request-lines:create, sin el "user" base no
+  // podria ni empezar a cargar una solicitud. El Product model no expone
+  // PII/precio/costo (solo catalogo basico), asi que el riesgo de dejarlo
+  // abierto es bajo -corrige el hallazgo de auditoria (GET /products sin
+  // authorize()) sin repetir la revocacion admin-only que si aplico a
+  // purchase-requests:read (ese SI exponia PII).
+  { resource: "products", action: "read", description: "Listar productos", grantToUser: true },
   { resource: "products", action: "update", description: "Editar productos" },
   { resource: "products", action: "delete", description: "Desactivar productos" },
-  
+
   { resource: "product-categories", action: "create", description: "Crear categorias de producto" },
   { resource: "product-categories", action: "update", description: "Editar categorias de producto" },
-  { resource: "product-categories", action: "read", description: "Listar categorias de producto" },
+  { resource: "product-categories", action: "read", description: "Listar categorias de producto", grantToUser: true },
   
   { resource: "asset-statuses", action: "create", description: "Crear estados de activo" },
   { resource: "asset-statuses", action: "update", description: "Editar estados de activo" },
@@ -111,7 +136,18 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "addresses", action: "update", description: "Editar direcciones", grantToUser: true },
 
   { resource: "purchase-requests",action: "create",description: "Crear solicitudes de compra",grantToUser: true,},
-  { resource: "purchase-requests",action: "read",description: "Consultar solicitudes de compra",grantToUser: true,},
+  // PII (requester/beneficiary via PersonModel completo: RUT, email,
+  // telefono, fecha nacimiento): admin-only por defecto, mismo criterio que
+  // employees:read -corrige el hallazgo de auditoria donde list()/getById()
+  // exponian PII cruzando departamentos a cualquier autenticado con el rol
+  // "user" base. Revocado explicitamente del rol "user" ya sembrado, ver
+  // seedPermissions() en seed.ts (el seed de permisos es aditivo, no
+  // alcanza con sacar el flag aca). Sin esto, AttachPurchaseOrder.tsx/
+  // SendPurchaseOrder.tsx/ReceiveGoods.tsx/ApproveQuote.tsx dejan de poder
+  // refrescar la solicitud tras cada paso -hay que crear un rol dedicado
+  // (ej. "compras") y otorgarle este permiso explicitamente por
+  // PUT /roles/:id/permissions.
+  { resource: "purchase-requests",action: "read",description: "Consultar solicitudes de compra",},
   { resource: "purchase-requests",action: "update",description: "Editar solicitudes de compra (datos, no el estado)",grantToUser: true,},
   // Separado de "update" a proposito: aprobar/rechazar el estado de una
   // solicitud es una accion mas sensible que editar sus datos -mismo
@@ -153,4 +189,26 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   // de "adquisiciones" que ya se planteo para el RBAC granular.
   { resource: "asset-kardex", action: "read", description: "Consultar el kardex de valorizacion de activos" },
   { resource: "asset-kardex", action: "create", description: "Registrar asientos manuales de kardex (ajuste/baja)" },
+
+  // Toma de inventario fisica. Admin-only por defecto (sin grantToUser): "create"
+  // ademas DA DE ALTA activos nuevos (con tag) al levantar equipos que no
+  // existen en el sistema, asi que el admin lo asigna a mano al rol del auditor.
+  { resource: "inventory-counts", action: "read", description: "Consultar tomas de inventario y sus reportes" },
+  { resource: "inventory-counts", action: "create", description: "Iniciar tomas de inventario e ingresar equipos (crea activos nuevos)" },
+  { resource: "inventory-counts", action: "update", description: "Editar equipos de una toma abierta y cerrar la toma" },
+
+  // Valorizacion posterior a la toma (Adquisiciones TI): asigna valor por primera
+  // vez a activos sin valor y escribe su asiento de alta en el Kardex. Admin-only
+  // por defecto (sin grantToUser): el admin lo asigna al rol de Adquisiciones TI.
+  { resource: "asset-valuation", action: "read", description: "Consultar activos pendientes de valorizacion" },
+  { resource: "asset-valuation", action: "update", description: "Asignar valor a activos que no lo tienen (genera asiento de kardex)" },
+
+  // Devolucion de activos a Adquisiciones TI con guia de despacho. Admin-only por
+  // defecto (sin grantToUser): "create" = solicitante (arma la devolucion, adjunta
+  // la guia, la envia y la cancela; los activos pasan a MOVE_TO_RETURNED) y
+  // "update" = recepcion en Adquisiciones (los activos pasan a RETURNED). El admin
+  // los asigna por rol.
+  { resource: "asset-returns", action: "read", description: "Consultar devoluciones de activos y sus guias de despacho" },
+  { resource: "asset-returns", action: "create", description: "Solicitar devoluciones de activos: armarlas, adjuntar la guia, enviarlas o cancelarlas" },
+  { resource: "asset-returns", action: "update", description: "Recibir en Adquisiciones los activos de una devolucion" },
 ];

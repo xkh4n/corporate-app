@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { LabelConfigFields } from "../../components/LabelConfigFields";
 import { RequirePermissions } from "../../components/RequirePermissions";
-import { Spinner, Field, Input, Select, Button, EmptyState } from "../../components/ui";
+import { Spinner, Input, Button, EmptyState } from "../../components/ui";
 import { showErrorToast, showSuccessToast } from "../../components/Toast";
 import { handleError } from "../../lib/Errors";
+import { DEFAULT_LABEL_CONFIG } from "../../lib/labelOptions";
 import { renderZplPreview } from "../../lib/labelary";
 import { downloadZplFile, isWebUsbSupported, printZplViaWebUsb } from "../../lib/zplPrinting";
 import { assetService } from "../../services";
-import type { Asset, AssetLabelBarcodeType, AssetLabelConfig } from "../../types/asset";
+import type { Asset, AssetLabelConfig } from "../../types/asset";
 
 // Generacion/impresion de etiquetas fisicas (Fase F): mismo permiso
 // assets:read que el resto de las pantallas de consulta de activos -la
@@ -17,28 +19,13 @@ import type { Asset, AssetLabelBarcodeType, AssetLabelConfig } from "../../types
 // compose.dev.yml de corporate-api).
 const REQUIRED_PERMISSIONS = ["assets:read"] as const;
 
-const BARCODE_OPTIONS: { value: AssetLabelBarcodeType; label: string }[] = [
-  { value: "CODE128", label: "Código de barras (CODE128)" },
-  { value: "CODE39", label: "Código de barras (CODE39)" },
-  { value: "QR", label: "Código QR" },
-];
-
-const DEFAULT_CONFIG: AssetLabelConfig = {
-  widthMm: 50,
-  heightMm: 30,
-  barcodeType: "CODE128",
-  showBorder: true,
-  showProductName: true,
-  showSerialNumber: true,
-};
-
 export default function PrintAssetLabels() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [config, setConfig] = useState<AssetLabelConfig>(DEFAULT_CONFIG);
+  const [config, setConfig] = useState<AssetLabelConfig>(DEFAULT_LABEL_CONFIG);
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
@@ -137,67 +124,7 @@ export default function PrintAssetLabels() {
 
         <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4">
-            <div className="grid grid-cols-1 gap-4 min-[900px]:grid-cols-6">
-              <Field label="Ancho (mm)" htmlFor="widthMm">
-                <Input
-                  id="widthMm"
-                  type="number"
-                  min={10}
-                  value={config.widthMm}
-                  onChange={(e) => setConfig({ ...config, widthMm: Number(e.target.value) })}
-                />
-              </Field>
-              <Field label="Alto (mm)" htmlFor="heightMm">
-                <Input
-                  id="heightMm"
-                  type="number"
-                  min={10}
-                  value={config.heightMm}
-                  onChange={(e) => setConfig({ ...config, heightMm: Number(e.target.value) })}
-                />
-              </Field>
-              <div className="min-[900px]:col-span-2">
-                <Field label="Código" htmlFor="barcodeType">
-                  <Select
-                    id="barcodeType"
-                    value={config.barcodeType}
-                    onChange={(e) => setConfig({ ...config, barcodeType: e.target.value as AssetLabelBarcodeType })}
-                  >
-                    {BARCODE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              </div>
-              <div className="flex items-end gap-4 min-[900px]:col-span-2">
-                <label className="flex items-center gap-1.5 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={config.showProductName}
-                    onChange={(e) => setConfig({ ...config, showProductName: e.target.checked })}
-                  />
-                  Producto
-                </label>
-                <label className="flex items-center gap-1.5 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={config.showSerialNumber}
-                    onChange={(e) => setConfig({ ...config, showSerialNumber: e.target.checked })}
-                  />
-                  N° serie
-                </label>
-                <label className="flex items-center gap-1.5 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={config.showBorder}
-                    onChange={(e) => setConfig({ ...config, showBorder: e.target.checked })}
-                  />
-                  Borde
-                </label>
-              </div>
-            </div>
+            <LabelConfigFields config={config} onChange={setConfig} />
 
             <div className="mt-4 flex flex-wrap gap-2">
               <Button type="button" variant="secondary" loading={previewing} onClick={() => void handlePreview()}>

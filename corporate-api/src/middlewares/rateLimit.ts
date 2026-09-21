@@ -51,6 +51,59 @@ function getLimiter(): RateLimitRequestHandler {
   return limiter;
 }
 
+// Limitadores POR USUARIO autenticado (no por IP: detras de un NAT corporativo toda la oficina
+// compartiria cupo), con store en Redis compartido (las 3 replicas cuentan juntas) y prefijo propio
+// para no chocar con el del login. Construccion perezosa por el mismo motivo que getLimiter().
+// Siempre van DESPUES de authenticate: req.user existe ("anon" es solo un respaldo defensivo).
+function createLazyUserLimiter(options: { prefix: string; windowMs: number; limit: number; message: string }) {
+  let limiterInstance: RateLimitRequestHandler | null = null;
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!limiterInstance) {
+      limiterInstance = rateLimit({
+        windowMs: options.windowMs,
+        limit: options.limit,
+        standardHeaders: true,
+        legacyHeaders: false,
+        keyGenerator: (request) => `user:${request.user?.userId ?? "anon"}`,
+        // La creacion perezosa es deliberada (ver getLimiter): el aviso de la libreria sobra.
+        validate: { creationStack: false },
+        store: new RedisStore({
+          prefix: options.prefix,
+          sendCommand: (...args: string[]) => redis.sendCommand(args),
+        }),
+        message: { error: options.message },
+      });
+    }
+    limiterInstance(req, res, next);
+  };
+}
+
+// Subidas de archivos (multer.memoryStorage guarda hasta 15 MB por request en memoria).
+export const uploadRateLimiter = createLazyUserLimiter({
+  prefix: "rl:upload:",
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  message: "Demasiadas subidas de archivos, intenta mas tarde",
+});
+
+// Validacion de colaborador por RUT (toma de inventario): el espacio de RUT es acotado y cada acierto
+// devuelve un nombre, asi que sin freno se podia recorrer para enumerar personas.
+export const holderLookupRateLimiter = createLazyUserLimiter({
+  prefix: "rl:holder:",
+  windowMs: 60 * 1000,
+  limit: 30,
+  message: "Demasiadas consultas de colaboradores, intenta mas tarde",
+});
+
+// Consulta de un equipo por TAG/serie en la toma: devuelve tenedor (con RUT); los TAG son correlativos y sin
+// freno se podian recorrer para enumerar personas.
+export const assetLookupRateLimiter = createLazyUserLimiter({
+  prefix: "rl:invlookup:",
+  windowMs: 60 * 1000,
+  limit: 120,
+  message: "Demasiadas consultas de equipos, intenta mas tarde",
+});
+
 export function loginRateLimiter(req: Request, res: Response, next: NextFunction): void {
   getLimiter()(req, res, next);
 }

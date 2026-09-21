@@ -28,12 +28,28 @@ import "./../models/mssql/customer.model";
 import "./../models/mssql/employee.model";
 import "./../models/mssql/address.model";
 
+// Cotizaciones previsionales / nomina Previred (dependen de employees)
+import "./../models/mssql/previsionalInstitution.model";
+import "./../models/mssql/previsionalRate.model";
+import "./../models/mssql/apvInstitution.model";
+import "./../models/mssql/previredEmployerSettings.model";
+import "./../models/mssql/employeePrevisionalProfile.model";
+import "./../models/mssql/previredPayroll.model";
+import "./../models/mssql/previredPayrollLine.model";
+
+// Remuneraciones: config de la empresa, contrato y gratificacion
+import "./../models/mssql/payrollSettings.model";
+import "./../models/mssql/payrollParameter.model";
+import "./../models/mssql/employeeContract.model";
+import "./../models/mssql/gratificationMovement.model";
+
 // Flujo de compras: PurchaseRequest -> Quote -> Authorization -> PurchaseOrder -> GoodsReceipt
 import "./../models/mssql/purchaseRequest.model";
 import "./../models/mssql/purchaseRequestLine.model";
 import "./../models/mssql/quote.model";
 import "./../models/mssql/authorization.model";
 import "./../models/mssql/purchaseOrder.model";
+import "./../models/mssql/purchaseOrderQuote.model";
 import "./../models/mssql/goodsReceipt.model";
 
 // Activos (Postgres)
@@ -42,3 +58,10 @@ import "./../models/postgres/assetStatus.model";
 import "./../models/postgres/asset.model";
 import "./../models/postgres/assetMovement.model";
 import "./../models/postgres/assetMovementUser.model";
+
+// Toma de inventario (Postgres)
+import "./../models/postgres/inventoryCount.model";
+import "./../models/postgres/inventoryCountLine.model";
+import "./../models/postgres/inventoryCountMissingAsset.model";
+import "./../models/postgres/assetReturn.model";
+import "./../models/postgres/assetReturnLine.model";

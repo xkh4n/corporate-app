@@ -15,14 +15,12 @@ const RAM_OPTIONS: AssetRamCapacity[] = ["8 GB", "16 GB", "32 GB"];
 // Pantalla independiente de asignacion (reemplaza el recorrido anterior
 // "solicitud -> unidades -> asignar", ver RequestAssetStatus.tsx para el
 // visor de solo lectura que quedo en su lugar): se busca el activo
-// DIRECTO por tag o N° de serie, sin pasar por ninguna solicitud de compra
-// -mismo criterio de independencia que el formulario de AntherxSoft
-// (erp-frontend/.../Asignacion/asignar.tsx), adaptado a los campos que
+// DIRECTO por tag o N° de serie, sin pasar por ninguna solicitud de compra:
+// la asignacion es independiente del flujo de compras, con los campos que
 // corporate-app realmente tiene.
 const REQUIRED_PERMISSIONS = ["assets:read", "asset-movements:create"] as const;
 
-// Formatea en vivo mientras se tipea: deja solo hex, agrupa de a 2 con ":"
-// (mismo criterio que el formulario de AntherxSoft).
+// Formatea en vivo mientras se tipea: deja solo hex, agrupa de a 2 con ":".
 function formatMacAddress(value: string): string {
   const hex = value.replace(/[^0-9a-fA-F]/g, "").toUpperCase().slice(0, 12);
   return hex.match(/.{1,2}/g)?.join(":") ?? hex;
@@ -139,9 +137,8 @@ export default function AssignAsset() {
       });
       showSuccessToast(`Activo ${selectedAsset.tag} asignado a ${form.userName}`);
 
-      // Descarga automatica del acta de entrega -mismo criterio que
-      // AntherxSoft: un blob que se baja solo, sin bloquear el resto del
-      // flujo si falla (la asignacion ya se hizo).
+      // Descarga automatica del acta de entrega: un blob que se baja solo,
+      // sin bloquear el resto del flujo si falla (la asignacion ya se hizo).
       try {
         const blob = await assetMovementService.downloadHandover(movement.id);
         const url = URL.createObjectURL(blob);

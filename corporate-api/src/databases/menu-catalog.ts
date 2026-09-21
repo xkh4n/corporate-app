@@ -47,6 +47,40 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     permissionKey: "employees:create",
     sortOrder: 10,
   },
+  { label: "Previsión", icon: "IoShieldCheckmark", parentLabel: "Gerencia de Personas", sortOrder: 10 },
+  {
+    label: "Asignar AFP",
+    icon: "IoWallet",
+    link: "/employees/previsional/afp",
+    parentLabel: "Previsión",
+    permissionKey: "previsional-profiles:update",
+    sortOrder: 10,
+  },
+  {
+    label: "Asignar Salud",
+    icon: "IoMedkit",
+    link: "/employees/previsional/salud",
+    parentLabel: "Previsión",
+    permissionKey: "previsional-profiles:update",
+    sortOrder: 20,
+  },
+  {
+    label: "CCAF y Mutualidad",
+    icon: "IoBusiness",
+    link: "/company/previsional",
+    parentLabel: "Previsión",
+    permissionKey: "previred-settings:update",
+    sortOrder: 30,
+  },
+  { label: "Remuneraciones", icon: "IoCash", parentLabel: "Gerencia de Personas", sortOrder: 10 },
+  {
+    label: "Configuración de Remuneraciones",
+    icon: "IoOptions",
+    link: "/payroll/settings",
+    parentLabel: "Remuneraciones",
+    permissionKey: "payroll-settings:update",
+    sortOrder: 10,
+  },
   { label: "Roles", icon: "IoLibrary", parentLabel: "Gerencia de Personas", sortOrder: 10 },
 
   {
@@ -211,6 +245,31 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     parentLabel: "Productos",
     permissionKey: "asset-kardex:read",
     sortOrder: 100,
+  },
+  {
+    label: "Toma de Inventario",
+    icon: "IoClipboardOutline",
+    link: "/inventory/counts",
+    parentLabel: "Productos",
+    permissionKey: "inventory-counts:read",
+    sortOrder: 105,
+  },
+  {
+    label: "Valorización de Activos",
+    icon: "IoCashOutline",
+    link: "/assets/valuation",
+    parentLabel: "Productos",
+    // :read (igual que el GET de la API y la pantalla): con :update solo, el item aparecia y la pantalla negaba el acceso.
+    permissionKey: "asset-valuation:read",
+    sortOrder: 110,
+  },
+  {
+    label: "Devoluciones de Activos",
+    icon: "IoReturnDownBackOutline",
+    link: "/assets/returns",
+    parentLabel: "Productos",
+    permissionKey: "asset-returns:read",
+    sortOrder: 108,
   },
 
   {

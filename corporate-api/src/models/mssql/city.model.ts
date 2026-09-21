@@ -16,7 +16,7 @@ export class CityModel extends Model<InferAttributes<CityModel>, InferCreationAt
 CityModel.init(
   {
     id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
-    iataCodes: { type: DataTypes.STRING(20), allowNull: true, field: "iata_codes" },
+    iataCodes: { type: DataTypes.STRING(20), allowNull: true, unique: true, field: "iata_codes" },
     nameCity: { type: DataTypes.STRING(150), allowNull: false, field: "name_city" },
     countryId: { type: DataTypes.INTEGER, allowNull: false, field: "country_id" },
     createdBy: { type: DataTypes.INTEGER, allowNull: true, field: "created_by" },

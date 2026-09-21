@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>001 — OC consolidada por proveedor (multi-cotización)</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2933;
+    --muted: #52606d;
+    --border: #d9e2ec;
+    --code-bg: #f4f6f8;
+    --accent: #2563eb;
+    --block-bg: #f8fafc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0 0 4rem 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 2.5rem 1.5rem; }
+  header.doc-header {
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 1.25rem;
+    margin-bottom: 2rem;
+  }
+  header.doc-header .badge {
+    display: inline-block;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.85rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    margin-bottom: 0.75rem;
+  }
+  header.doc-header h1 { margin: 0 0 0.4rem 0; font-size: 1.6rem; }
+  header.doc-header .meta { color: var(--muted); font-size: 0.9rem; }
+  h2 {
+    margin-top: 2.5rem;
+    font-size: 1.25rem;
+    border-left: 4px solid var(--accent);
+    padding-left: 0.6rem;
+  }
+  h3 { margin-top: 1.6rem; font-size: 1.05rem; color: var(--fg); }
+  h4 { margin-top: 1.2rem; font-size: 0.95rem; color: var(--muted); }
+  p { margin: 0.7rem 0; }
+  ul, ol { padding-left: 1.4rem; }
+  li { margin: 0.35rem 0; }
+  code {
+    background: var(--code-bg);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.85em;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    overflow-x: auto;
+    font-size: 0.82rem;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  blockquote {
+    margin: 1rem 0;
+    padding: 0.6rem 1rem;
+    background: var(--block-bg);
+    border-left: 4px solid var(--border);
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.9rem; }
+  th, td { border: 1px solid var(--border); padding: 0.5rem 0.7rem; text-align: left; vertical-align: top; }
+  th { background: var(--block-bg); }
+  .files-list { list-style: none; padding-left: 0; }
+  .files-list li {
+    font-family: Consolas, monospace;
+    font-size: 0.85rem;
+    background: var(--code-bg);
+    padding: 0.35rem 0.6rem;
+    border-radius: 6px;
+    margin: 0.3rem 0;
+  }
+  .step { counter-increment: step; }
+  footer.doc-footer {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 001</span>
+  <h1>OC consolidada por proveedor (multi-cotización)</h1>
+  <div class="meta">corporate-app · corporate-api + corporate-front · Estado: propuesto (pendiente de aprobación) · 2026-09-17</div>
+</header>
+
+<h2>Contexto</h2>
+<p>
+Hoy una Orden de Compra (OC) tiene relación 1:1 con una sola Cotización ganadora
+(<code>purchase_orders.quote_id NOT NULL</code>). Una Solicitud de Compra puede tener
+varias líneas, cada una con su propia cotización ganadora — y cuando dos o más líneas
+ganadoras terminan con el <strong>mismo proveedor</strong>, hoy el solicitante está
+obligado a emitir una OC redundante por cada línea, en vez de una sola consolidada.
+Se detectó al hacer QA del flujo end-to-end (solicitud <code>SOL000000001</code>,
+usuario <code>rlobos</code>, 4 líneas ganadas todas por el mismo proveedor) antes de
+pasar el ambiente de Testing a usuarios focales.
+</p>
+<p>
+Objetivo: una OC puede cubrir <strong>varias</strong> cotizaciones ganadoras, siempre
+que sean de la <strong>misma solicitud</strong> y del <strong>mismo proveedor</strong>
+(una OC nunca puede cruzar dos proveedores — restricción real del negocio, no una
+decisión de diseño). Hay datos reales en dev a migrar (1 fila en
+<code>purchase_orders</code>, <code>quote_id=4</code>) — la migración debe ser
+segura/idempotente para las 3 réplicas de <code>apidev</code> que corren
+<code>migrate.ts</code> en paralelo en cada arranque.
+</p>
+
+<h2>Diseño</h2>
+<ul>
+  <li><code>purchase_orders</code> pierde <code>quote_id</code> (escalar 1:1) y gana
+    <code>request_id INT NOT NULL</code> (FK directa a <code>purchase_requests</code>)
+    — ya no hace falta pasar por una cotización para saber a qué solicitud pertenece la
+    orden. <code>supplier_id</code> se mantiene igual (ya es un escalar real).</li>
+  <li>Tabla puente nueva <code>purchase_order_quotes</code> (N:M orden↔cotización) con
+    <code>UNIQUE(quote_id)</code> — es la que impide, a nivel de motor, que una
+    cotización quede cubierta por dos órdenes (reemplaza el guard de aplicación
+    <code>findOne({where:{quoteId}})</code> que no era atómico entre las 3 réplicas,
+    misma lección que ya se aplicó para <code>ux_cities_iata_codes</code>/
+    <code>ux_states_territorial_code</code>).</li>
+  <li><code>goods_receipts</code> no cambia de columnas (ya tiene <code>quote_id</code>),
+    pero <code>quoteId</code> pasa a ser <strong>input del cliente</strong> (antes se
+    derivaba de <code>order.quoteId</code>, que deja de existir como escalar) y el
+    índice único <code>ux_goods_receipts_order_document</code> debe ampliarse con
+    <code>quote_id</code> (con nombre nuevo
+    <code>ux_goods_receipts_order_quote_document</code>, no reusar el nombre viejo con
+    otra definición — el guard <code>IF NOT EXISTS(name=...)</code> nunca detectaría el
+    cambio en una base ya migrada).</li>
+</ul>
+
+<h2>1. Migración — <code>corporate-api/src/databases/mssql/migrate.ts</code></h2>
+<p>Dentro de <code>migratePurchasingFlow()</code>. Reemplazar el
+<code>CREATE TABLE purchase_orders</code> actual (líneas ~707-728) por la forma final
+(instalación limpia):</p>
+
+<pre><code>IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'purchase_orders')
+BEGIN
+  CREATE TABLE purchase_orders (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    order_number NVARCHAR(20) NOT NULL UNIQUE,
+    request_id INT NOT NULL,
+    issued_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    payment_terms NVARCHAR(50) NULL,
+    supplier_id INT NOT NULL,
+    sent_at DATETIME2 NULL,
+    created_by INT NULL,
+    updated_by INT NULL,
+    created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT fk_purchase_orders_request FOREIGN KEY (request_id) REFERENCES purchase_requests(id),
+    CONSTRAINT fk_purchase_orders_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+    CONSTRAINT fk_purchase_orders_created_by FOREIGN KEY (created_by) REFERENCES users(id),
+    CONSTRAINT fk_purchase_orders_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)
+  );
+END</code></pre>
+
+<p>Dejar el guard existente de <code>sent_at</code> (ALTER ADD, ~líneas 734-742) tal
+cual, justo después. Luego agregar, en este orden, 7 bloques nuevos — cada uno
+guardado por <strong>estado observable</strong> (no por versión), para que converjan
+tanto en instalación limpia (todos no-op tras el CREATE de arriba) como en la base dev
+actual (1 fila con <code>quote_id=4</code>):</p>
+
+<h3>Bloque 1 — agregar columna nullable</h3>
+<pre><code>IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('purchase_orders') AND name = 'request_id')
+BEGIN
+  ALTER TABLE purchase_orders ADD request_id INT NULL;
+END</code></pre>
+
+<h3>Bloque 2 — backfill desde el <code>quote_id</code> viejo</h3>
+<pre><code>IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('purchase_orders') AND name = 'quote_id')
+BEGIN
+  UPDATE po SET po.request_id = q.request_id
+  FROM purchase_orders po JOIN quotes q ON q.id = po.quote_id
+  WHERE po.request_id IS NULL;
+END</code></pre>
+
+<h3>Bloque 3 — crear tabla puente (compartido limpia+retrofit)</h3>
+<pre><code>IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'purchase_order_quotes')
+BEGIN
+  CREATE TABLE purchase_order_quotes (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    purchase_order_id INT NOT NULL,
+    quote_id INT NOT NULL,
+    created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT fk_purchase_order_quotes_order FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id),
+    CONSTRAINT fk_purchase_order_quotes_quote FOREIGN KEY (quote_id) REFERENCES quotes(id),
+    CONSTRAINT uq_purchase_order_quotes_quote UNIQUE (quote_id)
+  );
+END</code></pre>
+
+<h3>Bloque 4 — backfill de la fila puente para la OC vieja</h3>
+<pre><code>IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('purchase_orders') AND name = 'quote_id')
+BEGIN
+  INSERT INTO purchase_order_quotes (purchase_order_id, quote_id)
+  SELECT po.id, po.quote_id FROM purchase_orders po
+  WHERE po.quote_id IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM purchase_order_quotes poq WHERE poq.quote_id = po.quote_id);
+END</code></pre>
+
+<h3>Bloque 5 — endurecer a NOT NULL solo si ya no queda ninguna fila sin backfillear</h3>
+<pre><code>IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('purchase_orders') AND name = 'request_id' AND is_nullable = 1)
+   AND NOT EXISTS (SELECT 1 FROM purchase_orders WHERE request_id IS NULL)
+BEGIN
+  ALTER TABLE purchase_orders ALTER COLUMN request_id INT NOT NULL;
+END</code></pre>
+
+<h3>Bloque 6 — agregar la FK por nombre (no-op en limpia, ya existe con ese nombre)</h3>
+<pre><code>IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'fk_purchase_orders_request')
+BEGIN
+  ALTER TABLE purchase_orders ADD CONSTRAINT fk_purchase_orders_request FOREIGN KEY (request_id) REFERENCES purchase_requests(id);
+END</code></pre>
+
+<h3>Bloque 7 — punto de no retorno: dropea <code>quote_id</code></h3>
+<p>Solo cuando ya no hay ninguna fila pendiente de backfill (ni de <code>request_id</code>
+ni de la fila puente):</p>
+<pre><code>IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('purchase_orders') AND name = 'quote_id')
+   AND NOT EXISTS (SELECT 1 FROM purchase_orders WHERE request_id IS NULL)
+   AND NOT EXISTS (
+     SELECT 1 FROM purchase_orders po
+     WHERE NOT EXISTS (SELECT 1 FROM purchase_order_quotes poq WHERE poq.purchase_order_id = po.id)
+   )
+BEGIN
+  IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'fk_purchase_orders_quote')
+    ALTER TABLE purchase_orders DROP CONSTRAINT fk_purchase_orders_quote;
+  IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('purchase_orders') AND name = 'quote_id')
+    ALTER TABLE purchase_orders DROP COLUMN quote_id;
+END</code></pre>
+
+<blockquote>
+Nota: <code>isDuplicateMssqlObjectError</code> en <code>library/errors.ts:126</code>
+solo cubre los errores 2714/2627/1913 — NO cubre "duplicate column" ni "drop column
+inexistente", por eso cada bloque se guarda por estado observable en vez de confiar en
+que <code>runDdl()</code> se trague el choque.
+</blockquote>
+
+<h3>Índices nuevos</h3>
+<p>(junto a <code>ix_quotes_request_id</code>, cada uno en su propio <code>runDdl()</code>):</p>
+<pre><code>IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_purchase_orders_request_id' AND object_id = OBJECT_ID('purchase_orders'))
+  CREATE INDEX ix_purchase_orders_request_id ON purchase_orders(request_id);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_purchase_order_quotes_order_id' AND object_id = OBJECT_ID('purchase_order_quotes'))
+  CREATE INDEX ix_purchase_order_quotes_order_id ON purchase_order_quotes(purchase_order_id);</code></pre>
+
+<h3>Índice único de <code>goods_receipts</code></h3>
+<p>Reemplazar el actual <code>ux_goods_receipts_order_document</code>:</p>
+<pre><code>IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_goods_receipts_order_quote_document' AND object_id = OBJECT_ID('goods_receipts'))
+BEGIN
+  IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_goods_receipts_order_document' AND object_id = OBJECT_ID('goods_receipts'))
+    DROP INDEX ux_goods_receipts_order_document ON goods_receipts;
+  CREATE UNIQUE INDEX ux_goods_receipts_order_quote_document
+    ON goods_receipts(purchase_order_id, quote_id, document_type, document_number);
+END</code></pre>
+
+<h3>Trazado de convergencia</h3>
+<p>
+En instalación limpia el CREATE ya deja la forma final y los 7 bloques son no-op. En
+la base dev actual (1 OC con <code>quote_id=4</code>, request 1 con 4 cotizaciones
+SELECTED del mismo proveedor, solo la línea 4 cubierta): B1 agrega columna → B2
+backfillea <code>request_id=1</code> → B3 crea la tabla puente → B4 inserta
+<code>(order.id, 4)</code> → B5 endurece a NOT NULL → B6 agrega la FK → B7 dropea
+<code>quote_id</code>. La OC existente sobrevive intacta; las cotizaciones 1-3 quedan
+pendientes y ahora sí se pueden emitir como <strong>una sola</strong> OC consolidada.
+</p>
+
+<h2>2. Modelos</h2>
+<p>
+Archivo nuevo <code>corporate-api/src/models/mssql/purchaseOrderQuote.model.ts</code>
+(mismo patrón que <code>supplierProduct.model.ts</code>): <code>id, purchaseOrderId,
+quoteId, createdAt, updatedAt</code>, <code>tableName:"purchase_order_quotes"</code>,
+<code>timestamps:true</code>. Sin asociaciones propias (viven en
+<code>purchaseOrder.model.ts</code>).
+</p>
+<p>En <code>purchaseOrder.model.ts</code>: quitar <code>quoteId</code>, agregar
+<code>requestId</code>. Asociaciones:</p>
+<pre><code>PurchaseOrderModel.belongsTo(PurchaseRequestModel, { foreignKey: "requestId", as: "request" });
+PurchaseRequestModel.hasMany(PurchaseOrderModel, { foreignKey: "requestId", as: "purchaseOrders" });
+
+// through: el MODELO, no un string -con string Sequelize define un modelo
+// propio con columnas camelCase (purchaseOrderId/quoteId) que no son las
+// reales (este proyecto no usa underscored:true).
+PurchaseOrderModel.belongsToMany(QuoteModel, {
+  through: { model: PurchaseOrderQuoteModel, unique: false },
+  foreignKey: "purchaseOrderId", otherKey: "quoteId", as: "quotes",
+});
+QuoteModel.belongsToMany(PurchaseOrderModel, {
+  through: { model: PurchaseOrderQuoteModel, unique: false },
+  foreignKey: "quoteId", otherKey: "purchaseOrderId", as: "purchaseOrders",
+});</code></pre>
+<p>Se elimina <code>QuoteModel.hasOne(PurchaseOrderModel, {as:"purchaseOrder"})</code>
+(sin consumidores).</p>
+<p><code>registerModels.ts</code>: agregar
+<code>import "./../models/mssql/purchaseOrderQuote.model";</code> junto a la línea 36
+(bloque "Flujo de compras").</p>
+
+<h2>3. Tipos</h2>
+<p>
+<code>types/mssql/purchaseOrder.types.ts</code>: <code>PurchaseOrderAttributes</code>
+cambia <code>quoteId</code> por <code>requestId: number</code>. Se
+<strong>separa</strong> <code>PurchaseOrderCreationAttributes</code> en un nuevo
+<code>CreatePurchaseOrderInput { quoteIds: number[]; paymentTerms?: string|null;
+createdBy?: number|null }</code> — no es el shape de
+<code>PurchaseOrderModel.create()</code> (que necesita
+<code>orderNumber/requestId/supplierId</code>, derivados en el servicio, no del
+cliente).
+</p>
+<p>
+<code>types/mssql/goodsReceipt.types.ts</code>: <code>GoodsReceiptCreationInput</code>
+gana <code>quoteId: number</code> (ya no se deriva de <code>order.quoteId</code>).
+</p>
+
+<h2>4. <code>services/mssql/purchaseOrder.service.ts</code></h2>
+<p>
+<code>listPurchaseOrders</code>: filtrar directo por <code>requestId</code> en
+<code>purchase_orders</code> (ya no hace falta el include de Quote para filtrar),
+agregar <code>distinct: true</code> en <code>findAndCountAll</code> (si no, el
+<code>count()</code> cuenta una fila por cotización cubierta en el join N:M e infla
+el total de paginación), incluir <code>{model: QuoteModel, as:"quotes",
+through:{attributes:[]}}</code>.
+</p>
+<p><code>createPurchaseOrder(data: CreatePurchaseOrderInput, actorPersonId)</code>:</p>
+<ol>
+  <li>Dedupe <code>quoteIds = [...new Set(data.quoteIds)]</code>; vacío →
+    <code>BadRequestError</code>.</li>
+  <li><code>QuoteModel.findAll({where:{id:{[Op.in]:quoteIds}}})</code>; si falta
+    alguno → <code>NotFoundError</code>.</li>
+  <li>Alguno no <code>SELECTED</code> → <code>BadRequestError</code> (mismo mensaje
+    que hoy, por cotización).</li>
+  <li><code>requestIds = [...new Set(quotes.map(q=>q.requestId))]</code>; más de
+    uno → <code>BadRequestError</code> ("no puede cubrir cotizaciones de solicitudes
+    distintas").</li>
+  <li><code>supplierIds = [...new Set(quotes.map(q=>q.supplierId))]</code>; más de
+    uno → <code>BadRequestError</code> ("no puede cubrir cotizaciones de proveedores
+    distintos -emita una orden por proveedor").</li>
+  <li><code>request = getPurchaseRequestByIdOrThrow(requestId)</code>; status !==
+    <code>QUOTE_APPROVED</code> → <code>ConflictError</code> (igual que hoy).
+    <code>requesterId !== actorPersonId</code> → <code>ForbiddenError</code> (igual
+    que hoy).</li>
+  <li>Chequeo previo (solo para dar mensaje útil, el guard real es la constraint
+    UNIQUE): <code>PurchaseOrderQuoteModel.findAll({where:{quoteId:{[Op.in]:quoteIds}}})</code>
+    → si hay alguna, <code>ConflictError</code> con el <code>orderNumber</code>
+    existente.</li>
+  <li><code>supplier = getSupplierByIdOrThrow(supplierId)</code>.</li>
+  <li>Transacción: <code>generateDocumentNumber("OC", transaction)</code> →
+    <code>PurchaseOrderModel.create(...)</code> →
+    <code>PurchaseOrderQuoteModel.bulkCreate(...)</code> envuelto en try/catch: si
+    <code>isUniqueConstraintError(err)</code> → <code>ConflictError</code>
+    ("alguna cotización ya quedó cubierta por otra orden -recargue la pantalla"),
+    el rollback también revierte el número de OC consumido.</li>
+  <li><code>return getPurchaseOrderByIdOrThrow(order.id)</code>.</li>
+</ol>
+
+<p><code>areAllWinningQuotesOrdered(requestId)</code> — reescribir de comparación de
+cantidades a cobertura por conjunto (la comparación vieja
+<code>orders.length !== winningQuotes.length</code> queda rota apenas una OC cubre 2
+cotizaciones):</p>
+<pre><code>async function areAllWinningQuotesOrdered(requestId: number): Promise&lt;boolean&gt; {
+  const winningQuotes = await QuoteModel.findAll({ where: { requestId, status: "SELECTED" }, attributes: ["id"] });
+  if (winningQuotes.length === 0) return false;
+
+  const winningIds = winningQuotes.map((q) => q.id);
+  const links = await PurchaseOrderQuoteModel.findAll({ where: { quoteId: { [Op.in]: winningIds } } });
+  const coveredIds = new Set(links.map((l) => l.quoteId));
+  if (winningIds.some((id) => !coveredIds.has(id))) return false;
+
+  const orders = await PurchaseOrderModel.findAll({
+    where: { id: { [Op.in]: [...new Set(links.map((l) => l.purchaseOrderId))] } },
+    attributes: ["orderNumber"],
+  });
+  const request = await getPurchaseRequestByIdOrThrow(requestId);
+  const folder = getAcquisitionFolder(request.requestNumber);
+  return orders.every((order) => findFileByPrefix(folder, `OC-${order.orderNumber}`) !== null);
+}</code></pre>
+<p>Maneja correctamente el caso de líneas ganadoras con proveedores distintos (varias
+OC, una por proveedor): sigue exigiendo que TODAS existan y tengan PDF.</p>
+
+<p>
+<code>attachPurchaseOrderDocument</code> / <code>getAcquisitionFolderForOrder</code> /
+<code>sendPurchaseOrderToSupplier</code>: colapsar
+<code>quote = getQuoteByIdOrThrow(order.quoteId); request =
+getPurchaseRequestByIdOrThrow(quote.requestId)</code> a
+<code>request = getPurchaseRequestByIdOrThrow(order.requestId)</code> (una sola
+línea). Resto de cada función byte-idéntico, incluido
+<code>updatePurchaseRequestStatus(request.id, "OC_GENERATED", userId)</code> en
+<code>attachPurchaseOrderDocument</code> (el parámetro <code>userId</code> SÍ se usa,
+no tocar la firma).
+</p>
+
+<h2>5. <code>controllers/purchaseOrder.controller.ts</code></h2>
+<pre><code>export const createPurchaseOrderSchema = z.object({
+  quoteIds: z.array(z.number().int().positive()).min(1),
+  paymentTerms: z.string().max(50).optional(),
+});</code></pre>
+<p>El handler <code>create</code> no cambia (<code>{...body, createdBy:
+req.user?.userId}</code> ya produce un <code>CreatePurchaseOrderInput</code> válido).</p>
+<p><code>routes/purchaseOrder.routes.ts</code>: sin cambios (gates por permiso/id, no
+por shape del body).</p>
+
+<h2>6. <code>services/mssql/goodsReceipt.service.ts</code></h2>
+<p>Solo cambia <code>createGoodsReceipt</code>. Reemplazar el inicio:</p>
+<pre><code>const order = await getPurchaseOrderByIdOrThrow(input.purchaseOrderId);
+const link = await PurchaseOrderQuoteModel.findOne({ where: { purchaseOrderId: order.id, quoteId: input.quoteId } });
+if (!link) {
+  throw new BadRequestError(`La cotizacion ${input.quoteId} no pertenece a la orden de compra ${order.orderNumber}`);
+}
+const quote = await getQuoteByIdOrThrow(input.quoteId);
+const request = await getPurchaseRequestByIdOrThrow(order.requestId);</code></pre>
+<p>
+En el <code>GoodsReceiptModel.create(...)</code>: <code>requestId:
+order.requestId</code> (en vez de <code>quote.requestId</code> — siempre son iguales,
+pero el directo evita un salto innecesario). Resto de la función (lock UPDLOCK sobre
+<code>AuthorizationModel</code> por <code>quoteId</code>, suma
+<code>alreadyReceived</code> por <code>quoteId</code>, tope contra
+<code>approvedQuantity</code>, creación de Assets, <code>attachGoodsReceiptDocument</code>,
+<code>isRequestFullyReceived</code>) queda <strong>sin cambios</strong> — ya está todo
+scoped por cotización, no por orden.
+</p>
+<p>Actualizar el mensaje del catch de unicidad (ahora la clave incluye
+<code>quote_id</code>): <em>"Ya existe una recepcion con el documento "..." para esta
+cotizacion en la orden de compra ..."</em>.</p>
+<p>
+<code>controllers/goodsReceipt.controller.ts</code>: agregar
+<code>quoteId: z.number().int().positive()</code> al
+<code>createGoodsReceiptSchema</code>, después de <code>purchaseOrderId</code>,
+preservando el <code>.superRefine(...)</code> de <code>serialNumbers</code> tal cual.
+</p>
+
+<h2>7. Tests de integración</h2>
+<p>
+<code>purchaseOrder.service.integration.test.ts</code>: todos los
+<code>createPurchaseOrder({ quoteId: quote.id }, ...)</code> →
+<code>{ quoteIds: [quote.id] }</code> (8 call-sites: líneas ~137, 191, 199, 206, 207,
+216, 231, 247). El <code>expect(order.quoteId).toBe(...)</code> →
+<code>expect(order.requestId).toBe(request.id)</code>.
+<code>RESET_TABLES.mssql</code>: agregar <code>"purchase_order_quotes"</code> antes
+de <code>"purchase_orders"</code>.
+</p>
+<p>
+<code>goodsReceipt.service.integration.test.ts</code>: todos los
+<code>createGoodsReceipt({...})</code> ganan <code>quoteId: quote.id</code>.
+<code>RESET_TABLES.mssql</code>: <code>"purchase_order_quotes"</code> entre
+<code>"goods_receipts"</code> y <code>"purchase_orders"</code>.
+</p>
+<p>
+<code>services/postgres/assetMovement.service.integration.test.ts</code> (línea ~142
+también llama <code>createPurchaseOrder({quoteId...})</code> — no pasarlo por alto):
+mismo ajuste + <code>RESET_TABLES.mssql</code> con <code>"purchase_order_quotes"</code>.
+</p>
+<p>Casos nuevos a agregar en <code>purchaseOrder.service.integration.test.ts</code>:</p>
+<ul>
+  <li>Happy path consolidado: 2 líneas aprobadas, 2 cotizaciones SELECTED del MISMO
+    proveedor → <code>createPurchaseOrder({quoteIds:[qA.id,qB.id]}, ...)</code>
+    devuelve <strong>una</strong> orden; verificar
+    <code>PurchaseOrderQuoteModel.count()===2</code>.</li>
+  <li>Proveedores distintos → <code>BadRequestError</code>.</li>
+  <li>Solicitudes distintas → <code>BadRequestError</code>.</li>
+  <li>Cotización ya cubierta (constraint nueva) → <code>ConflictError</code>, y
+    <code>PurchaseOrderModel.count()</code> no aumentó (el rollback no dejó una orden
+    huérfana).</li>
+  <li><code>attachPurchaseOrderDocument</code> con UN adjunto ya flipea
+    <code>OC_GENERATED</code> para una OC de 2 cotizaciones (el bug que la
+    comparación vieja producía).</li>
+  <li>Con 2 proveedores (2 OC): adjuntar solo una deja la solicitud en
+    <code>QUOTE_APPROVED</code>; adjuntar ambas la flipea a
+    <code>OC_GENERATED</code>.</li>
+  <li><code>quoteIds</code> con duplicados (<code>[q.id, q.id]</code>) crea una sola
+    fila puente.</li>
+</ul>
+<p>Casos nuevos en <code>goodsReceipt.service.integration.test.ts</code>:</p>
+<ul>
+  <li><code>quoteId</code> que no pertenece a la orden → <code>BadRequestError</code>.</li>
+  <li>Mismo documento físico, dos <code>quoteId</code> distintos de una OC
+    consolidada → ambas recepciones se crean (antes era imposible).</li>
+  <li>Mismo documento + mismo <code>quoteId</code> → <code>ConflictError</code> (el
+    índice sigue bloqueando esto).</li>
+  <li>Tope por cotización: OC con cotización A (aprobado 2) y B (aprobado 3) —
+    recibir 3 contra A falla, recibir 3 contra B funciona (prueba que
+    <code>alreadyReceived</code> sigue siendo por cotización, no se mezcla en la
+    orden).</li>
+</ul>
+
+<h2>8. Frontend</h2>
+<p>
+<code>corporate-front/src/types/purchaseOrder.ts</code>: <code>PurchaseOrder.quoteId</code>
+→ <code>requestId: number</code>; <code>quote?: Quote</code> → <code>quotes?: Quote[]</code>.
+<code>PurchaseOrderCreateInput.quoteId</code> → <code>quoteIds: number[]</code>.
+</p>
+<p>
+<code>corporate-front/src/types/goodsReceipt.ts</code>:
+<code>GoodsReceiptCreateInput</code> gana <code>quoteId: number</code>.
+</p>
+<p>
+<code>SendPurchaseOrder.tsx</code> (línea ~171, cambio trivial): reemplazar el
+<code>detail.order.quote?.productCode ?? .model ?? .productId</code> por
+<code>detail.order.quotes?.map(q =&gt; q.productCode ?? q.model ?? q.productId).join(", ")</code>.
+No agregar un prefetch de nombres de producto acá (exigiría <code>products:read</code>
+en <code>REQUIRED_PERMISSIONS</code>, bloqueando a un analista que solo tiene
+<code>quotes:create</code>) — mantener el fallback crudo que ya usa esta pantalla,
+solo como lista.
+</p>
+<p>
+<code>AttachPurchaseOrder.tsx</code> (el cambio de UX más visible): agrupar
+<code>pendingQuotes</code> por <code>supplierId</code> (client-side,
+<code>Quote.supplierId</code> ya viene en el payload, sin fetch extra). Estado nuevo:
+</p>
+<pre><code>const [selectedSupplierId, setSelectedSupplierId] = useState("");
+const [selectedQuoteIds, setSelectedQuoteIds] = useState&lt;Set&lt;number&gt;&gt;(new Set());</code></pre>
+<p>
+Reemplazar el <code>&lt;Select&gt;</code> de "Cotización ganadora" por: un
+<code>&lt;Select&gt;</code> de proveedor + una lista de checkboxes (no hay componente
+Checkbox en <code>components/ui/</code> — seguir el patrón de
+<code>&lt;input type="checkbox"&gt;</code> + <code>Set&lt;number&gt;</code> ya usado en
+<code>pages/activos/PrintAssetLabels.tsx:252-273</code>, incluyendo el checkbox de
+"seleccionar todo"), con <strong>todas las cotizaciones del proveedor pre-marcadas por
+defecto</strong> (flujo de 1 click para el caso normal de un solo proveedor
+pendiente). <code>orderedQuoteIds</code> pasa de
+<code>ordersRes.items.map(o=&gt;o.quoteId)</code> a
+<code>ordersRes.items.flatMap(o=&gt;o.quotes?.map(q=&gt;q.id) ?? [])</code>. El
+submit pasa de <code>{quoteId: Number(selectedQuoteId)}</code> a
+<code>{quoteIds:[...selectedQuoteIds]}</code>. La columna "Producto" de la tabla de
+OC emitidas pasa a mostrar una lista (join) en vez de un solo nombre.
+</p>
+<p>
+Bug preexistente que vale la pena arreglar de paso (más costoso ahora: una OC
+consolidada atascada bloquea varias líneas, no una): si <code>create</code> tiene
+éxito pero <code>uploadAttachment</code> falla y el usuario navega fuera, la orden
+queda sin PDF para siempre porque el panel de emisión desaparece (ya no hay
+<code>pendingQuotes</code>). Agregar, en la tabla "Órdenes de compra emitidas", un
+input de archivo + botón "Adjuntar" en las filas con <code>!row.attached</code> (sin
+cambios de backend).
+</p>
+<p>
+<code>ReceiveGoods.tsx</code> (el cambio más grande): la unidad de recepción pasa a
+ser el par <strong>(orden, cotización)</strong>, no la orden — recibir siempre fue
+por producto/cotización, solo que antes coincidía 1:1 con la orden.
+<code>OrderDetail</code> se reemplaza por <code>ReceiptLine { order, quote,
+authorization, approvedQuantity, alreadyReceived, remaining, receipts, documentType,
+documentNumber, receivedQuantity, serialNumbers, receiptFile, authorizationFile,
+submitting }</code>, con clave compuesta <code>`${order.id}:${quote.id}`</code> para
+todos los updaters (<code>updateOrder</code> → <code>updateLine</code>,
+<code>handleQuantityChange</code>, <code>handleSerialChange</code>).
+<code>loadDetail</code> pasa a: una llamada a
+<code>goodsReceiptService.list(order.id)</code> por orden (como hoy), y una a
+<code>authorizationService.listByQuote(quote.id)</code> <strong>por cada cotización
+de la orden</strong> (antes una por orden, vía <code>order.quoteId</code>);
+<code>alreadyReceived</code> filtra <code>receiptsRes.items</code> por
+<code>receipt.quoteId === quote.id</code> en vez de sumar todos los recibos de la
+orden. El payload de <code>goodsReceiptService.create</code> gana <code>quoteId:
+line.quote.id</code>. Todos los <code>id</code>/<code>htmlFor</code> del formulario
+(hoy <code>`xxx-${order.id}`</code>) deben incluir también el <code>quote.id</code>
+para no duplicar ids de DOM en una orden consolidada. Render: una tarjeta por orden,
+con un bloque interno por cotización/producto (antes un solo bloque por orden).
+</p>
+
+<h2>Orden de implementación</h2>
+<ol>
+  <li><code>migrate.ts</code> (§1) — nada compila contra el resto sin esto primero.</li>
+  <li><code>purchaseOrderQuote.model.ts</code> → <code>purchaseOrder.model.ts</code>
+    → <code>registerModels.ts</code> → tipos (§3). A partir de acá <code>tsc</code>
+    marca cada <code>order.quoteId</code> roto.</li>
+  <li><code>purchaseOrder.service.ts</code> (§4) →
+    <code>purchaseOrder.controller.ts</code> (§5).</li>
+  <li><code>goodsReceipt.service.ts</code> (§6) →
+    <code>goodsReceipt.controller.ts</code> (§6).</li>
+  <li>Tests (§7): primero los call-sites existentes (suite en verde), después los
+    casos nuevos.</li>
+  <li>Tipos del frontend (§8) → <code>SendPurchaseOrder.tsx</code> (trivial) →
+    <code>AttachPurchaseOrder.tsx</code> → <code>ReceiveGoods.tsx</code>.</li>
+</ol>
+
+<h2>Fuera de alcance (con motivo)</h2>
+<ul>
+  <li>FK compuesta que fuerce a nivel de motor que cada cotización cubierta comparta
+    <code>request_id</code>/<code>supplier_id</code> con su orden: el único punto de
+    escritura (<code>createPurchaseOrder</code>) ya lo valida en transacción y la
+    tabla puente es insert-only — no amerita el costo de columnas denormalizadas +
+    índices únicos extra por ahora.</li>
+  <li><code>library/documentNumbering.ts</code>, <code>library/documentStorage.ts</code>,
+    <code>library/realtime/notify.ts</code>, <code>services/mssql/notification.service.ts</code>,
+    <code>services/mssql/authorization.service.ts</code>, <code>library/purchaseRequestStatus.ts</code>,
+    <code>library/pdf/*</code> — confirmados sin cambios (ya son quote-scoped/PO-agnósticos
+    o no asumen 1 OC = 1 cotización).</li>
+</ul>
+
+<h2>Verificación</h2>
+<ol>
+  <li><code>cd corporate-api &amp;&amp; npx tsc --noEmit -p tsconfig.json</code> — sin
+    errores tras cada etapa del backend.</li>
+  <li><code>npm test</code> (integration tests de purchaseOrder/goodsReceipt/assetMovement)
+    en verde, incluyendo los casos nuevos del §7.</li>
+  <li><code>./run.ps1 backend dev</code> para aplicar la migración contra la base dev
+    real (1 OC existente, <code>quote_id=4</code>) y confirmar por <code>sqlcmd</code>
+    que: <code>purchase_orders</code> ya no tiene <code>quote_id</code>, sí tiene
+    <code>request_id=1</code>; <code>purchase_order_quotes</code> tiene la fila
+    <code>(order.id, 4)</code>; los índices nuevos existen.</li>
+  <li><code>cd corporate-front &amp;&amp; npx tsc -p tsconfig.app.json --noEmit</code>
+    — sin errores (nota: el tsconfig raíz es solution-style y no sirve para esto).</li>
+  <li>Flujo manual end-to-end en el navegador con <code>SOL000000001</code>
+    (cotizaciones 1-3 del mismo proveedor, aún no cubiertas): en "Adjuntar Orden de
+    Compra" como <code>rlobos</code>, confirmar que aparecen las 3 cotizaciones
+    pendientes bajo un único grupo de proveedor, pre-marcadas, y que emitir genera
+    <strong>una sola</strong> OC. Adjuntar el PDF y confirmar que la solicitud pasa a
+    <code>OC_GENERATED</code>. Enviar la OC como <code>orojas</code>/analista y
+    confirmar <code>PENDING_DELIVERY</code>. En "Recepcionar" confirmar que aparecen
+    3 bloques (uno por cotización) bajo la misma orden, con topes independientes.</li>
+</ol>
+
+<h2>Archivos críticos</h2>
+<ul class="files-list">
+  <li>corporate-api/src/databases/mssql/migrate.ts</li>
+  <li>corporate-api/src/models/mssql/purchaseOrder.model.ts (+ purchaseOrderQuote.model.ts nuevo)</li>
+  <li>corporate-api/src/services/mssql/purchaseOrder.service.ts</li>
+  <li>corporate-api/src/services/mssql/goodsReceipt.service.ts</li>
+  <li>corporate-front/src/pages/solicitudes/AttachPurchaseOrder.tsx</li>
+  <li>corporate-front/src/pages/solicitudes/ReceiveGoods.tsx</li>
+</ul>
+
+<footer class="doc-footer">
+  Registro de mejoras corporate-app · .claude/planes/001-oc-consolidada-multi-cotizacion.html
+</footer>
+
+</div>
+</body>
+</html>

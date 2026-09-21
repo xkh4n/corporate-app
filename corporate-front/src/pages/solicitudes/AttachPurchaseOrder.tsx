@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { RequirePermissions } from "../../components/RequirePermissions";
 import { Spinner, Field, Select, Button, Input, EmptyState } from "../../components/ui";
@@ -9,9 +9,7 @@ import { useNotifications } from "../../notifications/useNotifications";
 import { productService, purchaseOrderService, purchaseRequestService, quoteService, supplierService } from "../../services";
 import type { PurchaseOrder, PurchaseRequest, Quote, Supplier } from "../../types";
 
-// Paso 6 del flujo: el SOLICITANTE (no el aprobador ni un analista) emite y
-// adjunta la OC de cada cotizacion ganadora -purchase-requests:create es el
-// permiso que ya exige GET /purchase-requests/my-requests.
+
 const REQUIRED_PERMISSIONS = [
   "purchase-requests:create",
   // Ademas de "create" (que ya gatea /my-requests): handleIssueOrder relee
@@ -29,7 +27,8 @@ const REQUIRED_PERMISSIONS = [
 
 interface OrderRow {
   order: PurchaseOrder;
-  productName: string;
+  // Una OC puede cubrir varios productos -las ganadoras del mismo proveedor.
+  productNames: string[];
   attached: boolean;
 }
 
@@ -42,24 +41,48 @@ export default function AttachPurchaseOrder() {
 
   const [selectedRequest, setSelectedRequest] = useState<PurchaseRequest | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  // Cotizaciones ganadoras (SELECTED) que TODAVIA no tienen una orden de
-  // compra -ver areAllWinningQuotesOrdered en purchaseOrder.service.ts: una
-  // solicitud con varias lineas aprobadas puede tener varias.
+  // Cotizaciones ganadoras (SELECTED) que TODAVIA no quedaron cubiertas por
+  // ninguna orden de compra -ver areAllWinningQuotesOrdered en
+  // purchaseOrder.service.ts: una solicitud con varias lineas aprobadas
+  // puede tener varias, y varias de esas pueden terminar en UNA sola OC si
+  // comparten proveedor.
   const [pendingQuotes, setPendingQuotes] = useState<Quote[]>([]);
   const [productNames, setProductNames] = useState<Map<string, string>>(new Map());
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [orderRows, setOrderRows] = useState<OrderRow[]>([]);
 
-  const [selectedQuoteId, setSelectedQuoteId] = useState("");
+  const [selectedSupplierId, setSelectedSupplierId] = useState("");
+  const [selectedQuoteIds, setSelectedQuoteIds] = useState<Set<number>>(new Set());
   const [paymentTerms, setPaymentTerms] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   // Id de la OC ya creada en un intento previo que fallo SOLO al subir el
   // PDF (mismo criterio que CreateProducts.tsx) -un reintento no vuelve a
-  // crear la orden, que chocaria con el guard "ya existe una OC para esta
-  // cotizacion" en createPurchaseOrder.
+  // crear la orden, que chocaria con el guard "alguna cotizacion ya quedo
+  // cubierta" en createPurchaseOrder.
   const [pendingOrderId, setPendingOrderId] = useState<number | null>(null);
+
+  // Adjuntar el PDF de una OC que ya se emitio antes (create tuvo exito,
+  // uploadAttachment fallo o nunca se intento) sin volver a crear la orden
+  // -sin esto, si el usuario navegaba fuera del panel de emision (que
+  // desaparece apenas pendingQuotes queda vacio), esa OC quedaba sin PDF
+  // para siempre y la solicitud nunca llegaba a OC_GENERATED.
+  const [attachFiles, setAttachFiles] = useState<Map<number, File>>(new Map());
+  const [attachingOrderId, setAttachingOrderId] = useState<number | null>(null);
+
+  // Agrupado client-side -Quote.supplierId ya viene en el payload, sin fetch
+  // extra. Una OC nunca puede cruzar dos proveedores (restriccion real del
+  // negocio, validada tambien server-side en createPurchaseOrder).
+  const quotesBySupplier = useMemo(() => {
+    const map = new Map<number, Quote[]>();
+    for (const quote of pendingQuotes) {
+      map.set(quote.supplierId, [...(map.get(quote.supplierId) ?? []), quote]);
+    }
+    return map;
+  }, [pendingQuotes]);
+
+  const supplierQuotes = selectedSupplierId ? (quotesBySupplier.get(Number(selectedSupplierId)) ?? []) : [];
 
   async function loadList(): Promise<void> {
     setLoading(true);
@@ -91,7 +114,7 @@ export default function AttachPurchaseOrder() {
         supplierService.list({ limit: 1000 }),
       ]);
       const winningQuotes = quotesRes.items.filter((quote) => quote.status === "SELECTED");
-      const orderedQuoteIds = new Set(ordersRes.items.map((order) => order.quoteId));
+      const orderedQuoteIds = new Set(ordersRes.items.flatMap((order) => order.quotes?.map((quote) => quote.id) ?? []));
 
       const products = await Promise.all(
         [...new Set(winningQuotes.map((quote) => quote.productId))].map((productId) => productService.getById(productId)),
@@ -103,16 +126,27 @@ export default function AttachPurchaseOrder() {
           const { files } = await purchaseOrderService.listDocuments(order.id);
           return {
             order,
-            productName: order.quote ? (names.get(order.quote.productId) ?? order.quote.productId) : String(order.quoteId),
+            productNames: (order.quotes ?? []).map((quote) => names.get(quote.productId) ?? quote.productId),
             attached: files.some((filename) => filename.startsWith(`OC-${order.orderNumber}`)),
           };
         }),
       );
 
-      setPendingQuotes(winningQuotes.filter((quote) => !orderedQuoteIds.has(quote.id)));
+      const pending = winningQuotes.filter((quote) => !orderedQuoteIds.has(quote.id));
+      setPendingQuotes(pending);
       setProductNames(names);
       setSuppliers(suppliersRes.items);
       setOrderRows(rows);
+
+      // Con un solo proveedor pendiente (el caso normal) se preselecciona
+      // todo: el flujo de 1 click no se degrada por soportar el caso de
+      // varios proveedores en la misma solicitud.
+      const supplierIds = [...new Set(pending.map((quote) => quote.supplierId))];
+      const initialSupplierId = supplierIds.length === 1 ? String(supplierIds[0]) : "";
+      setSelectedSupplierId(initialSupplierId);
+      setSelectedQuoteIds(
+        new Set(initialSupplierId ? pending.filter((quote) => String(quote.supplierId) === initialSupplierId).map((quote) => quote.id) : []),
+      );
     } catch (error) {
       handleError(error, navigate);
     } finally {
@@ -129,8 +163,24 @@ export default function AttachPurchaseOrder() {
     return suppliers.find((supplier) => supplier.id === supplierId)?.businessPartner.legalName ?? `Proveedor ${supplierId}`;
   }
 
+  function handleSupplierChange(value: string): void {
+    setSelectedSupplierId(value);
+    const quotes = value ? (quotesBySupplier.get(Number(value)) ?? []) : [];
+    setSelectedQuoteIds(new Set(quotes.map((quote) => quote.id)));
+  }
+
+  function toggleQuote(quoteId: number): void {
+    setSelectedQuoteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(quoteId)) next.delete(quoteId);
+      else next.add(quoteId);
+      return next;
+    });
+  }
+
   function resetFormFields(): void {
-    setSelectedQuoteId("");
+    setSelectedSupplierId("");
+    setSelectedQuoteIds(new Set());
     setPaymentTerms("");
     setFile(null);
     setPendingOrderId(null);
@@ -143,11 +193,12 @@ export default function AttachPurchaseOrder() {
     setProductNames(new Map());
     setSuppliers([]);
     setOrderRows([]);
+    setAttachFiles(new Map());
     resetFormFields();
   }
 
   function validate(): void {
-    if (!pendingOrderId && !selectedQuoteId) throw createValidationError("Debe seleccionar la cotización ganadora");
+    if (!pendingOrderId && selectedQuoteIds.size === 0) throw createValidationError("Debe seleccionar al menos una cotización ganadora");
     if (!file) throw createValidationError("Debe adjuntar el PDF de la orden de compra");
   }
 
@@ -160,7 +211,7 @@ export default function AttachPurchaseOrder() {
       let orderId = pendingOrderId;
       if (!orderId) {
         const order = await purchaseOrderService.create({
-          quoteId: Number(selectedQuoteId),
+          quoteIds: [...selectedQuoteIds],
           paymentTerms: paymentTerms.trim() || undefined,
         });
         orderId = order.id;
@@ -196,6 +247,37 @@ export default function AttachPurchaseOrder() {
     }
   }
 
+  // Adjunta el PDF de una OC que quedo emitida sin adjuntar (ver comentario
+  // de attachFiles arriba) -no crea una orden nueva, solo sube el archivo.
+  async function handleAttachExisting(orderId: number): Promise<void> {
+    const pendingFile = attachFiles.get(orderId);
+    if (!pendingFile || !selectedRequest) return;
+    setAttachingOrderId(orderId);
+    try {
+      await purchaseOrderService.uploadAttachment(orderId, pendingFile);
+      showSuccessToast("PDF de la orden de compra adjuntado exitosamente");
+      setAttachFiles((prev) => {
+        const next = new Map(prev);
+        next.delete(orderId);
+        return next;
+      });
+      void refreshNotifications();
+
+      const refreshed = await purchaseRequestService.getById(selectedRequest.id);
+      if (refreshed.status !== "QUOTE_APPROVED") {
+        setRequests((prev) => prev.filter((item) => item.id !== refreshed.id));
+        handleBackToList();
+        return;
+      }
+      setSelectedRequest(refreshed);
+      await loadDetail(selectedRequest.id);
+    } catch (error) {
+      handleError(error, navigate);
+    } finally {
+      setAttachingOrderId(null);
+    }
+  }
+
   if (selectedRequest) {
     return (
       <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
@@ -224,22 +306,48 @@ export default function AttachPurchaseOrder() {
                     <h2 className="mb-3 text-sm font-semibold text-slate-600">Emitir Orden de Compra</h2>
                     <div className="grid grid-cols-1 max-[799px]:grid-cols-1 min-[800px]:grid-cols-6 min-[1000px]:grid-cols-8 min-[1200px]:grid-cols-10 min-[1400px]:grid-cols-12 gap-4">
                       <div className="w-full min-[800px]:col-span-6 min-[1000px]:col-span-4 min-[1200px]:col-span-4 min-[1400px]:col-span-5">
-                        <Field label="Cotización ganadora" htmlFor="selectedQuoteId">
+                        <Field label="Proveedor" htmlFor="selectedSupplierId">
                           <Select
-                            id="selectedQuoteId"
+                            id="selectedSupplierId"
                             className="bg-zinc-100 focus:bg-indigo-100"
-                            value={selectedQuoteId}
-                            onChange={(e) => setSelectedQuoteId(e.target.value)}
+                            value={selectedSupplierId}
+                            onChange={(e) => handleSupplierChange(e.target.value)}
                             disabled={pendingOrderId !== null}
                           >
-                            <option value="">Seleccione la cotización</option>
-                            {pendingQuotes.map((quote) => (
-                              <option key={quote.id} value={quote.id}>
-                                {productNames.get(quote.productId) ?? quote.productId} — {supplierName(quote.supplierId)}
+                            <option value="">Seleccione el proveedor</option>
+                            {[...quotesBySupplier.keys()].map((supplierId) => (
+                              <option key={supplierId} value={supplierId}>
+                                {supplierName(supplierId)} ({quotesBySupplier.get(supplierId)?.length} cotización(es))
                               </option>
                             ))}
                           </Select>
                         </Field>
+                        {supplierQuotes.length > 0 && (
+                          <div className="mt-2 rounded-md border border-slate-200 p-2">
+                            <label className="flex items-center gap-2 border-b border-slate-100 pb-1 text-xs font-semibold text-slate-600">
+                              <input
+                                type="checkbox"
+                                checked={selectedQuoteIds.size === supplierQuotes.length}
+                                disabled={pendingOrderId !== null}
+                                onChange={(e) =>
+                                  setSelectedQuoteIds(e.target.checked ? new Set(supplierQuotes.map((quote) => quote.id)) : new Set())
+                                }
+                              />
+                              Cotizaciones a incluir en esta OC
+                            </label>
+                            {supplierQuotes.map((quote) => (
+                              <label key={quote.id} className="flex items-center gap-2 py-1 text-sm text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedQuoteIds.has(quote.id)}
+                                  disabled={pendingOrderId !== null}
+                                  onChange={() => toggleQuote(quote.id)}
+                                />
+                                {productNames.get(quote.productId) ?? quote.productId} — {quote.purchaseValue}
+                              </label>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="w-full min-[800px]:col-span-6 min-[1000px]:col-span-4 min-[1200px]:col-span-3 min-[1400px]:col-span-3">
                         <Field label="Condiciones de pago (opcional)" htmlFor="paymentTerms">
@@ -288,7 +396,7 @@ export default function AttachPurchaseOrder() {
                         <thead className="bg-slate-50">
                           <tr>
                             <th className="px-4 py-2 text-left font-semibold text-slate-600">N° Orden</th>
-                            <th className="px-4 py-2 text-left font-semibold text-slate-600">Producto</th>
+                            <th className="px-4 py-2 text-left font-semibold text-slate-600">Producto(s)</th>
                             <th className="px-4 py-2 text-left font-semibold text-slate-600">Proveedor</th>
                             <th className="px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
                           </tr>
@@ -297,16 +405,45 @@ export default function AttachPurchaseOrder() {
                           {orderRows.map((row) => (
                             <tr key={row.order.id}>
                               <td className="px-4 py-2 font-medium text-slate-900">{row.order.orderNumber}</td>
-                              <td className="px-4 py-2 text-slate-600">{row.productName}</td>
+                              <td className="px-4 py-2 text-slate-600">{row.productNames.join(", ") || "-"}</td>
                               <td className="px-4 py-2 text-slate-600">{supplierName(row.order.supplierId)}</td>
                               <td className="px-4 py-2">
-                                <span
-                                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                                    row.attached ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-                                  }`}
-                                >
-                                  {row.attached ? "PDF adjuntado" : "Falta adjuntar PDF"}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                                      row.attached ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                                    }`}
+                                  >
+                                    {row.attached ? "PDF adjuntado" : "Falta adjuntar PDF"}
+                                  </span>
+                                  {!row.attached && (
+                                    <>
+                                      <input
+                                        type="file"
+                                        accept="application/pdf,image/jpeg,image/png"
+                                        className="max-w-40 text-xs"
+                                        onChange={(e) => {
+                                          const chosen = e.target.files?.[0] ?? null;
+                                          setAttachFiles((prev) => {
+                                            const next = new Map(prev);
+                                            if (chosen) next.set(row.order.id, chosen);
+                                            else next.delete(row.order.id);
+                                            return next;
+                                          });
+                                        }}
+                                      />
+                                      <Button
+                                        type="button"
+                                        variant="secondary"
+                                        loading={attachingOrderId === row.order.id}
+                                        disabled={!attachFiles.has(row.order.id)}
+                                        onClick={() => void handleAttachExisting(row.order.id)}
+                                      >
+                                        Adjuntar
+                                      </Button>
+                                    </>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           ))}

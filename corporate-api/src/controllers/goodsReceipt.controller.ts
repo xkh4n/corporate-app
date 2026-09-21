@@ -20,6 +20,9 @@ export const createGoodsReceiptSchema = z
     documentType: z.enum(["GUIA_DESPACHO", "BOLETA", "FACTURA"]),
     documentNumber: z.string().min(1).max(50),
     purchaseOrderId: z.number().int().positive(),
+    // Una OC cubre varias cotizaciones ganadoras: hay que decir contra cual
+    // se esta recepcionando (validado contra purchase_order_quotes).
+    quoteId: z.number().int().positive(),
     receivedQuantity: z.number().int().positive(),
     serialNumbers: z.array(z.string().max(100).nullable()).optional(),
     warrantyExpiresAt: z.string().date().optional(),

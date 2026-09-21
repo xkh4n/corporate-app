@@ -21,20 +21,26 @@ export async function printZplViaWebUsb(zpl: string): Promise<void> {
 
   const device = await navigator.usb.requestDevice({ filters: [{ vendorId: ZEBRA_VENDOR_ID }] });
   await device.open();
-  if (device.configuration === null) {
-    await device.selectConfiguration(1);
+  // finally: cualquier fallo (sin interfaz, sin endpoint, transferOut) tambien libera el dispositivo; antes
+  // quedaba abierto y la siguiente impresion fallaba hasta desconectar el cable.
+  try {
+    if (device.configuration === null) {
+      await device.selectConfiguration(1);
+    }
+
+    const iface = device.configuration?.interfaces[0];
+    if (!iface) throw new Error("La impresora no expone ninguna interfaz USB utilizable");
+    await device.claimInterface(iface.interfaceNumber);
+
+    const outEndpoint = iface.alternate.endpoints.find((endpoint) => endpoint.direction === "out");
+    if (!outEndpoint) throw new Error("La impresora no expone un endpoint de salida");
+
+    const data = new TextEncoder().encode(zpl);
+    await device.transferOut(outEndpoint.endpointNumber, data);
+  } finally {
+    // Un close() que falla (dispositivo desconectado) no debe tapar el error original de la impresion.
+    await device.close().catch(() => undefined);
   }
-
-  const iface = device.configuration?.interfaces[0];
-  if (!iface) throw new Error("La impresora no expone ninguna interfaz USB utilizable");
-  await device.claimInterface(iface.interfaceNumber);
-
-  const outEndpoint = iface.alternate.endpoints.find((endpoint) => endpoint.direction === "out");
-  if (!outEndpoint) throw new Error("La impresora no expone un endpoint de salida");
-
-  const data = new TextEncoder().encode(zpl);
-  await device.transferOut(outEndpoint.endpointNumber, data);
-  await device.close();
 }
 
 export function downloadZplFile(zpl: string, filename: string): void {
@@ -43,6 +49,8 @@ export function downloadZplFile(zpl: string, filename: string): void {
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }

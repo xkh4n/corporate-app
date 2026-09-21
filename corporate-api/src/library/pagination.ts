@@ -23,6 +23,8 @@ export interface PaginationMeta {
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 10000;
+// Un offset fuera del rango de bigint de Postgres tumba la query con un 500.
+const MAX_PAGE = 100_000;
 
 // Aunque Sequelize/Mongoose ya escapan el nombre de columna en la posicion
 // de "order" (no es vector de inyeccion -verificado revisando el query
@@ -48,17 +50,28 @@ function toInt(value: unknown, fallback: number): number {
 // Acepta req.query (y opcionalmente req.body, para clientes que prefieran
 // mandar los filtros en el body de un POST de busqueda) -mismo criterio que
 // el ejemplo de referencia del usuario ("...req.query, ...req.body").
+// allowedSortBy: lista permitida por endpoint. Con ella, un sortBy que no este en la
+// lista (p. ej. una columna sensible como assets.value) cae al orden por defecto en
+// vez de ordenar por ahi. maxLimit acota el limit por debajo del MAX_LIMIT global.
+export interface PaginationOptions {
+  allowedSortBy?: readonly string[];
+  maxLimit?: number;
+}
+
 export function parsePaginationParams(
   source: Record<string, unknown>,
   defaultSortBy: string,
   defaultSortOrder: "asc" | "desc" = "asc",
+  options: PaginationOptions = {},
 ): PaginationParams {
-  const page = Math.max(1, toInt(source.page, 1));
-  const limit = Math.max(1, Math.min(MAX_LIMIT, toInt(source.limit, DEFAULT_LIMIT)));
+  const page = Math.min(MAX_PAGE, Math.max(1, toInt(source.page, 1)));
+  const maxLimit = Math.min(MAX_LIMIT, options.maxLimit ?? MAX_LIMIT);
+  const limit = Math.max(1, Math.min(maxLimit, toInt(source.limit, DEFAULT_LIMIT)));
   const rawSearch = typeof source.search === "string" ? source.search.trim() : "";
   const search = rawSearch.length > 0 ? rawSearch : undefined;
   const rawSortBy = typeof source.sortBy === "string" ? source.sortBy : "";
-  const sortBy = SAFE_SORT_BY.test(rawSortBy) ? rawSortBy : defaultSortBy;
+  const sortAllowed = SAFE_SORT_BY.test(rawSortBy) && (!options.allowedSortBy || options.allowedSortBy.includes(rawSortBy));
+  const sortBy = sortAllowed ? rawSortBy : defaultSortBy;
   const sortOrder = source.sortOrder === "asc" || source.sortOrder === "desc" ? source.sortOrder : defaultSortOrder;
   const rawStatus = typeof source.status === "string" ? source.status : "";
   const statusTokens = rawStatus

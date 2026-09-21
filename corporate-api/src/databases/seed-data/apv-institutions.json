@@ -1,0 +1,197 @@
+[
+  {
+    "previred_code": "003",
+    "name": "Cuprum",
+    "institution_group": "AFP"
+  },
+  {
+    "previred_code": "005",
+    "name": "Habitat",
+    "institution_group": "AFP"
+  },
+  {
+    "previred_code": "008",
+    "name": "Provida",
+    "institution_group": "AFP"
+  },
+  {
+    "previred_code": "029",
+    "name": "Planvital",
+    "institution_group": "AFP"
+  },
+  {
+    "previred_code": "033",
+    "name": "Capital",
+    "institution_group": "AFP"
+  },
+  {
+    "previred_code": "034",
+    "name": "Modelo",
+    "institution_group": "AFP"
+  },
+  {
+    "previred_code": "035",
+    "name": "Uno",
+    "institution_group": "AFP"
+  },
+  {
+    "previred_code": "102",
+    "name": "SANTANDER SEGUROS DE VIDA S.A.",
+    "institution_group": "SEGUROS_VIDA"
+  },
+  {
+    "previred_code": "103",
+    "name": "BCI SEGUROS VIDA S.A.",
+    "institution_group": "SEGUROS_VIDA"
+  },
+  {
+    "previred_code": "106",
+    "name": "BICE VIDA COMPAÑIA DE SEGUROS S.A.",
+    "institution_group": "SEGUROS_VIDA"
+  },
+  {
+    "previred_code": "107",
+    "name": "ZURICH CHILE SEGUROS DE VIDA.",
+    "institution_group": "SEGUROS_VIDA"
+  },
+  {
+    "previred_code": "111",
+    "name": "CIA DE SEG. DE VIDA CONSORCIO NACIONAL DE SEG S.A.",
+    "institution_group": "SEGUROS_VIDA"
+  },
+  {
+    "previred_code": "116",
+    "name": "COMPAÑIA DE SEGUROS CONFUTURO S.A.",
+    "institution_group": "SEGUROS_VIDA"
+  },
+  {
+    "previred_code": "121",
+    "name": "METLIFE CHILE SEGUROS DE VIDA S.A.",
+    "institution_group": "SEGUROS_VIDA"
+  },
+  {
+    "previred_code": "128",
+    "name": "AUGUSTAR SEGUROS DE VIDA S. A.",
+    "institution_group": "SEGUROS_VIDA"
+  },
+  {
+    "previred_code": "129",
+    "name": "PRINCIPAL SEGUROS DE VIDA CHILE S.A.",
+    "institution_group": "SEGUROS_VIDA"
+  },
+  {
+    "previred_code": "137",
+    "name": "PRUDENTIAL AGF. (APV)",
+    "institution_group": "FONDOS_MUTUOS"
+  },
+  {
+    "previred_code": "151",
+    "name": "CREDICORP CAPITAL ASSET MANAGMENT S.A AGF",
+    "institution_group": "FONDOS_MUTUOS"
+  },
+  {
+    "previred_code": "204",
+    "name": "BCI ASSET MANAGEMENT ADMINISTRADORA GENERAL DE FONDOS S.A.",
+    "institution_group": "FONDOS_MUTUOS"
+  },
+  {
+    "previred_code": "205",
+    "name": "BICE INVERSIONES AGF S.A.",
+    "institution_group": "FONDOS_MUTUOS"
+  },
+  {
+    "previred_code": "208",
+    "name": "BTG PACTUAL CHILE S.A. ADMINISTRADORA GENERAL DE FONDOS",
+    "institution_group": "FONDOS_MUTUOS"
+  },
+  {
+    "previred_code": "214",
+    "name": "PRINCIPAL ASSET MANAGEMENT AGF S.A.",
+    "institution_group": "FONDOS_MUTUOS"
+  },
+  {
+    "previred_code": "215",
+    "name": "SANTANDER ASSET MANAGEMENT S.A. ADM. GENERAL DE FONDOS",
+    "institution_group": "FONDOS_MUTUOS"
+  },
+  {
+    "previred_code": "217",
+    "name": "SCOTIA SUDAMERICANO ADMINISTRADORA DE FONDOS MUTUOS S.A.",
+    "institution_group": "FONDOS_MUTUOS"
+  },
+  {
+    "previred_code": "218",
+    "name": "ADMINISTRADORA GENERAL DE FONDOS SECURITY S.A.",
+    "institution_group": "FONDOS_MUTUOS"
+  },
+  {
+    "previred_code": "225",
+    "name": "ITAU ADMINISTRADORA GENERAL DE FONDOS S.A.",
+    "institution_group": "FONDOS_MUTUOS"
+  },
+  {
+    "previred_code": "229",
+    "name": "BANCOESTADO S.A. ADMINISTRADORA GENERAL DE FONDOS",
+    "institution_group": "FONDOS_MUTUOS"
+  },
+  {
+    "previred_code": "237",
+    "name": "FINTUAL ADMINISTRADORA GENERAL DE FONDOS S.A",
+    "institution_group": "FONDOS_MUTUOS"
+  },
+  {
+    "previred_code": "238",
+    "name": "FOCUS AGF S.A.",
+    "institution_group": "FONDOS_MUTUOS"
+  },
+  {
+    "previred_code": "600",
+    "name": "ZURICH CHILE ASSET MANAGEMENT ADMINISTRADORA GENERAL DE FONDOS S.A",
+    "institution_group": "FONDOS_MUTUOS"
+  },
+  {
+    "previred_code": "213",
+    "name": "LARRAIN VIAL S.A. CORREDORA DE BOLSA",
+    "institution_group": "CORREDORES_BOLSA"
+  },
+  {
+    "previred_code": "222",
+    "name": "BANCHILE CORREDORES DE BOLSA S.A.",
+    "institution_group": "CORREDORES_BOLSA"
+  },
+  {
+    "previred_code": "227",
+    "name": "CORREDORES DE BOLSA SURA S.A.",
+    "institution_group": "CORREDORES_BOLSA"
+  },
+  {
+    "previred_code": "228",
+    "name": "BTG PACTUAL CHILE S.A. CORREDORES DE BOLSA",
+    "institution_group": "CORREDORES_BOLSA"
+  },
+  {
+    "previred_code": "232",
+    "name": "BICE INVERSIONES CORREDORES DE BOLSA S.A.",
+    "institution_group": "CORREDORES_BOLSA"
+  },
+  {
+    "previred_code": "235",
+    "name": "MBI CORREDORES DE BOLSA S.A.",
+    "institution_group": "CORREDORES_BOLSA"
+  },
+  {
+    "previred_code": "236",
+    "name": "CONSORCIO CORREDORES DE BOLSA S.A.",
+    "institution_group": "CORREDORES_BOLSA"
+  },
+  {
+    "previred_code": "240",
+    "name": "FINANZAS Y NEGOCIOS S.A. CORREDORES DE BOLSA",
+    "institution_group": "CORREDORES_BOLSA"
+  },
+  {
+    "previred_code": "241",
+    "name": "VECTOR CAPITAL CORREDORES DE BOLSA SPA",
+    "institution_group": "CORREDORES_BOLSA"
+  }
+]

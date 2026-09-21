@@ -9,13 +9,17 @@ import {cityService} from "./cityService";
 import {costCenterService} from "./costCenterService";
 import {countryService} from "./countryService";
 import {customerService} from "./customerService";
+import {employeeContractService} from "./employeeContractService";
 import {employeeService} from "./employeeService";
 import {goodsReceiptService} from "./goodsReceiptService";
+import {inventoryCountService} from "./inventoryCountService";
 import {menuItemService} from "./menuItemService";
 import {notificationService} from "./notificationService";
 import {permissionService} from "./permissionService";
+import {payrollService} from "./payrollService";
 import {personService} from "./personService";
 import {positionService} from "./positionService";
+import {previsionalService} from "./previsionalService";
 import {productCategoryService} from "./productCategoryService";
 import {productService} from "./productService";
 import {purchaseOrderService} from "./purchaseOrderService";
@@ -44,13 +48,17 @@ export {
     costCenterService,
     countryService,
     customerService,
+    employeeContractService,
     employeeService,
     goodsReceiptService,
+    inventoryCountService,
     menuItemService,
     notificationService,
     permissionService,
+    payrollService,
     personService,
     positionService,
+    previsionalService,
     productCategoryService,
     productService,
     purchaseOrderService,

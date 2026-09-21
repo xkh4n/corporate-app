@@ -21,7 +21,7 @@ export function Button({ variant = "primary", loading = false, disabled, classNa
       disabled={disabled || loading}
       className={`inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium
         transition-colors disabled:cursor-not-allowed disabled:opacity-60
-        focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2
+        focus-visible:outline-2 focus-visible:outline-offset-2
         ${VARIANT_CLASSES[variant]} ${className}`}
       {...rest}
     >

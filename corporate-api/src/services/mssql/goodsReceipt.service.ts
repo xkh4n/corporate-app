@@ -3,6 +3,7 @@ import { mssql } from "../../databases/mssql/connection";
 import { GoodsReceiptModel } from "../../models/mssql/goodsReceipt.model";
 import { AuthorizationModel } from "../../models/mssql/authorization.model";
 import { PurchaseRequestLineModel } from "../../models/mssql/purchaseRequestLine.model";
+import { PurchaseOrderQuoteModel } from "../../models/mssql/purchaseOrderQuote.model";
 import { getPurchaseOrderByIdOrThrow } from "./purchaseOrder.service";
 import { getQuoteByIdOrThrow } from "./quote.service";
 import { getPurchaseRequestByIdOrThrow, updatePurchaseRequestStatus } from "./purchaseRequest.service";
@@ -42,10 +43,14 @@ export async function getGoodsReceiptByIdOrThrow(id: number): Promise<GoodsRecei
   return receipt;
 }
 
-// quoteId/requestId/productId/supplierId/purchaseValue se copian de la
-// PurchaseOrder -> Quote referenciada, nunca del cliente (evita que un
-// GoodsReceipt quede apuntando a un producto/proveedor distinto del que
-// realmente se compro). Al confirmarse, dispara la creacion de los Assets
+// requestId/productId/supplierId/purchaseValue se copian de la Quote
+// indicada, nunca del cliente (evita que un GoodsReceipt quede apuntando a
+// un producto/proveedor distinto del que realmente se compro). quoteId SI es
+// input del cliente -una OC ahora puede cubrir varias cotizaciones, asi que
+// la orden por si sola ya no alcanza para saber contra que producto se esta
+// recepcionando-, validado contra purchase_order_quotes para que no se pueda
+// recepcionar contra la cotizacion de otra orden. Al confirmarse, dispara la
+// creacion de los Assets
 // correspondientes en Postgres (uno por unidad, decision B) -escritura
 // cross-engine NO atomica: si el GoodsReceipt en MSSQL ya se confirmo pero
 // la creacion de los Assets falla, no se hace rollback del GoodsReceipt,
@@ -108,8 +113,18 @@ async function isRequestFullyReceived(requestId: number): Promise<boolean> {
 
 export async function createGoodsReceipt(input: GoodsReceiptCreationInput): Promise<GoodsReceiptModel> {
   const order = await getPurchaseOrderByIdOrThrow(input.purchaseOrderId);
-  const quote = await getQuoteByIdOrThrow(order.quoteId);
-  const request = await getPurchaseRequestByIdOrThrow(quote.requestId);
+  // La orden ya no determina por si sola contra que producto se recepciona
+  // (cubre N cotizaciones): el cliente indica cual, y aca se verifica que
+  // esa cotizacion este efectivamente cubierta por ESTA orden -si no, se
+  // podria recepcionar contra la cotizacion de otra orden/proveedor.
+  const link = await PurchaseOrderQuoteModel.findOne({
+    where: { purchaseOrderId: order.id, quoteId: input.quoteId },
+  });
+  if (!link) {
+    throw new BadRequestError(`La cotizacion ${input.quoteId} no pertenece a la orden de compra ${order.orderNumber}`);
+  }
+  const quote = await getQuoteByIdOrThrow(input.quoteId);
+  const request = await getPurchaseRequestByIdOrThrow(order.requestId);
 
   if (request.status !== "PENDING_DELIVERY" && request.status !== "AVAILABLE") {
     throw new ConflictError(
@@ -167,7 +182,7 @@ export async function createGoodsReceipt(input: GoodsReceiptCreationInput): Prom
           documentNumber: input.documentNumber,
           purchaseOrderId: order.id,
           quoteId: quote.id,
-          requestId: quote.requestId,
+          requestId: order.requestId,
           productId: quote.productId,
           supplierId: quote.supplierId,
           purchaseValue: quote.purchaseValue,
@@ -177,12 +192,15 @@ export async function createGoodsReceipt(input: GoodsReceiptCreationInput): Prom
         { transaction },
       );
     } catch (err) {
-      // ux_goods_receipts_order_document (migrate.ts): mismo documento del
-      // proveedor (guia/boleta/factura) ya recepcionado contra esta orden.
-      // Sin este catch, el 500 crudo del driver no dice nada util al usuario.
+      // ux_goods_receipts_order_quote_document (migrate.ts): mismo documento
+      // del proveedor (guia/boleta/factura) ya recepcionado contra esta orden
+      // Y esta cotizacion. quote_id entro a la clave porque una OC
+      // multi-cotizacion puede recibir dos productos distintos en la MISMA
+      // guia fisica. Sin este catch, el 500 crudo del driver no dice nada
+      // util al usuario.
       if (isUniqueConstraintError(err)) {
         throw new ConflictError(
-          `Ya existe una recepcion con el documento "${input.documentNumber}" para esta orden de compra`,
+          `Ya existe una recepcion con el documento "${input.documentNumber}" para esta cotizacion en la orden de compra ${order.orderNumber}`,
         );
       }
       throw err;

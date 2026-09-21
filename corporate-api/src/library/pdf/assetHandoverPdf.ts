@@ -119,9 +119,9 @@ function yesNo(value: boolean | null): string | null {
   return value === null ? null : value ? "Sí" : "No";
 }
 
-// Tabla "Equipamiento / Especificaciones" -una fila por dato, calcada del
-// acta real de AntherxSoft (Marca/Modelo/N° serie/N° tag/Proveedor/
-// Almacenamiento/Memoria/Bolso/Candado/Cargador/MAC). Marca y Modelo se
+// Tabla "Equipamiento / Especificaciones" -una fila por dato del acta
+// (Marca/Modelo/N° serie/N° tag/Proveedor/Almacenamiento/Memoria/Bolso/
+// Candado/Cargador/MAC). Marca y Modelo se
 // omiten a proposito: el Product de corporate-app no tiene esos campos (solo
 // nombre/descripcion/tipo) -no hay de donde derivarlos sin agregar columnas
 // nuevas al catalogo de productos, que no se pidio. Cada fila con valor nulo
