@@ -18,6 +18,22 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-21 (7) — CI de GitHub Actions (typecheck, lint y tests)
+
+- Nuevo `.github/workflows/ci.yml`: en PR y push a `develop` y `testing` corre, para la API, `tsc` y los tests **unitarios**
+  (con `qpdf` instalado, para que se ejecuten los del saneador de PDF) y, para el front, `tsc -p tsconfig.app.json`, ESLint,
+  tests y build. `pnpm install --frozen-lockfile` (ambos lockfiles verificados al día). No corre hacia `master`: allí los
+  tests no viajan (`master-excluded-paths.txt`) y el PR lo cubre `master-no-testing-artifacts.yml`.
+- Los tests de **integración** siguen a mano (`.un.ps1 bdd test`): necesitan las bases reales del stack de Testing.
+- Flujo a producción: `develop` → PR a `testing` (CI) → `.un.ps1 pre prod` (mezcla `testing` en `release/master` sin tests
+  ni composes de test) → PR a `master`. `corporate-api/test/pdfFixtures.ts` se agregó a las rutas excluidas de `master`.
+- Para que el CI sea obligatorio hay que marcar sus jobs (`API (tsc + tests unitarios)`, `Web (tsc + lint + tests + build)`)
+  como checks requeridos en la protección de rama de `develop`/`testing` en GitHub (no se configura desde el repo).
+- **No verificado**: la corrida real en GitHub (los pasos se corrieron en local en Windows; en Ubuntu `qpdf` de apt es 11.x, no
+  12.x, y ahí el saneador sí aplica los `ulimit`).
+
+---
+
 ## 2026-09-21 (6) — Ronda de `cybersecurity-orchestrator` sobre los cambios de la entrada (5)
 
 ### Contexto
