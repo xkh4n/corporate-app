@@ -22,6 +22,10 @@ secrets:
     mailer_shared_secret:
         file: ../corporate-secrets/${SECRETS_ENV}/mailer_shared_secret.txt
 
+volumes:
+    api_uploads:
+    api_downloads:
+
 networks:
     # Red del OTRO proyecto Compose (corporate-infra), declarada "external"
     # porque ya existe (la crea "corpinfra dev" al levantar ese stack). A
@@ -138,6 +142,12 @@ x-api-common: &api-common
         - no-new-privileges:true
     cap_drop:
         - ALL
+    # Sistema de archivos de solo lectura: un atacante con ejecucion de codigo en el contenedor no puede
+    # dejar binarios ni modificar el codigo. La API solo escribe en los volumenes de adjuntos (uploads/
+    # downloads, ver "volumes" mas abajo) y en /tmp (el saneado de PDF con qpdf usa archivos temporales).
+    read_only: true
+    tmpfs:
+        - /tmp:rw,noexec,nosuid,nodev,size=64m
     deploy:
         resources:
             limits:
@@ -202,6 +212,16 @@ x-api-common: &api-common
         - default_user_password
         - mongo_user_password
         - mailer_shared_secret
+    # Adjuntos y documentos generados (documentStorage.ts: uploads/ = guias de
+    # recepcion, imagenes de producto, devoluciones; downloads/ = solicitudes
+    # y cotizaciones). Volumenes NOMBRADOS y compartidos por las 3 replicas: el
+    # balanceo es round-robin, asi que un archivo subido en una replica lo lee
+    # otra. Sin esto viven en la capa del contenedor y se pierden al recrearlo
+    # (dev no lo necesita: el bind mount "./:/app" ya los deja en el host). Ojo:
+    # "docker compose down -v" los BORRA -respaldar antes de usarlo-.
+    volumes:
+        - api_uploads:/app/dist/src/uploads
+        - api_downloads:/app/dist/src/downloads
     networks:
         - infra-backend
         - internal
