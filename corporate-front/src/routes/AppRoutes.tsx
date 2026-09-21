@@ -22,6 +22,7 @@ import AssignAsset from "../pages/activos/AssignAsset";
 import AssetKardex from "../pages/activos/AssetKardex";
 import PrintAssetLabels from "../pages/activos/PrintAssetLabels";
 import AssetValuation from "../pages/activos/AssetValuation";
+import ImportAssets from "../pages/activos/ImportAssets";
 import AssetReturns from "../pages/devoluciones/AssetReturns";
 import InventoryCounts from "../pages/inventario/InventoryCounts";
 import CreateProducts from "../pages/adquisiciones/productos/CreateProducts";
@@ -74,6 +75,7 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/inventory/counts": () => <InventoryCounts />,
   "/assets/valuation": () => <AssetValuation />,
   "/assets/returns": () => <AssetReturns />,
+  "/assets/import": () => <ImportAssets />,
   "/roles/create": () => <NuevoRole />,
   "/roles/update": () => <AsignarPermissionToRole />,
   "/roles/read": () => <ListarRole />,
