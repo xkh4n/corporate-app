@@ -102,5 +102,9 @@ jobs:
       - name: Tests
         run: pnpm run test
 
+      # vite.config.ts lee corporate-secrets (fuera del repo) para el proxy del servidor de desarrollo; con
+      # DOCKER_DEV=true no lo hace (ese flag solo afecta a "server", no a lo que se compila).
       - name: Build
+        env:
+          DOCKER_DEV: "true"
         run: pnpm run build
