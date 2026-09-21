@@ -61,6 +61,24 @@ function matchesRealContent(mimetype: string, buffer: Buffer): boolean {
 
 const ALLOWED_MIME_TYPES = new Set(Object.keys(EXTENSION_BY_MIME_TYPE));
 
+// Carga masiva por CSV (plan 005): estos tipos SOLO se aceptan en las rutas que declaran kind "csv" y esas rutas
+// no aceptan ningun otro. Windows suele declarar application/vnd.ms-excel para un .csv y algunos clientes text/plain.
+const CSV_MIME_TYPES = new Set(["text/csv", "application/vnd.ms-excel", "text/plain"]);
+
+// Un CSV es texto: UTF-8 valido, sin bytes nulos y con la cabecera esperada (serial_number). Es una verificacion
+// barata para rechazar binarios disfrazados antes de parsear; la validacion de fondo la hace library/csvImport.ts.
+function looksLikeImportCsv(buffer: Buffer): boolean {
+  if (buffer.length === 0 || buffer.includes(0)) return false;
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+  } catch {
+    return false;
+  }
+  const firstLine = text.split(/\r\n|\n|\r/, 1)[0] ?? "";
+  return firstLine.toLowerCase().includes("serial_number");
+}
+
 // memoryStorage a proposito: el nombre final del archivo (SOLCOT-<nationalId>,
 // COT-<nationalId>, etc.) depende de datos que recien se conocen despues de
 // consultar la BD (nationalId del proveedor, requestNumber) -no del nombre
@@ -70,23 +88,25 @@ const ALLOWED_MIME_TYPES = new Set(Object.keys(EXTENSION_BY_MIME_TYPE));
 // Un uploader por tamano maximo (la guia de despacho admite menos que el resto). Ademas del tamano se
 // acota la forma del multipart (1 archivo, pocos campos): sin eso una request podia mandar cientos de
 // partes pequenas.
-const uploaders = new Map<number, multer.Multer>();
+const uploaders = new Map<string, multer.Multer>();
 
-function getUploader(maxFileSizeBytes: number): multer.Multer {
-  let uploader = uploaders.get(maxFileSizeBytes);
+function getUploader(maxFileSizeBytes: number, kind: UploadKind): multer.Multer {
+  const cacheKey = `${kind}:${maxFileSizeBytes}`;
+  let uploader = uploaders.get(cacheKey);
   if (!uploader) {
+    const allowed = kind === "csv" ? CSV_MIME_TYPES : ALLOWED_MIME_TYPES;
     uploader = multer({
       storage: multer.memoryStorage(),
       limits: { fileSize: maxFileSizeBytes, files: 1, fields: 10, parts: 12 },
       fileFilter: (_req, file, callback) => {
-        if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
+        if (!allowed.has(file.mimetype)) {
           callback(new BadRequestError(`Tipo de archivo no permitido: ${file.mimetype}`));
           return;
         }
         callback(null, true);
       },
     });
-    uploaders.set(maxFileSizeBytes, uploader);
+    uploaders.set(cacheKey, uploader);
   }
   return uploader;
 }
@@ -102,7 +122,11 @@ const uploadGate = createConcurrencyGate({ maxTotal: 8, maxPerKey: 2 });
 // formato {codigo, message} que el resto de la API. El chequeo de magic bytes va
 // ACA (no en fileFilter): con memoryStorage, file.buffer todavia no existe cuando
 // fileFilter corre -llega recien cuando multer termina de leer el stream completo.
+// "document" (por defecto): PDF, imagenes y correos. "csv": solo CSV de carga masiva; una ruta acepta uno u otro.
+export type UploadKind = "document" | "csv";
+
 export interface UploadOptions {
+  kind?: UploadKind;
   // Sanea el PDF con qpdf (library/pdfSanitizer.ts): rechaza contenido activo (JavaScript, Launch,
   // archivos incrustados...) y REEMPLAZA req.file.buffer por la reescritura de qpdf. Opt-in: los
   // adjuntos de compras (cotizaciones de proveedores, facturas) pueden traer formularios legitimos
@@ -113,7 +137,8 @@ export interface UploadOptions {
 }
 
 export function uploadSingle(fieldName: string, options: UploadOptions = {}) {
-  const middleware = getUploader(options.maxFileSizeBytes ?? MAX_FILE_SIZE_BYTES).single(fieldName);
+  const kind = options.kind ?? "document";
+  const middleware = getUploader(options.maxFileSizeBytes ?? MAX_FILE_SIZE_BYTES, kind).single(fieldName);
   const receive = (req: Request, res: Response, next: NextFunction): void => {
     middleware(req, res, (err: unknown) => {
       void handle(err);
@@ -128,9 +153,19 @@ export function uploadSingle(fieldName: string, options: UploadOptions = {}) {
         next(err);
         return;
       }
-      if (req.file && !matchesRealContent(req.file.mimetype, req.file.buffer)) {
-        next(new BadRequestError("El contenido del archivo no coincide con su tipo declarado"));
-        return;
+      if (req.file) {
+        const contentOk =
+          kind === "csv" ? looksLikeImportCsv(req.file.buffer) : matchesRealContent(req.file.mimetype, req.file.buffer);
+        if (!contentOk) {
+          next(
+            new BadRequestError(
+              kind === "csv"
+                ? "El archivo debe ser un CSV de texto en UTF-8 con la columna serial_number (en Excel: Guardar como «CSV UTF-8»)"
+                : "El contenido del archivo no coincide con su tipo declarado",
+            ),
+          );
+          return;
+        }
       }
       if (options.sanitizePdf && req.file && req.file.mimetype === "application/pdf") {
         try {

@@ -133,6 +133,28 @@ export async function findAssetsBySerial(serialNumber: string, transaction?: Tra
   });
 }
 
+// Series (normalizadas: lower + btrim) que YA existen en assets, con el tag del activo: la carga masiva las revisa
+// todas de una vez en la validacion en vez de una consulta por fila. Devuelve clave normalizada -> tag (si la serie
+// esta repetida en datos legados queda el primero, basta para informarla).
+export async function findExistingSerialTags(serialNumbers: string[]): Promise<Map<string, string>> {
+  const keys = [...new Set(serialNumbers.map((serial) => serial.trim().toLowerCase()).filter((key) => key.length > 0))];
+  const result = new Map<string, string>();
+  const CHUNK = 500;
+  for (let start = 0; start < keys.length; start += CHUNK) {
+    const chunk = keys.slice(start, start + CHUNK);
+    const found = await AssetModel.findAll({
+      attributes: ["tag", "serialNumber"],
+      where: sequelizeWhere(fn("lower", fn("btrim", col("serial_number"))), { [Op.in]: chunk }),
+      order: [["id", "ASC"]],
+    });
+    for (const asset of found) {
+      const key = (asset.serialNumber ?? "").trim().toLowerCase();
+      if (!result.has(key)) result.set(key, asset.tag);
+    }
+  }
+  return result;
+}
+
 // Ubicacion = centro de costo. La toma de inventario mueve el activo al centro de
 // costo donde el auditor lo encontro y, si el activo no tenia producto (activo
 // legado), le completa el elegido. Corre dentro de la transaccion de quien llama.
@@ -255,7 +277,7 @@ export async function createAssetFromInventory(
       tag,
       statusId: availableStatus.id,
       serialNumber: input.serialNumber,
-      warrantyExpiresAt: null,
+      warrantyExpiresAt: input.warrantyExpiresAt ?? null,
       value: null,
       receivedAt: new Date().toISOString().slice(0, 10),
       goodsReceiptId: null,

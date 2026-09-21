@@ -286,6 +286,13 @@ src/
   `RETURNED`. Permiso `asset-returns`, sin acceso por defecto; solo el solicitante o un administrador modifica una
   devolución y quien la solicitó o envió no puede recibirla. La guía es un PDF de hasta 5 MB que se sanea con qpdf al subir (sin contenido activo) y solo se descarga; se devuelven «mis equipos» (centro de costo fijado por el equipo) o equipos de otro usuario (centro de costo elegido).
   Los adjuntos (`uploads`/`downloads`) persisten en volúmenes nombrados compartidos por las 3 réplicas.
+- **Carga masiva de activos por CSV** (`/api/asset-imports`, pantalla «Carga Masiva de Activos»): sube un CSV con
+  serie, producto, centro de costo y, opcionalmente, estado, usuario asignado (por usuario o RUT) y garantía; **solo crea
+  activos nuevos** (una serie que ya existe se rechaza con su TAG) y no informa valor (se valoriza después). Subirlo lo valida
+  completo sin escribir nada; al iniciar la carga, la API crea un activo por fila (una transacción por fila) y guarda el avance
+  en Redis, de modo que **si una réplica se cae la carga la retoma otra desde donde iba, sin duplicar**. Se descarga un CSV con
+  el resultado por fila. Máximo 5.000 filas y 2 MB, una carga en curso por usuario. Permiso `asset-imports`
+  (`read` + `create`, se asignan juntos), sin acceso por defecto; cada carga solo la ve su dueño o un administrador.
 - **Notificaciones en tiempo real**: eventos de cambio de estado (`socket.io` + `@socket.io/redis-adapter`,
   escalado entre 3 réplicas) sin polling.
 - **Envío de correos**: `corporate-mailer` gestiona adjuntos (PDF, facturas), notificaciones

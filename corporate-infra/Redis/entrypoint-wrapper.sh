@@ -29,10 +29,15 @@ REDIS_EXPORTER_PASSWORD="$(cat "$REDIS_EXPORTER_PASSWORD_FILE")"
 # existentes en el primer arranque post-fix-.
 chown -R redis:redis /data
 
+# Tope de memoria por debajo del limite del contenedor (512M en los compose): sin esto un Redis lleno (p. ej. cargas masivas
+# de activos sin iniciar, ~1 MB cada una) lo mata el cgroup por OOM y se caen sesiones, rate limits y trabajos. Con
+# "noeviction" NUNCA se descartan sesiones ni contadores: al llegar al tope las ESCRITURAS fallan con un error y el proceso sigue.
 set -- redis-server \
     --requirepass "$REDIS_PASSWORD" \
     --masterauth "$REDIS_PASSWORD" \
     --appendonly yes \
+    --maxmemory 400mb \
+    --maxmemory-policy noeviction \
     --bind 0.0.0.0
 
 # Usuario ACL de solo-lectura para oliver006/redis_exporter (Prometheus). Se
