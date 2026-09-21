@@ -18,6 +18,20 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-21 (8) — `promote-to-master.ps1` resuelve los conflictos en rutas excluidas
+
+- **Problema** (visto al promover el PR #11): cuando `testing` modifica un archivo de solo-testing que `master` no tiene
+  (`*.integration.test.ts`, `compose.test.yml`), el merge da *modify/delete* y el script se detenía con «conflictos reales»
+  antes de aplicar la lista de exclusión; había que resolverlo a mano.
+- **Ahora**: el merge ya no corta ahí; los conflictos en rutas de `master-excluded-paths.txt` se resuelven borrando el archivo
+  (`git rm -f`) y solo un conflicto en una ruta **normal** detiene la promoción (lista cuáles). El borrado usa `git rm` en vez de
+  `Remove-Item`; si el merge falla sin conflictos resolubles se aborta y se vuelve a la rama de partida; al terminar (o si no hay
+  nada que promocionar) se restaura la rama desde la que se invocó.
+- **Verificado** en un clon aislado con un remoto local falso (sin tocar GitHub) reproduciendo exactamente el caso: excluyó las mismas
+  19 rutas y el árbol de `release/master` resultó **idéntico** al que se armó a mano para el PR #12.
+
+---
+
 ## 2026-09-21 (7) — CI de GitHub Actions (typecheck, lint y tests)
 
 - Nuevo `.github/workflows/ci.yml`: en PR y push a `develop` y `testing` corre, para la API, `tsc` y los tests **unitarios**
