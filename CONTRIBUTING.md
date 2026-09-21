@@ -85,6 +85,14 @@ GitHub Enterprise). El modelo elegido para este repo es:
   - `testing`: equipo de QA/testing (recibe vía PR desde `develop`).
   - `master`: solo vía PR desde `release/master`, aprobado por quien opera producción.
 
+> **Estado actual (2026-09-21):** el repo es privado en el plan gratuito de GitHub, que **no permite
+> branch protection ni rulesets** (la API responde «Upgrade to GitHub Pro or make this repository
+> public»). Lo de esta sección queda como la configuración objetivo si se pasa a GitHub Pro; mientras
+> tanto las barreras reales son el CI visible en cada PR (`.github/workflows/ci.yml`), la guardia de
+> `master` (`master-no-testing-artifacts.yml`) y el hook local de `SECURITY-GATE.md`. Los checks del
+> CI a marcar como obligatorios en ese caso: `API (tsc + tests unitarios)` y `Web (tsc + lint + tests +
+> build)` en `develop` y `testing`.
+
 ### 4.1 Cómo configurarlo en GitHub (una vez, por quien administra el repo)
 
 Branch protection no tiene un comando cómodo en `gh`, así que esto se configura a mano en la UI
@@ -96,7 +104,8 @@ Branch protection no tiene un comando cómodo en `gh`, así que esto se configur
    `Maintain` para el flujo normal.
 2. **`Settings → Branches → Add branch protection rule`**, una regla por rama:
    - **`develop`**: `Require a pull request before merging` opcional (según qué tan estricto quieran
-     ser con commits directos); `Require status checks to pass` si más adelante se agrega CI de tests.
+     ser con commits directos); `Require status checks to pass` con los dos checks del CI (`API (tsc + tests unitarios)` y
+     `Web (tsc + lint + tests + build)`).
    - **`testing`**: `Require a pull request before merging` (activado), reviewers requeridos = equipo
      QA. `Restrict who can push to matching branches` → lista solo a quien puede mergear ahí (o el
      equipo QA, si es una organización con Teams).
