@@ -13,6 +13,7 @@ import { seedCostCenters } from "./src/services/postgres/costCenter.service";
 import { seedProducts } from "./src/services/mongo/product.service";
 import { seedProductCategories } from "./src/services/mongo/productCategory.service";
 import { initSocketServer } from "./src/library/realtime/socketServer";
+import { startImportSweeper, stopImportWorkers } from "./src/services/redis/assetImportJob.service";
 import "./src/databases/registerModels";
 
 async function bootstrap(): Promise<void> {
@@ -41,6 +42,32 @@ async function bootstrap(): Promise<void> {
   server.listen(env.port, () => {
     logger.info({ port: env.port, env: env.nodeEnv }, "corporate-api escuchando");
   });
+
+  // Cargas masivas de activos (plan 005): retoma las que quedaron en curso sin worker (una replica que murio o se
+  // reinicio) y, al recibir la senal de cierre, deja terminar la fila en curso antes de salir.
+  startImportSweeper();
+  registerShutdownHandlers(server);
+}
+
+let shutdownStarted = false;
+
+// Numero de senal para el codigo de salida convencional (128 + senal), el mismo que tenia el proceso antes de que
+// existiera este manejador (la senal por defecto lo termina con 143 / 130).
+const SIGNAL_NUMBERS: Record<string, number> = { SIGINT: 2, SIGTERM: 15 };
+
+function registerShutdownHandlers(server: http.Server): void {
+  const shutdown = (signal: string): void => {
+    if (shutdownStarted) return;
+    shutdownStarted = true;
+    logger.info({ signal }, "Cerrando corporate-api");
+    // Deja de aceptar conexiones nuevas mientras termina la fila de carga en curso (las abiertas se cortan al salir).
+    server.close();
+    stopImportWorkers()
+      .catch((err) => logger.error({ err }, "Error al detener las cargas masivas"))
+      .finally(() => process.exit(128 + (SIGNAL_NUMBERS[signal] ?? 15)));
+  };
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
 }
 
 const BOOTSTRAP_MAX_RETRIES = 5;

@@ -134,6 +134,9 @@ x-api-common: &api-common
         context: ./
         dockerfile: Dockerfile
     restart: ${RESTART_POLICY}
+    # El cierre ordenado (SIGTERM) espera hasta 8 s a que termine la fila de una carga masiva en curso (index.ts):
+    # el margen por defecto de Docker (10 s) queda justo.
+    stop_grace_period: 20s
     # Corre como el usuario "node" (no root) de la imagen oficial desde
     # el Dockerfile, sin ninguna operación que requiera privilegios en
     # runtime: cap_drop:[ALL] sin cap_add alcanza, mismo criterio que los
