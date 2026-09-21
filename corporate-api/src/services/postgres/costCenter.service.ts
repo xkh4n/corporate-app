@@ -45,6 +45,13 @@ export async function getCostCenterByCode(code: number): Promise<CostCenterModel
   return CostCenterModel.findOne({ where: { code } });
 }
 
+// Batch por codigo (carga masiva por CSV): una consulta en vez de una por fila.
+export async function getCostCentersByCodes(codes: number[]): Promise<CostCenterModel[]> {
+  const unique = [...new Set(codes)];
+  if (unique.length === 0) return [];
+  return CostCenterModel.findAll({ where: { code: { [Op.in]: unique } } });
+}
+
 export async function createCostCenter(data: CostCenterCreationAttributes): Promise<CostCenterModel> {
   const existing = await getCostCenterByCode(data.code);
   if (existing) throw new ConflictError(`Ya existe el centro de costo con codigo '${data.code}'`);
