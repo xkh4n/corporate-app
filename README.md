@@ -16,10 +16,10 @@ observabilidad (métricas + logs) desde el día uno.
 | Módulo | Estado |
 |---|---|
 | `corporate-infra` (bases de datos) | ✅ Construido, hardenizado y validado con instalación limpia real |
-| `corporate-api` (backend) | ✅ Construido: auth, RBAC, ERP core, flujo de compras, activos (Kardex, ZPL, handover, toma de inventario), tiempo real, remuneraciones y previsión |
+| `corporate-api` (backend) | ✅ Construido: auth, RBAC, ERP core, flujo de compras, activos (Kardex, ZPL, handover, toma de inventario, valorización, devoluciones, carga masiva por CSV), tiempo real, remuneraciones y previsión |
 | `corporate-mailer` (servicio de correo) | ✅ Construido: adjuntos de OC, notificaciones, SMTP |
 | `corporate-monitoring` (observabilidad) | ✅ Construido: métricas, logs, dashboards, todo detrás de TLS |
-| `corporate-front` (frontend) | ✅ Construido: React 19/TypeScript/Tailwind v4, menú dinámico desde BD, activos (incl. toma de inventario), adquisiciones, solicitudes, personas, remuneraciones, previsión, permissions |
+| `corporate-front` (frontend) | ✅ Construido: React 19/TypeScript/Tailwind v4, menú dinámico desde BD, activos (incl. toma de inventario, valorización, devoluciones y carga masiva), adquisiciones, solicitudes, personas, remuneraciones, previsión, permissions (las pantallas de inventario, devoluciones y carga masiva aún sin probar en un navegador real) |
 | Ambientes `prod`/`test` | ✅ Compose/Dockerfiles existen; `dev` es el único validado en clean-install real |
 
 ## Arquitectura general
@@ -181,7 +181,8 @@ corporate-app/
 
 > Este árbol muestra lo que trae el repositorio (`git clone`). Además, quien trabaje con Claude Code
 > en este proyecto tiene localmente una carpeta `.claude/` (contexto, specs, roles, agentes) que
-> **no se versiona** (`.gitignore`) — es configuración de esa herramienta, no parte del repo en sí.
+> **casi no se versiona** (`.gitignore`) — es configuración de esa herramienta, no parte del repo en sí.
+> Solo viajan `.claude/README.md` (bitácora de avances) y `.claude/planes/` (los planes de cada bloque de trabajo).
 
 ### `corporate-api/src/` (DDD por capas)
 
@@ -201,12 +202,13 @@ src/
 **Backend (`corporate-api`)**
 - Node.js + TypeScript, Express 5
 - Sequelize (PostgreSQL vía `pg`, MSSQL vía `tedious`) + Mongoose (MongoDB)
-- Redis (cliente oficial `redis`) para sesiones (`express-session` + `connect-redis`) y refresh tokens
+- Redis (cliente oficial `redis`) para sesiones (`express-session` + `connect-redis`), refresh tokens, límites de tasa por usuario y el estado de las cargas masivas de activos (`imp:*`)
 - `jsonwebtoken` (access/refresh JWT), `bcryptjs` (hash de contraseñas), `zod` (validación de esquemas)
 - `helmet`, `cors`, `express-rate-limit` (seguridad HTTP)
 - `pino`/`pino-http` (logging estructurado), `prom-client` (métricas Prometheus)
 - `socket.io` + `@socket.io/redis-adapter` (notificaciones en tiempo real, escalado entre 3 réplicas)
 - `multer` (gestión de adjuntos: órdenes de compra, recibos), `pdfkit` (generación de PDF: handover de activos)
+- `qpdf` (binario en la imagen: sanea las guías de despacho PDF que se suben) y un parser de CSV propio (`library/csvImport.ts`) para la carga masiva de activos
 
 **Frontend (`corporate-front`)**
 - React 19 + TypeScript, Vite, Tailwind CSS v4
@@ -227,7 +229,7 @@ src/
 - PostgreSQL (streaming replication primario/réplica)
 - Microsoft SQL Server (Availability Group, read-scale, sin WSFC)
 - MongoDB (replica set, topología PSA: primary-secondary-arbiter)
-- Redis (replicación primario/réplica)
+- Redis (replicación primario/réplica; `maxmemory 400mb` con política `noeviction` dentro del límite de 512M del contenedor)
 - NGINX como único proxy hacia las bases de datos (sin publicar puertos de los motores)
 
 **Observabilidad (`corporate-monitoring`)**
@@ -419,6 +421,12 @@ gh auth login          # GitHub.com → SSH (o HTTPS) → login con el navegador
 #   Corre promote-to-master.ps1 (arma release/master ya sin rutas de solo-testing) y abre el
 #   PR release/master → master. master NUNCA recibe push ni PR directo desde testing.
 ```
+
+**CI** (`.github/workflows/ci.yml`): en cada PR y push a `develop` y `testing` corre `tsc` y los tests
+unitarios de la API, y `tsc`, ESLint, tests y build del front. Los tests de integración (`*.integration.test.ts`)
+se corren a mano contra el stack de Testing (`run.ps1 bdd test`). Hacia `master` solo corre la
+guardia de rutas prohibidas. El repo es privado en el plan gratuito de GitHub, que **no permite
+protección de ramas**: el CI se ve en el PR pero no bloquea el merge por sí solo.
 
 Detalle del modelo de ramas, exclusiones de `master` y branch protection: **[`CONTRIBUTING.md`](CONTRIBUTING.md)**.
 
