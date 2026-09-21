@@ -26,6 +26,10 @@ const handoverFieldsSchema = z.object({
 export const createAssetMovementSchema = z
   .object({
     assetId: z.number().int().positive(),
+    // DEVALUATED, MOVE_TO_RETURNED y RETURNED no estan a proposito: DEVALUATED
+    // solo lo crea la toma de inventario (baja reactivada, valor 0) y los otros
+    // dos solo el flujo de devoluciones con guia (assetReturn.service.ts). No
+    // deben poder dispararse desde la API generica.
     movementType: z.enum(["ASSIGNED", "REASSIGNED", "SUPPORT", "DECOMMISSIONED"]),
     userIds: z.array(z.number().int().positive()).optional(),
     notes: z.string().max(255).optional(),

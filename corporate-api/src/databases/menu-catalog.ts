@@ -246,6 +246,31 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     permissionKey: "asset-kardex:read",
     sortOrder: 100,
   },
+  {
+    label: "Toma de Inventario",
+    icon: "IoClipboardOutline",
+    link: "/inventory/counts",
+    parentLabel: "Productos",
+    permissionKey: "inventory-counts:read",
+    sortOrder: 105,
+  },
+  {
+    label: "Valorización de Activos",
+    icon: "IoCashOutline",
+    link: "/assets/valuation",
+    parentLabel: "Productos",
+    // :read (igual que el GET de la API y la pantalla): con :update solo, el item aparecia y la pantalla negaba el acceso.
+    permissionKey: "asset-valuation:read",
+    sortOrder: 110,
+  },
+  {
+    label: "Devoluciones de Activos",
+    icon: "IoReturnDownBackOutline",
+    link: "/assets/returns",
+    parentLabel: "Productos",
+    permissionKey: "asset-returns:read",
+    sortOrder: 108,
+  },
 
   {
     label: "Vincular Productos a Proveedor",

@@ -189,4 +189,26 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   // de "adquisiciones" que ya se planteo para el RBAC granular.
   { resource: "asset-kardex", action: "read", description: "Consultar el kardex de valorizacion de activos" },
   { resource: "asset-kardex", action: "create", description: "Registrar asientos manuales de kardex (ajuste/baja)" },
+
+  // Toma de inventario fisica. Admin-only por defecto (sin grantToUser): "create"
+  // ademas DA DE ALTA activos nuevos (con tag) al levantar equipos que no
+  // existen en el sistema, asi que el admin lo asigna a mano al rol del auditor.
+  { resource: "inventory-counts", action: "read", description: "Consultar tomas de inventario y sus reportes" },
+  { resource: "inventory-counts", action: "create", description: "Iniciar tomas de inventario e ingresar equipos (crea activos nuevos)" },
+  { resource: "inventory-counts", action: "update", description: "Editar equipos de una toma abierta y cerrar la toma" },
+
+  // Valorizacion posterior a la toma (Adquisiciones TI): asigna valor por primera
+  // vez a activos sin valor y escribe su asiento de alta en el Kardex. Admin-only
+  // por defecto (sin grantToUser): el admin lo asigna al rol de Adquisiciones TI.
+  { resource: "asset-valuation", action: "read", description: "Consultar activos pendientes de valorizacion" },
+  { resource: "asset-valuation", action: "update", description: "Asignar valor a activos que no lo tienen (genera asiento de kardex)" },
+
+  // Devolucion de activos a Adquisiciones TI con guia de despacho. Admin-only por
+  // defecto (sin grantToUser): "create" = solicitante (arma la devolucion, adjunta
+  // la guia, la envia y la cancela; los activos pasan a MOVE_TO_RETURNED) y
+  // "update" = recepcion en Adquisiciones (los activos pasan a RETURNED). El admin
+  // los asigna por rol.
+  { resource: "asset-returns", action: "read", description: "Consultar devoluciones de activos y sus guias de despacho" },
+  { resource: "asset-returns", action: "create", description: "Solicitar devoluciones de activos: armarlas, adjuntar la guia, enviarlas o cancelarlas" },
+  { resource: "asset-returns", action: "update", description: "Recibir en Adquisiciones los activos de una devolucion" },
 ];

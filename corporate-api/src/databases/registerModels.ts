@@ -58,3 +58,10 @@ import "./../models/postgres/assetStatus.model";
 import "./../models/postgres/asset.model";
 import "./../models/postgres/assetMovement.model";
 import "./../models/postgres/assetMovementUser.model";
+
+// Toma de inventario (Postgres)
+import "./../models/postgres/inventoryCount.model";
+import "./../models/postgres/inventoryCountLine.model";
+import "./../models/postgres/inventoryCountMissingAsset.model";
+import "./../models/postgres/assetReturn.model";
+import "./../models/postgres/assetReturnLine.model";

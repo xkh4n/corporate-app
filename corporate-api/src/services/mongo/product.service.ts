@@ -13,10 +13,14 @@ import type { ProductCreationAttributes, ProductUpdateAttributes } from "../../t
 
 const SEARCH_FIELDS = ["name", "description"];
 
+// categoryId opcional: usado por el combo dependiente categoria -> producto de
+// la toma de inventario (corporate-front, pages/inventario). Un id mal formado
+// se rechaza en el controller, aca ya llega validado.
 export async function listProducts(
   params: PaginationParams,
+  categoryId?: string,
 ): Promise<{ items: ProductDocument[]; total: number }> {
-  const filter = buildMongoSearchFilter(params.search, SEARCH_FIELDS);
+  const filter = { ...buildMongoSearchFilter(params.search, SEARCH_FIELDS), ...(categoryId ? { categoryId } : {}) };
   const [items, total] = await Promise.all([
     ProductModel.find(filter)
       .sort(buildMongoSort(params.sortBy, params.sortOrder))

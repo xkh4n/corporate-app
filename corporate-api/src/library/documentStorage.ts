@@ -1,8 +1,12 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 const DOWNLOADS_ROOT = path.join(__dirname, "../downloads");
 const UPLOADS_ROOT = path.join(__dirname, "../uploads");
+
+// Sufijo de los temporales de saveBuffer: nunca deben verse como documentos.
+const TMP_SUFFIX = ".tmp";
 
 // Documentos de la solicitud de cotizacion (SOLCOT-<nationalId>.pdf, generado
 // por el backend; COT-<nationalId>.<ext>, subido cuando el proveedor
@@ -26,10 +30,27 @@ export function getProductImagesFolder(): string {
   return path.join(UPLOADS_ROOT, "images", "products");
 }
 
+// Guias de despacho de las devoluciones de activos: <codigo>.pdf, donde el
+// codigo lo arma el servidor (library/assetReturnCode.ts), nunca el cliente.
+export function getAssetReturnsFolder(): string {
+  return path.join(UPLOADS_ROOT, "devoluciones");
+}
+
+// Escritura ATOMICA: se escribe a un temporal en la MISMA carpeta y se renombra. Las 3
+// replicas comparten el volumen, y una lectura concurrente (sendFile de otra replica)
+// nunca debe ver un archivo a medio escribir. rename es atomico dentro del mismo volumen.
 export function saveBuffer(folder: string, filename: string, buffer: Buffer): string {
   fs.mkdirSync(folder, { recursive: true });
   const filePath = path.join(folder, filename);
-  fs.writeFileSync(filePath, buffer);
+  // UUID (no pid+fecha): cada contenedor tiene su propio espacio de PIDs y suelen repetirse entre replicas.
+  const tmpPath = `${filePath}.${randomUUID()}${TMP_SUFFIX}`;
+  try {
+    fs.writeFileSync(tmpPath, buffer);
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    fs.rmSync(tmpPath, { force: true });
+    throw err;
+  }
   return filePath;
 }
 
@@ -37,8 +58,15 @@ export function saveBuffer(folder: string, filename: string, buffer: Buffer): st
 // imagen con una extension distinta a la ya guardada, para no dejar el
 // archivo viejo huerfano en disco.
 export function deleteIfExists(folder: string, filename: string): void {
-  const filePath = path.join(folder, filename);
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  // force:true no falla si el archivo ya no existe (otra replica pudo borrarlo entre medio). Cualquier otro
+  // error (permisos, disco) se registra y se traga: es best-effort y no debe convertir una operacion ya
+  // confirmada (p. ej. cancelar una devolucion) en un 500, ni ocultar el error original de quien limpia.
+  try {
+    fs.rmSync(path.join(folder, filename), { force: true });
+  } catch (err) {
+    // Import diferido: el logger exige variables de entorno al cargarse y este modulo se usa tambien en tests unitarios puros.
+    void import("./logger.js").then(({ logger }) => logger.warn({ err, folder, filename }, "No se pudo borrar el archivo"));
+  }
 }
 
 // Best-effort: si el archivo de origen no existe (ej. nunca se subio el
@@ -51,16 +79,28 @@ export function copyIfExists(srcFolder: string, destFolder: string, filename: st
 }
 
 // Ubica un archivo por prefijo sin conocer su extension (ej. "COT-12345678"
-// puede haberse subido como .pdf, .jpg, etc.).
+// puede haberse subido como .pdf, .jpg, etc.). El prefijo debe ir seguido de "." (la
+// extension): un startsWith(prefix) a secas hacia que "OC-1" o "COT-123" casaran con
+// "OC-10.pdf" o "COT-1234....pdf" y se adjuntara el archivo de OTRA orden o proveedor.
 export function findFileByPrefix(folder: string, prefix: string): string | null {
   if (!fs.existsSync(folder)) return null;
-  const match = fs.readdirSync(folder).find((name) => name.startsWith(prefix));
+  const match = fs.readdirSync(folder).find((name) => name.startsWith(`${prefix}.`) && !name.endsWith(TMP_SUFFIX));
   return match ?? null;
 }
 
 export function listFiles(folder: string): string[] {
   if (!fs.existsSync(folder)) return [];
-  return fs.readdirSync(folder).filter((name) => fs.statSync(path.join(folder, name)).isFile());
+  return fs
+    .readdirSync(folder)
+    .filter((name) => {
+      if (name.endsWith(TMP_SUFFIX)) return false;
+      try {
+        return fs.statSync(path.join(folder, name)).isFile();
+      } catch {
+        // Borrado por otra replica entre readdir y stat.
+        return false;
+      }
+    });
 }
 
 // requestNumber es seguro -generado por el sistema, formato controlado.

@@ -31,6 +31,9 @@ import { assetStatusRouter } from "./assetStatus.routes";
 import { assetRouter } from "./asset.routes";
 import { assetMovementRouter } from "./assetMovement.routes";
 import { assetKardexRouter } from "./assetKardex.routes";
+import { inventoryCountRouter } from "./inventoryCount.routes";
+import { assetValuationRouter } from "./assetValuation.routes";
+import { assetReturnRouter } from "./assetReturn.routes";
 import { notificationRouter } from "./notification.routes";
 import { previsionalInstitutionRouter } from "./previsionalInstitution.routes";
 import { previsionalProfileRouter } from "./previsionalProfile.routes";
@@ -93,6 +96,9 @@ apiRouter.use("/asset-statuses", assetStatusRouter);
 apiRouter.use("/assets", assetRouter);
 apiRouter.use("/asset-movements", assetMovementRouter);
 apiRouter.use("/asset-kardex", assetKardexRouter);
+apiRouter.use("/inventory-counts", inventoryCountRouter);
+apiRouter.use("/asset-valuation", assetValuationRouter);
+apiRouter.use("/asset-returns", assetReturnRouter);
 
 // Resumen derivado de pendientes del usuario logeado (badge + push en
 // tiempo real, ver library/realtime/).

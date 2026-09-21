@@ -1,4 +1,4 @@
-import { Op } from "sequelize";
+import { Op, type Transaction } from "sequelize";
 import { AssetStatusModel } from "../../models/postgres/assetStatus.model";
 import { ConflictError, NotFoundError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
@@ -33,12 +33,14 @@ export async function getAssetStatusByIdOrThrow(id: number): Promise<AssetStatus
   return status;
 }
 
-export async function getAssetStatusByCode(code: string): Promise<AssetStatusModel | null> {
-  return AssetStatusModel.findOne({ where: { code } });
+// transaction: quien ya tiene una transaccion abierta debe pasarla; si no, la consulta toma OTRA
+// conexion del pool mientras retiene la suya y, con suficientes requests simultaneas, el pool se agota.
+export async function getAssetStatusByCode(code: string, transaction?: Transaction): Promise<AssetStatusModel | null> {
+  return AssetStatusModel.findOne({ where: { code }, transaction });
 }
 
-export async function getAssetStatusByCodeOrThrow(code: string): Promise<AssetStatusModel> {
-  const status = await getAssetStatusByCode(code);
+export async function getAssetStatusByCodeOrThrow(code: string, transaction?: Transaction): Promise<AssetStatusModel> {
+  const status = await getAssetStatusByCode(code, transaction);
   if (!status) throw new NotFoundError(`No existe el estado de activo con codigo '${code}'`);
   return status;
 }
