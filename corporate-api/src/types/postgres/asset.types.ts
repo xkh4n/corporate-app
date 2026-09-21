@@ -53,6 +53,8 @@ export interface CreateAssetFromInventoryInput {
   productType: ProductType;
   costCenterId: number;
   serialNumber: string;
+  // Solo la carga masiva por CSV la informa; la toma de inventario no la conoce.
+  warrantyExpiresAt?: string | null;
   createdBy?: number | null;
 }
 

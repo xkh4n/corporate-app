@@ -50,6 +50,14 @@ export async function getProductsByIds(ids: string[]): Promise<ProductDocument[]
   return ProductModel.find({ _id: { $in: validIds } });
 }
 
+// Batch por nombre EXACTO (name es unico): la carga masiva por CSV identifica el producto por su nombre. Los
+// nombres llegan como strings (celdas de un CSV), asi que no pueden inyectar operadores de Mongo.
+export async function getProductsByNames(names: string[]): Promise<ProductDocument[]> {
+  const unique = [...new Set(names.filter((name) => typeof name === "string" && name.length > 0))];
+  if (unique.length === 0) return [];
+  return ProductModel.find({ name: { $in: unique } });
+}
+
 export async function createProduct(data: ProductCreationAttributes): Promise<ProductDocument> {
   if (data.categoryId) await getProductCategoryByIdOrThrow(data.categoryId);
   return ProductModel.create(data);

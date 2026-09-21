@@ -271,6 +271,15 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     permissionKey: "asset-returns:read",
     sortOrder: 108,
   },
+  {
+    label: "Carga Masiva de Activos",
+    icon: "IoCloudUploadOutline",
+    link: "/assets/import",
+    parentLabel: "Productos",
+    // :read (igual que el GET de la API y la pantalla): subir e iniciar cargas exige ademas :create, que se asigna junto.
+    permissionKey: "asset-imports:read",
+    sortOrder: 112,
+  },
 
   {
     label: "Vincular Productos a Proveedor",

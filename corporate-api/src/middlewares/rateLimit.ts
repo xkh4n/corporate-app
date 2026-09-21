@@ -104,6 +104,25 @@ export const assetLookupRateLimiter = createLazyUserLimiter({
   message: "Demasiadas consultas de equipos, intenta mas tarde",
 });
 
+// Carga masiva de activos (plan 005): validar un CSV consulta Mongo/MSSQL/Postgres por lote y iniciar/reanudar
+// arranca trabajo en segundo plano. 20 acciones cada 15 minutos por usuario sobran para uso legitimo (subir, corregir
+// y reintentar unas cuantas veces) y acotan el abuso. Las consultas de estado no cuentan.
+export const importRateLimiter = createLazyUserLimiter({
+  prefix: "rl:assetimport:",
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  message: "Demasiadas acciones de carga masiva, intenta mas tarde",
+});
+
+// Consultas de estado y descarga del resultado de una carga: el sondeo del front es 1 cada 2 s (30/min); cada consulta
+// lee y parsea datos de Redis (hasta ~1 MB en el resultado).
+export const importReadRateLimiter = createLazyUserLimiter({
+  prefix: "rl:assetimportread:",
+  windowMs: 60 * 1000,
+  limit: 120,
+  message: "Demasiadas consultas de cargas, intenta mas tarde",
+});
+
 export function loginRateLimiter(req: Request, res: Response, next: NextFunction): void {
   getLimiter()(req, res, next);
 }

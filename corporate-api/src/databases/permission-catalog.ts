@@ -211,4 +211,12 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "asset-returns", action: "read", description: "Consultar devoluciones de activos y sus guias de despacho" },
   { resource: "asset-returns", action: "create", description: "Solicitar devoluciones de activos: armarlas, adjuntar la guia, enviarlas o cancelarlas" },
   { resource: "asset-returns", action: "update", description: "Recibir en Adquisiciones los activos de una devolucion" },
+
+  // Carga masiva de activos desde un CSV (solo altas). Admin-only por defecto (sin grantToUser): "create" = validar el
+  // archivo, iniciar, reanudar y cancelar la carga (IMPLICA crear activos y asignarlos a cualquier usuario activo, sin
+  // pasar por asset-movements: darlo solo a quien deba cargar inventario); "read" = consultar el estado y descargar el
+  // resultado (la pantalla y el menu se gatean con "read": asignar ambos juntos; los GET aceptan cualquiera de los dos).
+  // Cada carga solo la ve su dueno o un admin.
+  { resource: "asset-imports", action: "read", description: "Consultar el estado y el resultado de las cargas masivas de activos" },
+  { resource: "asset-imports", action: "create", description: "Cargar activos en lote desde un CSV (crea activos y los asigna a usuarios): validarlo, iniciar la carga, reanudarla o cancelarla" },
 ];

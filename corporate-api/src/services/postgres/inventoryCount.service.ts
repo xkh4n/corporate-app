@@ -19,6 +19,7 @@ import {
   updateAssetLocation,
 } from "./asset.service";
 import { createAssetMovement, listCurrentHoldersByAssetIds } from "./assetMovement.service";
+import { applyDeclaredStatusToNewAsset, lockAssetSerial } from "./assetIntake.service";
 import { getAssetStatusByCodeOrThrow } from "./assetStatus.service";
 import { getCostCenterByIdOrThrow } from "./costCenter.service";
 import { getUserByIdOrThrow } from "../mssql/user.service";
@@ -441,16 +442,9 @@ async function createNewAsset(
 ): Promise<number> {
   if (!declaredSerial) throw new BadRequestError("La serie es obligatoria para dar de alta un equipo nuevo");
 
-  // assets no tiene UNIQUE sobre la serie: sin este lock, dos auditores que
-  // dan de alta la misma serie a la vez pasan ambos el chequeo de abajo y
-  // crean dos activos. El lock se libera solo al terminar la transaccion.
-  // La clave se normaliza en SQL (lower + btrim, igual que la comparacion de la busqueda por serie) y
-  // se hashea a 64 bits: evita que JS y Postgres discrepen en como pasan a minusculas.
-  await postgres.query(`SELECT pg_advisory_xact_lock(hashtextextended('asset-serial:' || lower(btrim(:serial)), 0))`, {
-    replacements: { serial: declaredSerial },
-    type: QueryTypes.SELECT,
-    transaction,
-  });
+  // Dos auditores que dan de alta la misma serie a la vez pasan ambos el chequeo de abajo y crean dos activos:
+  // el lock por serie (compartido con la carga masiva) los serializa.
+  await lockAssetSerial(declaredSerial, transaction);
   const sameSerial = await findAssetsBySerial(declaredSerial, transaction);
   if (sameSerial.length > 0) {
     throw new ConflictError(
@@ -470,7 +464,14 @@ async function createNewAsset(
     },
     transaction,
   );
-  await applyDeclaredStatusToNewAsset(asset.id, input.statusCode, holderUserId, count.number, input.createdBy, transaction);
+  await applyDeclaredStatusToNewAsset(
+    asset.id,
+    input.statusCode,
+    holderUserId,
+    `Alta por toma de inventario ${count.number}`,
+    input.createdBy,
+    transaction,
+  );
 
   const line = await InventoryCountLineModel.create(
     {
@@ -494,37 +495,6 @@ async function createNewAsset(
     { transaction },
   );
   return line.id;
-}
-
-// El activo nace AVAILABLE (createAssetFromInventory); aqui se lleva al estado
-// que el auditor vio en terreno. ASSIGNED/SUPPORT/DECOMMISSIONED pasan por un
-// movimiento real (deja historial y, en ASSIGNED, el tenedor vigente);
-// DAMAGED no tiene tipo de movimiento propio, se fija directo.
-async function applyDeclaredStatusToNewAsset(
-  assetId: number,
-  statusCode: AddInventoryLineInput["statusCode"],
-  holderUserId: number | null,
-  countNumber: string,
-  createdBy: number,
-  transaction: Transaction,
-): Promise<void> {
-  const notes = `Alta por toma de inventario ${countNumber}`;
-  if (statusCode === "AVAILABLE") return;
-  if (statusCode === "DAMAGED") {
-    const damaged = await getAssetStatusByCodeOrThrow("DAMAGED", transaction);
-    await setAssetStatus(assetId, damaged.id, transaction, createdBy);
-    return;
-  }
-  await createAssetMovement(
-    {
-      assetId,
-      movementType: statusCode,
-      userIds: statusCode === "ASSIGNED" && holderUserId !== null ? [holderUserId] : [],
-      notes,
-      createdBy,
-    },
-    transaction,
-  );
 }
 
 async function getLineByIdOrThrow(lineId: number): Promise<InventoryCountLineModel> {

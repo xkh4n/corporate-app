@@ -245,6 +245,32 @@ export async function findActiveUserByDocumentId(
   return { userId: user.id, fullName: `${user.person.firstName} ${user.person.lastName}`.trim() };
 }
 
+// Batch para la carga masiva por CSV: solo usuarios ACTIVOS, por username o por RUT exacto (mismo criterio que el
+// picker de la toma). Devuelve el id de cada uno con la clave con que se pidio (username en minusculas / RUT tal cual
+// esta registrado), sin datos personales.
+export async function findActiveUserIdsByUsernames(usernames: string[]): Promise<Map<string, number>> {
+  const unique = [...new Set(usernames)];
+  const result = new Map<string, number>();
+  if (unique.length === 0) return result;
+  const users = await UserModel.findAll({ where: { isActive: true, username: { [Op.in]: unique } } });
+  for (const user of users) result.set(user.username.toLowerCase(), user.id);
+  return result;
+}
+
+export async function findActiveUserIdsByDocumentIds(documentIds: string[]): Promise<Map<string, number>> {
+  const unique = [...new Set(documentIds)];
+  const result = new Map<string, number>();
+  if (unique.length === 0) return result;
+  const users = await UserModel.findAll({
+    where: { isActive: true },
+    include: [{ model: PersonModel, as: "person", required: true, where: { documentId: { [Op.in]: unique } } }],
+  });
+  for (const user of users) {
+    if (user.person) result.set(user.person.documentId, user.id);
+  }
+  return result;
+}
+
 export async function deactivateUser(id: number): Promise<void> {
   const user = await getUserByIdOrThrow(id);
   await user.update({ isActive: false });
