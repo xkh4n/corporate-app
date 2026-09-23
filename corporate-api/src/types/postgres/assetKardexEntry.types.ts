@@ -1,8 +1,10 @@
+import type { AssetKardexEntryType } from "../../models/postgres/assetKardexEntry.model";
+
 export interface AssetKardexEntryAttributes {
   id: number;
   assetId: number;
   productId: string | null;
-  entryType: "ACQUISITION" | "ADJUSTMENT" | "WRITE_OFF";
+  entryType: AssetKardexEntryType;
   entryDate: Date;
   unitCost: string;
   amount: string;

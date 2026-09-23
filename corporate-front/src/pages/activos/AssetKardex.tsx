@@ -18,6 +18,9 @@ const ENTRY_TYPE_LABEL: Record<AssetKardexEntry["entryType"], string> = {
   ACQUISITION: "Alta (recepción)",
   ADJUSTMENT: "Ajuste",
   WRITE_OFF: "Baja",
+  CAPITALIZATION: "Capitalización",
+  DEPRECIATION: "Depreciación",
+  DEPRECIATION_REVERSAL: "Reversa de depreciación",
 };
 
 function formatMoney(value: string): string {

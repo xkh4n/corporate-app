@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>007 — Gestión contable de activos (clasificación, costo, capitalización, depreciación)</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:900px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.5rem; font-size:1.25rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  h3 { margin-top:1.6rem; font-size:1.05rem; }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }
+  th, td { border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 007</span>
+  <h1>Gestión contable de activos: clasificación, costo, capitalización y depreciación</h1>
+  <div class="meta">corporate-app · corporate-api + corporate-front · Estado: aprobado, implementado (sin probar en navegador) · 2026-09-23 · continúa los planes 002–006</div>
+</header>
+
+<h2>Contexto</h2>
+<p>El usuario creó desde «Nueva Pantalla» la rama de menú <strong>Contabilidad › Gestión de Activos › Capitalizacion</strong>: pantalla <code>/accounting-capitalization</code> con el permiso <code>accounting-capitalization:access</code>. Contabilidad tiene que cumplir el ciclo ITIL de un activo:</p>
+<table>
+  <tr><th>Paso</th><th>Qué se hace</th></tr>
+  <tr><td>Clasificación contable</td><td>Determinar si es activo fijo, gasto o inventario</td></tr>
+  <tr><td>Determinar costo</td><td>Valor de adquisición + costos directamente atribuibles, según la política contable</td></tr>
+  <tr><td>Capitalización</td><td>Dar de alta el activo en el registro de activos fijos</td></tr>
+  <tr><td>Depreciación</td><td>Definir vida útil, método y fecha de inicio, y cerrar cada mes</td></tr>
+</table>
+<p><strong>Qué existe hoy:</strong></p>
+<ul>
+  <li><code>assets.value</code> guarda el costo de adquisición, que viene de la recepción o de «Valorización».</li>
+  <li>El Kardex registra ACQUISITION, ADJUSTMENT y WRITE_OFF, con saldo por activo protegido por un lock.</li>
+  <li>No hay clasificación, costos atribuibles, política ni depreciación.</li>
+</ul>
+
+<h2>Decisiones confirmadas</h2>
+<ul>
+  <li><strong>Pantallas:</strong> cuatro separadas, una por paso, más una de política contable.</li>
+  <li><strong>Qué se clasifica:</strong> los <strong>activos ya creados</strong>. Si son gasto o inventario, no se capitalizan ni se deprecian.</li>
+  <li><strong>Depreciación:</strong> incluye el <strong>cierre mensual</strong>, que escribe asientos en el Kardex. Solo se puede anular el <strong>último</strong> cierre, con un permiso aparte.</li>
+  <li><strong>Política:</strong> <strong>clases de activo configurables</strong> (vida útil, método, residual) y un umbral de capitalización.</li>
+  <li><strong>Métodos:</strong> <strong>lineal</strong> y <strong>acelerada SII</strong> (vida útil dividida por 3).</li>
+  <li><strong>Menú:</strong> va en el <strong>catálogo del código</strong>, con los nombres que el usuario ya creó, así la siembra adopta sus filas.</li>
+</ul>
+
+<h2>Modelo de datos (Postgres)</h2>
+<ul>
+  <li><strong><code>asset_accounting_classes</code>:</strong> código, nombre, vida útil en meses, método por defecto, tasa residual y activo/inactivo. Se siembran algunas con la vida útil SII.</li>
+  <li><strong><code>asset_accounting_policy</code>:</strong> una sola fila con el umbral de capitalización.</li>
+  <li><strong><code>asset_accounting</code></strong> (1:1 con <code>assets</code>):
+    <ul>
+      <li>clasificación, clase y etapa (<code>CLASSIFIED → COSTED → CAPITALIZED → DEPRECIATING → FULLY_DEPRECIATED</code>);</li>
+      <li>costo de adquisición y costo capitalizado;</li>
+      <li>parámetros de depreciación y auditoría por paso.</li>
+    </ul>
+  </li>
+  <li><strong><code>asset_attributable_costs</code>:</strong> concepto, monto y documento de cada costo atribuible.</li>
+  <li><strong><code>asset_depreciation_runs</code></strong> (período único) y <strong><code>asset_depreciation_entries</code></strong> (detalle por activo).</li>
+  <li><strong>Kardex:</strong> un CHECK con nombre y tipos nuevos <code>CAPITALIZATION</code>, <code>DEPRECIATION</code> y <code>DEPRECIATION_REVERSAL</code>.</li>
+</ul>
+
+<h2>Reglas de negocio</h2>
+<ol>
+  <li><strong>Clasificar:</strong>
+    <ul>
+      <li>un activo fijo exige clase, y de ella se precargan sus parámetros;</li>
+      <li>si el valor está bajo el umbral, se sugiere gasto y se exige confirmación explícita;</li>
+      <li>se puede reclasificar hasta que el activo se capitaliza.</li>
+    </ul>
+  </li>
+  <li><strong>Costo:</strong> exige que el activo tenga valor (si no, remite a «Valorización»). Se registran los costos atribuibles y al fijar el costo, costo capitalizado = valor + Σ atribuibles.</li>
+  <li><strong>Capitalizar:</strong> escribe el asiento <code>CAPITALIZATION</code> por los atribuibles y fija los parámetros y el inicio de la depreciación (por defecto, el mes siguiente).</li>
+  <li><strong>Depreciación:</strong>
+    <ul>
+      <li>la cuota lineal es (costo − residual) / vida útil; en la acelerada, la vida útil se divide por 3;</li>
+      <li>la última cuota ajusta el redondeo para terminar exactamente en el residual;</li>
+      <li>los cierres van en orden, sin períodos futuros ni dobles, en una transacción con advisory lock;</li>
+      <li>anular el último cierre escribe una reversa por cada asiento.</li>
+    </ul>
+  </li>
+</ol>
+
+<h2>API y permisos</h2>
+<ul>
+  <li><strong>Rutas:</strong>
+    <ul>
+      <li><code>/asset-accounting</code>: pendientes, listado, clasificación, costos, fijar costo, capitalizar, parámetros y tabla proyectada;</li>
+      <li><code>/asset-depreciation-runs</code>: listado, detalle, cerrar y anular;</li>
+      <li><code>/asset-accounting-policy</code>: umbral y clases.</li>
+    </ul>
+  </li>
+  <li><strong>Permisos base:</strong> <code>asset-accounting:read|update</code>, <code>asset-capitalization:create</code>, <code>asset-depreciation:read|create|delete</code> y <code>asset-accounting-policy:read|update</code>.</li>
+</ul>
+
+<h2>Front</h2>
+<table>
+  <tr><th>Pantalla</th><th>Ruta</th><th>Permiso de pantalla</th></tr>
+  <tr><td>Clasificación Contable</td><td><code>/accounting/classification</code></td><td><code>accounting-classification:access</code></td></tr>
+  <tr><td>Determinar Costo</td><td><code>/accounting/cost</code></td><td><code>accounting-cost:access</code></td></tr>
+  <tr><td>Capitalizacion (ya creada)</td><td><code>/accounting-capitalization</code></td><td><code>accounting-capitalization:access</code></td></tr>
+  <tr><td>Depreciación</td><td><code>/accounting/depreciation</code></td><td><code>accounting-depreciation:access</code></td></tr>
+  <tr><td>Política Contable de Activos</td><td><code>/accounting/policy</code></td><td><code>accounting-policy:access</code></td></tr>
+</table>
+<p><strong>Aviso para Development:</strong> <code>accounting-capitalization:access</code> ya tiene los permisos incluidos que eligió el usuario, y la siembra no los pisa. Hay que agregarle <code>asset-accounting:read</code> y <code>asset-capitalization:create</code> desde «Permisos de Pantalla».</p>
+
+<h2>Verificación</h2>
+<ul>
+  <li><strong>Compilación y lint:</strong> <code>tsc</code> y ESLint.</li>
+  <li><strong>Tests unitarios del cálculo:</strong> lineal y acelerada, residual y ajuste de la última cuota.</li>
+  <li><strong>Integración:</strong>
+    <ul>
+      <li>umbral, costo sin valor, capitalización y saldo;</li>
+      <li>cierre, cierre fuera de orden y cierre doble en paralelo;</li>
+      <li>anulación, y vida útil completa hasta el residual.</li>
+    </ul>
+  </li>
+  <li><strong>Suite completa contra Testing</strong> y revisión de seguridad antes de commitear.</li>
+</ul>
+
+<h2>Resultado de la implementación</h2>
+<ul>
+  <li><strong>Verificación:</strong> suite completa contra Testing, 36 archivos y 317 tests OK, más 6 tests unitarios del cálculo y 5 de integración del ciclo contable.</li>
+  <li><strong>Desviación 1:</strong> <code>asset_kardex_entries.entry_type</code> se amplió de <code>VARCHAR(20)</code> a <code>VARCHAR(30)</code>, porque <code>DEPRECIATION_REVERSAL</code> tiene 21 caracteres. Solo se altera si hace falta, para no tomar el lock en cada arranque.</li>
+  <li><strong>Desviación 2:</strong> <code>GET /asset-depreciation-runs/next</code> da una vista previa del próximo cierre (período, activos y total) sin escribir nada.</li>
+  <li><strong>Desviación 3:</strong> se puede cerrar el mes en curso, no solo los terminados. El período actual se calcula en hora de Chile.</li>
+</ul>
+
+<footer class="doc-footer">Plan 007 · corporate-app · guardado en <code>.claude/planes/</code></footer>
+</div>
+</body>
+</html>

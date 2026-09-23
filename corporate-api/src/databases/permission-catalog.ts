@@ -227,6 +227,17 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   // Cada carga solo la ve su dueno o un admin.
   { resource: "asset-imports", action: "read", description: "Consultar el estado y el resultado de las cargas masivas de activos" },
   { resource: "asset-imports", action: "create", description: "Cargar activos en lote desde un CSV (crea activos y los asigna a usuarios): validarlo, iniciar la carga, reanudarla o cancelarla" },
+
+  // Gestion contable de activos (plan 007, ciclo ITIL). Admin-only por
+  // defecto: capitalizar, cerrar y anular cierres escriben en el Kardex.
+  { resource: "asset-accounting", action: "read", description: "Consultar la clasificacion, el costo y la capitalizacion contable de activos" },
+  { resource: "asset-accounting", action: "update", description: "Clasificar activos, registrar costos atribuibles y fijar parametros de depreciacion" },
+  { resource: "asset-capitalization", action: "create", description: "Capitalizar activos fijos (escribe en el Kardex)" },
+  { resource: "asset-depreciation", action: "read", description: "Consultar los cierres de depreciacion" },
+  { resource: "asset-depreciation", action: "create", description: "Cerrar un mes de depreciacion (escribe en el Kardex)" },
+  { resource: "asset-depreciation", action: "delete", description: "Anular el ultimo cierre de depreciacion (reversa en el Kardex)" },
+  { resource: "asset-accounting-policy", action: "read", description: "Consultar la politica contable de activos (umbral y clases)" },
+  { resource: "asset-accounting-policy", action: "update", description: "Definir la politica contable de activos (umbral y clases)" },
 ];
 
 export interface ScreenAccessCatalogEntry {
@@ -431,4 +442,34 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
   { resource: "asset-valuation-view", description: "Pantalla: Valorización de Activos", includes: ["asset-valuation:read"] },
   { resource: "asset-return-management", description: "Pantalla: Devoluciones de Activos", includes: ["asset-returns:read"] },
   { resource: "asset-bulk-import", description: "Pantalla: Carga Masiva de Activos", includes: ["asset-imports:read"] },
+
+  // Contabilidad > Gestion de Activos (plan 007)
+  {
+    resource: "accounting-classification",
+    description: "Pantalla: Clasificación Contable",
+    includes: ["asset-accounting:read", "asset-accounting:update", "asset-accounting-policy:read", "assets:read"],
+  },
+  {
+    resource: "accounting-cost",
+    description: "Pantalla: Determinar Costo",
+    includes: ["asset-accounting:read", "asset-accounting:update", "assets:read"],
+  },
+  // Ya existe en Development (creado desde Nueva Pantalla con otros
+  // includes): la siembra solo completa agrupadores sin includes, ahi hay
+  // que ajustarlo desde "Permisos de Pantalla".
+  {
+    resource: "accounting-capitalization",
+    description: "Pantalla: Capitalización",
+    includes: ["asset-accounting:read", "asset-capitalization:create", "assets:read"],
+  },
+  {
+    resource: "accounting-depreciation",
+    description: "Pantalla: Depreciación",
+    includes: ["asset-accounting:read", "asset-accounting:update", "asset-depreciation:read", "asset-depreciation:create"],
+  },
+  {
+    resource: "accounting-policy",
+    description: "Pantalla: Política Contable de Activos",
+    includes: ["asset-accounting-policy:read", "asset-accounting-policy:update"],
+  },
 ];
