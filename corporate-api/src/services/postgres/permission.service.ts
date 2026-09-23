@@ -5,6 +5,7 @@ import { RolePermissionModel } from "../../models/postgres/rolePermission.model"
 import { PermissionIncludeModel } from "../../models/postgres/permissionInclude.model";
 import { RoleModel } from "../../models/postgres/role.model";
 import { getRoleByIdOrThrow } from "./role.service";
+import { isCatalogScreenInclude } from "../../databases/permission-catalog";
 import { BadRequestError, ConflictError, NotFoundError, isUniqueConstraintError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
@@ -168,9 +169,18 @@ export async function addPermissionInclude(id: number, includedPermissionId: num
   return getPermissionIncludes(id);
 }
 
-// Quita un permiso base de un agrupador. Idempotente.
+// Quita un permiso base de un agrupador. Idempotente. Los del minimo del
+// catalogo no: la siembra los volveria a agregar en el proximo arranque, asi
+// que se rechaza con 409 en vez de "quitarlos" hasta el siguiente reinicio.
 export async function removePermissionInclude(id: number, includedPermissionId: number): Promise<void> {
-  await getAccessPermissionOrThrow(id);
+  const bundle = await getAccessPermissionOrThrow(id);
+  const included = await PermissionModel.findByPk(includedPermissionId);
+  if (included && isCatalogScreenInclude(bundle.resource, `${included.resource}:${included.action}`)) {
+    throw new ConflictError(
+      `'${included.resource}:${included.action}' es un permiso minimo de la pantalla '${bundle.resource}' ` +
+        "(catalogo del codigo) y no se puede quitar",
+    );
+  }
   await PermissionIncludeModel.destroy({ where: { permissionId: id, includedPermissionId } });
 }
 

@@ -249,9 +249,11 @@ export interface ScreenAccessCatalogEntry {
   description: string;
   // Permisos base ("recurso:accion") que la pantalla necesita: transcripcion
   // del REQUIRED_PERMISSIONS de su vista en corporate-front (ver MODULE_PAGES
-  // en routes/AppRoutes.tsx). Solo se siembran la PRIMERA vez (agrupador sin
-  // includes todavia): despues manda lo que el admin edite en "Permisos de
-  // Pantalla", el seed no lo pisa.
+  // en routes/AppRoutes.tsx). Son el MINIMO de la pantalla: cada arranque
+  // agrega los que falten (aditivo, sirve igual en un volumen limpio, en otro
+  // host o en una base sembrada con una version anterior del catalogo) y la
+  // API no deja quitarlos desde "Permisos de Pantalla". Lo que el admin
+  // agregue por encima de este minimo se conserva y se puede quitar.
   includes: string[];
 }
 
@@ -454,9 +456,8 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
     description: "Pantalla: Determinar Costo",
     includes: ["asset-accounting:read", "asset-accounting:update", "assets:read"],
   },
-  // Ya existe en Development (creado desde Nueva Pantalla con otros
-  // includes): la siembra solo completa agrupadores sin includes, ahi hay
-  // que ajustarlo desde "Permisos de Pantalla".
+  // Creado primero desde Nueva Pantalla en Development: la siembra le agrega
+  // este minimo y conserva los includes que se le dieron desde la UI.
   {
     resource: "accounting-capitalization",
     description: "Pantalla: Capitalización",
@@ -473,3 +474,9 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
     includes: ["asset-accounting-policy:read", "asset-accounting-policy:update"],
   },
 ];
+
+// true si "<bundleResource>:access" exige "<includedKey>" como parte de su
+// minimo del catalogo (ver ScreenAccessCatalogEntry.includes).
+export function isCatalogScreenInclude(bundleResource: string, includedKey: string): boolean {
+  return SCREEN_ACCESS_CATALOG.some((entry) => entry.resource === bundleResource && entry.includes.includes(includedKey));
+}
