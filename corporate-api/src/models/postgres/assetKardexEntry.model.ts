@@ -2,7 +2,15 @@ import { CreationOptional, DataTypes, InferAttributes, InferCreationAttributes, 
 import { postgres } from "../../databases/postgres/connection";
 import { AssetModel } from "./asset.model";
 
-export type AssetKardexEntryType = "ACQUISITION" | "ADJUSTMENT" | "WRITE_OFF";
+// CAPITALIZATION / DEPRECIATION / DEPRECIATION_REVERSAL: gestion contable
+// de activos (plan 007), ver assetAccounting.service.ts y assetDepreciation.service.ts.
+export type AssetKardexEntryType =
+  | "ACQUISITION"
+  | "ADJUSTMENT"
+  | "WRITE_OFF"
+  | "CAPITALIZATION"
+  | "DEPRECIATION"
+  | "DEPRECIATION_REVERSAL";
 
 // Libro contable de valorizacion de activos: INSERT-ONLY, un renglon por
 // movimiento -nunca se actualiza ni se borra un renglon existente (ver
@@ -37,7 +45,7 @@ AssetKardexEntryModel.init(
     id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
     assetId: { type: DataTypes.INTEGER, allowNull: false, field: "asset_id" },
     productId: { type: DataTypes.STRING(24), allowNull: true, field: "product_id" },
-    entryType: { type: DataTypes.STRING(20), allowNull: false, field: "entry_type" },
+    entryType: { type: DataTypes.STRING(30), allowNull: false, field: "entry_type" },
     entryDate: { type: DataTypes.DATE, allowNull: false, field: "entry_date" },
     unitCost: { type: DataTypes.DECIMAL(18, 2), allowNull: false, field: "unit_cost" },
     amount: { type: DataTypes.DECIMAL(18, 2), allowNull: false },

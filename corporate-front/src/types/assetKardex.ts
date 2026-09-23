@@ -1,5 +1,12 @@
 // Espejo de corporate-api/src/models/postgres/assetKardexEntry.model.ts (AssetKardexEntryAttributes).
-export type AssetKardexEntryType = "ACQUISITION" | "ADJUSTMENT" | "WRITE_OFF";
+// CAPITALIZATION / DEPRECIATION / DEPRECIATION_REVERSAL: gestion contable (plan 007).
+export type AssetKardexEntryType =
+  | "ACQUISITION"
+  | "ADJUSTMENT"
+  | "WRITE_OFF"
+  | "CAPITALIZATION"
+  | "DEPRECIATION"
+  | "DEPRECIATION_REVERSAL";
 
 export interface AssetKardexEntry {
   id: number;

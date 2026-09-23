@@ -35,6 +35,11 @@ import { inventoryCountRouter } from "./inventoryCount.routes";
 import { assetValuationRouter } from "./assetValuation.routes";
 import { assetReturnRouter } from "./assetReturn.routes";
 import { assetImportRouter } from "./assetImport.routes";
+import {
+  assetAccountingPolicyRouter,
+  assetAccountingRouter,
+  assetDepreciationRunRouter,
+} from "./assetAccounting.routes";
 import { notificationRouter } from "./notification.routes";
 import { previsionalInstitutionRouter } from "./previsionalInstitution.routes";
 import { previsionalProfileRouter } from "./previsionalProfile.routes";
@@ -101,6 +106,10 @@ apiRouter.use("/inventory-counts", inventoryCountRouter);
 apiRouter.use("/asset-valuation", assetValuationRouter);
 apiRouter.use("/asset-returns", assetReturnRouter);
 apiRouter.use("/asset-imports", assetImportRouter);
+// Gestion contable de activos (plan 007).
+apiRouter.use("/asset-accounting", assetAccountingRouter);
+apiRouter.use("/asset-depreciation-runs", assetDepreciationRunRouter);
+apiRouter.use("/asset-accounting-policy", assetAccountingPolicyRouter);
 
 // Resumen derivado de pendientes del usuario logeado (badge + push en
 // tiempo real, ver library/realtime/).
