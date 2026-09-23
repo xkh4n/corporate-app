@@ -34,6 +34,11 @@ import LinkSupplierProducts from "../pages/adquisiciones/supplierProducts/LinkSu
 import NuevaPantalla from "../pages/pantallas/NuevaPantalla";
 import AsignarPermisos from "../pages/pantallas/AsignarPermisos";
 import VerPantallas from "../pages/pantallas/VerPantallas";
+import ClasificacionContable from "../pages/contabilidad/ClasificacionContable";
+import DeterminarCosto from "../pages/contabilidad/DeterminarCosto";
+import Capitalizacion from "../pages/contabilidad/Capitalizacion";
+import Depreciacion from "../pages/contabilidad/Depreciacion";
+import PoliticaContable from "../pages/contabilidad/PoliticaContable";
 import {
   AsignarPermissionToRole,
   DeshabilitarRoles,
@@ -88,6 +93,12 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/assets/valuation": () => <AssetValuation />,
   "/assets/returns": () => <AssetReturns />,
   "/assets/import": () => <ImportAssets />,
+  // Contabilidad > Gestion de Activos (plan 007)
+  "/accounting/classification": () => <ClasificacionContable />,
+  "/accounting/cost": () => <DeterminarCosto />,
+  "/accounting-capitalization": () => <Capitalizacion />,
+  "/accounting/depreciation": () => <Depreciacion />,
+  "/accounting/policy": () => <PoliticaContable />,
   "/roles/create": () => <NuevoRole />,
   "/permissions/create": () => <NuevoPermiso />,
   "/permissions/read": () => <VerPermisos />,
