@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>006 — Permisos de pantalla (agrupadores) y vista Ver Pantallas</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:900px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.5rem; font-size:1.25rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  h3 { margin-top:1.6rem; font-size:1.05rem; }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }
+  th, td { border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  .flow { background:var(--block-bg); border:1px solid var(--border); border-radius:8px; padding:.8rem 1rem; font-family:Consolas,monospace; font-size:.85rem; white-space:pre-wrap; }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 006</span>
+  <h1>Permisos de pantalla (agrupadores) y vista «Ver Pantallas»</h1>
+  <div class="meta">corporate-app · corporate-api + corporate-front · Estado: aprobado, implementado (sin probar en navegador) · 2026-09-23</div>
+</header>
+
+<h2>Contexto</h2>
+<p>Cada vista del front exige varios permisos base, declarados a mano en el <code>REQUIRED_PERMISSIONS</code> de su archivo. Por ejemplo, «Autorizar Solicitud» exige 6. En cambio, <code>menu_items</code> guarda uno solo.</p>
+<p>Para habilitar una pantalla a un rol, el admin tiene que saber cuáles son esos permisos base y asignarlos uno por uno. Esa información no está en la base de datos.</p>
+<p>Se pidió una vista en el menú «Pantallas» que muestre qué exige cada pantalla. El usuario propuso además simplificar la asignación a un permiso por pantalla.</p>
+
+<h2>Decisiones confirmadas</h2>
+<ul>
+  <li><strong>Permiso agrupador por pantalla</strong>, con la acción nueva <code>access</code>. Por ejemplo, <code>ccaf-mutual:access</code> incluye los permisos base que la pantalla necesita. Al rol se le asigna solo ese permiso, y el backend lo expande al validar.</li>
+  <li><strong>Acción <code>access</code></strong>, distinta de <code>activate</code>. <code>activate</code> ya significa «habilitar algo desactivado» (<code>roles:activate</code>).</li>
+  <li><strong>Se siembran los agrupadores</strong> de todas las pantallas existentes. Los roles actuales reciben el agrupador si ya tienen todos sus permisos base.</li>
+  <li><strong>Descartadas:</strong>
+    <ul>
+      <li><strong>Lista de permisos en <code>menu_items</code>:</strong> no reduce la asignación, porque el rol igual necesita cada permiso base.</li>
+      <li><strong>Permiso exclusivo sin expansión:</strong> los endpoints responderían 403, salvo que cada uno aceptara los permisos de las pantallas que lo usan. Eso ata la API al front.</li>
+    </ul>
+  </li>
+</ul>
+
+<h2>Hechos del código que condicionan el diseño</h2>
+<ul>
+  <li><strong>La seguridad real está en cada endpoint</strong> (<code>authorize(resource, action)</code>). <code>REQUIRED_PERMISSIONS</code> en el front solo decide si se muestra la vista.</li>
+  <li><strong><code>getPermissionsForRole</code> sirve dos propósitos distintos:</strong>
+    <ul>
+      <li>lo <em>efectivo</em> (<code>/auth/me</code>, árbol del menú, <code>GET /users/:id/access</code>);</li>
+      <li>lo <em>asignado directamente</em> («Modificar Permisos», <code>GET /roles/:id/permissions</code>).</li>
+    </ul>
+    Con agrupadores se separa en dos funciones.
+  </li>
+  <li><strong><code>getRoleIdsWithPermission</code></strong> arma el listado de aprobadores de solicitudes. Tiene que considerar a los roles que tienen el permiso vía agrupador.</li>
+  <li><strong><code>admin</code> tiene bypass por nombre</strong> en <code>authorize()</code> y en el menú. No cambia.</li>
+</ul>
+
+<h2>Reglas del modelo</h2>
+<ul>
+  <li>Solo un permiso <code>access</code> puede incluir otros.</li>
+  <li>Solo puede incluir permisos que <strong>no</strong> son <code>access</code>: un nivel, sin anidar, sin ciclos posibles.</li>
+</ul>
+
+<h2>Backend (corporate-api)</h2>
+<ol>
+  <li><strong>Esquema:</strong>
+    <ul>
+      <li>agregar <code>'access'</code> al CHECK <code>permissions_action_allowed</code>;</li>
+      <li>tabla nueva <code>permission_includes (permission_id, included_permission_id)</code>, con FK a <code>permissions</code> y <code>ON DELETE CASCADE</code>, PK compuesta y <code>created_at</code>;</li>
+      <li>modelo <code>PermissionIncludeModel</code> con sus asociaciones;</li>
+      <li><code>"access"</code> en <code>PermissionAction</code> y en la validación de <code>POST /permissions</code>.</li>
+    </ul>
+  </li>
+  <li><strong>Expansión</strong> (<code>permission.service.ts</code>):
+    <ul>
+      <li><code>getAssignedPermissionsForRole</code> devuelve lo directo. La usan <code>GET /roles/:id/permissions</code> y las altas y bajas.</li>
+      <li><code>getEffectivePermissionsForRole</code> devuelve lo directo más lo incluido. La usan <code>/auth/me</code>, el menú y <code>/users/:id/access</code>.</li>
+      <li><code>hasPermission</code> resuelve lo directo o lo incluido en una sola consulta, porque corre en cada request.</li>
+      <li><code>getRoleIdsWithPermission</code> une ambos caminos.</li>
+      <li><code>createPermission</code> acepta <code>includedPermissionIds</code> solo para <code>access</code>.</li>
+      <li>Funciones nuevas <code>addPermissionInclude</code> y <code>removePermissionInclude</code>, con validación de reglas (400).</li>
+      <li><code>listPermissions</code> trae <code>includedPermissions</code>.</li>
+    </ul>
+  </li>
+  <li><strong>Rutas:</strong> <code>POST /permissions/:id/includes</code> y <code>DELETE /permissions/:id/includes/:includedId</code>. Exigen <code>permissions:update</code>, porque cambiar un agrupador cambia el acceso de todos los roles que lo tienen.</li>
+  <li><strong>Catálogo y siembra:</strong>
+    <ul>
+      <li><code>SCREEN_ACCESS_CATALOG</code> tiene una entrada por vista de <code>MODULE_PAGES</code>. Sus <code>includes</code> se transcriben del <code>REQUIRED_PERMISSIONS</code> actual, con nombres en inglés.</li>
+      <li>Las hojas del menú con vista implementada pasan a <code>&lt;slug&gt;:access</code>.</li>
+      <li><code>seedPermissions</code>:
+        <ol>
+          <li>inserta los agrupadores;</li>
+          <li>para cada uno <strong>sin includes todavía</strong>, siembra sus includes y se lo otorga a cada rol no-admin que ya tenga todos sus permisos base directos.</li>
+        </ol>
+        Así respeta lo que el admin edite después en caliente, y los roles no pierden pantallas.</li>
+    </ul>
+  </li>
+</ol>
+
+<h2>Frontend (corporate-front)</h2>
+<ol>
+  <li><strong>Tipos y servicios:</strong> <code>"access"</code> en <code>PermissionAction</code>, <code>includedPermissions</code> en <code>Permission</code>, y <code>addInclude</code>/<code>removeInclude</code> en <code>permissionService</code>.</li>
+  <li><strong>Nuevo Permiso:</strong> con la acción <code>access</code> aparece la selección de permisos base, con checkbox y búsqueda.</li>
+  <li><strong>«Permisos de Pantalla»</strong> (<code>/permissions/access</code>, menú Permisos): se elige un agrupador y se agregan o quitan sus permisos incluidos, con confirmación.</li>
+  <li><strong>«Ver Pantallas»</strong> (<code>/menu-items/read</code>, menú Pantallas, <code>menu-items:read</code>): tabla con pantalla, ruta, estado, permiso del menú y lo que incluye. Marca los ítems cuyo permiso todavía no es <code>access</code>.</li>
+  <li><strong>Ajustes:</strong> Ver Permisos muestra la columna «Incluye», y Ver Rol / Deshabilitar / Habilitar muestran lo incluido bajo cada agrupador.</li>
+</ol>
+
+<h2>Límites conocidos</h2>
+<ul>
+  <li><strong>El alcance sigue siendo por endpoint:</strong> quien tiene <code>ccaf-mutual:access</code> puede leer <code>previsional-institutions</code> desde cualquier lado.</li>
+  <li><strong>Un ítem de menú creado desde el front solo enlaza una vista que ya existe en el código.</strong></li>
+  <li><strong>Efecto aceptado de la migración:</strong> un rol que veía un ítem de menú con un solo permiso, pero no tenía los demás (la vista le daba 403), deja de ver ese ítem.</li>
+</ul>
+
+<h2>Verificación</h2>
+<ul>
+  <li><strong>Compilación, lint y tests unitarios:</strong>
+    <ul>
+      <li><code>tsc</code> de la API;</li>
+      <li><code>tsc -p tsconfig.app.json</code> del front;</li>
+      <li>ESLint;</li>
+      <li>unit tests de la API.</li>
+    </ul>
+  </li>
+  <li><strong>Integración</strong> (<code>permission.service.integration.test.ts</code>):
+    <ul>
+      <li>un rol con solo <code>X:access</code> pasa <code>hasPermission</code> para lo incluido y no para lo demás;</li>
+      <li>el listado de aprobadores incluye a un rol que tiene el permiso vía agrupador;</li>
+      <li>un <code>access</code> dentro de otro responde 400.</li>
+    </ul>
+  </li>
+  <li><strong>Manual, tras reconstruir:</strong>
+    <ul>
+      <li>los roles existentes conservan su menú;</li>
+      <li>un rol con solo <code>request-approval:access</code> opera «Autorizar Solicitud» sin 403;</li>
+      <li>al quitar un include, la vista de ese rol pasa a 403;</li>
+      <li>«Ver Pantallas» lista cada pantalla con sus permisos.</li>
+    </ul>
+  </li>
+</ul>
+
+<h2>Resultado de la implementación</h2>
+<ul>
+  <li><strong>Pantallas sembradas:</strong> 40, las 38 existentes más «Permisos de Pantalla» y «Ver Pantallas».</li>
+  <li><strong>Verificación:</strong> suite completa contra Testing, 33 archivos y 301 tests OK, incluido el test de integración nuevo.</li>
+  <li><strong>Desviación 1:</strong> «Asignar Permisos» incluye además <code>menu-items:update</code>. Era el permiso de su ítem de menú y la vista todavía es un stub.</li>
+  <li><strong>Desviación 2:</strong> <code>GET /permissions/:id/includes</code>, abierto como <code>GET /permissions</code>, e índice <code>idx_permission_includes_included</code> para la expansión inversa.</li>
+  <li><strong>Desviación 3:</strong> la siembra de includes y los otorgamientos van en una transacción. Si el proceso muere entre ambos, el siguiente arranque repite los dos.</li>
+</ul>
+
+<footer class="doc-footer">Plan 006 · corporate-app · guardado en <code>.claude/planes/</code></footer>
+</div>
+</body>
+</html>

@@ -58,7 +58,7 @@ export async function getAccess(req: Request, res: Response, next: NextFunction)
     const { passwordHash, ...safeUser } = user.get({ plain: true });
     const [role, permissions] = await Promise.all([
       roleService.getRoleByIdOrThrow(safeUser.roleId),
-      permissionService.getPermissionsForRole(safeUser.roleId),
+      permissionService.getEffectivePermissionsForRole(safeUser.roleId),
     ]);
     sendOk(res, { user: safeUser, role, permissions }, "Acceso del usuario obtenido exitosamente");
   } catch (err) {

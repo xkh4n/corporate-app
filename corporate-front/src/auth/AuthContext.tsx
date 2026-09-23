@@ -123,6 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout,
     changePassword,
     can,
+    refreshSession: loadMe,
   };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

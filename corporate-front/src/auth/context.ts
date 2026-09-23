@@ -14,6 +14,9 @@ export interface AuthContextValue {
   logout: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   can: (key: PermissionKey) => boolean;
+  // Vuelve a pedir /auth/me y /auth/menu sin cerrar la sesion -ej. despues
+  // de crear un item de menu, para que aparezca en el sidebar sin recargar.
+  refreshSession: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);

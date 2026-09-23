@@ -14,22 +14,30 @@ export interface PermissionCatalogEntry {
   grantToUser?: boolean;
 }
 
-// Fuente unica de verdad del catalogo de permisos: sembrado en
-// databases/seed.ts (seedPermissions) y consumido por authorize(resource,
-// action) en cada *.routes.ts. Un resource nuevo se agrega aca + se gatea en
-// su router; el catalogo es idempotente (insert con ignoreDuplicates), asi
-// que agregar una fila nueva y redeployar alcanza, no hace falta migracion
-// de datos manual.
+// Catalogo BASE de permisos: sembrado en databases/seed.ts (seedPermissions)
+// y consumido por authorize(resource, action) en cada *.routes.ts. Los
+// permisos que gatea codigo del backend van aca (el router los necesita
+// existir desde el primer arranque); los que solo gatean pantallas creadas
+// en caliente (menu_items) se dan de alta via POST /permissions ("Nuevo
+// Permiso"), sin tocar este archivo ni recrear contenedores. El seed es
+// aditivo (ON CONFLICT (resource,action) DO UPDATE description): nunca borra
+// los permisos creados por API.
 export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   // Roles y permisos: gestion de acceso, admin-only por definicion.
   { resource: "roles", action: "read", description: "Consultar roles" },
   { resource: "roles", action: "create", description: "Crear roles" },
   { resource: "roles", action: "update", description: "Editar roles y sus permisos" },
   { resource: "roles", action: "delete", description: "Desactivar roles" },
+  // Reactivar un rol desactivado (PATCH /roles/:id/activate): exige ademas
+  // "roles:update" -ver role.routes.ts. Separado de update para poder
+  // otorgarlo solo a usuarios puntuales.
+  { resource: "roles", action: "activate", description: "Habilitar roles" },
 
   { resource: "permissions", action: "create", description: "Crear Permiso" },
   { resource: "permissions", action: "read", description: "Ver Permiso" },
-  { resource: "permissions", action: "update", description: "Actualizar Permiso" },
+  // Asignar/quitar permisos a un rol (GET/PUT/POST/DELETE
+  // /roles/:id/permissions, ver role.routes.ts).
+  { resource: "permissions", action: "update", description: "Asignar permisos a roles" },
   { resource: "permissions", action: "delete", description: "Eliminar Permiso" },
 
   // Catalogo de menu de navegacion: admin-only por el mismo motivo que
@@ -219,4 +227,208 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   // Cada carga solo la ve su dueno o un admin.
   { resource: "asset-imports", action: "read", description: "Consultar el estado y el resultado de las cargas masivas de activos" },
   { resource: "asset-imports", action: "create", description: "Cargar activos en lote desde un CSV (crea activos y los asigna a usuarios): validarlo, iniciar la carga, reanudarla o cancelarla" },
+];
+
+export interface ScreenAccessCatalogEntry {
+  // Slug de la pantalla en ingles (glosario del proyecto). El permiso queda
+  // como "<resource>:access" y es el permissionKey de su hoja en
+  // menu-catalog.ts. No debe repetir un resource base (ej. "asset-kardex"),
+  // por eso los sufijos -view/-management donde chocaban.
+  resource: string;
+  description: string;
+  // Permisos base ("recurso:accion") que la pantalla necesita: transcripcion
+  // del REQUIRED_PERMISSIONS de su vista en corporate-front (ver MODULE_PAGES
+  // en routes/AppRoutes.tsx). Solo se siembran la PRIMERA vez (agrupador sin
+  // includes todavia): despues manda lo que el admin edite en "Permisos de
+  // Pantalla", el seed no lo pisa.
+  includes: string[];
+}
+
+// Permisos de pantalla (agrupadores, plan 006): al rol se le asigna uno por
+// pantalla y hasPermission() lo expande a sus permisos base, sin tener que
+// asignar cada uno. Los authorize() de la API y los REQUIRED_PERMISSIONS del
+// front no cambian: se cumplen solos porque la expansion llega a /auth/me.
+export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
+  // Gerencia de Personas
+  {
+    resource: "employee-onboarding",
+    description: "Pantalla: Nuevo Ingreso",
+    includes: [
+      "persons:create",
+      "addresses:create",
+      "employees:create",
+      "employees:read",
+      "employee-contracts:create",
+      "previsional-institutions:read",
+      "previsional-profiles:update",
+      "users:create",
+    ],
+  },
+  { resource: "position-creation", description: "Pantalla: Nuevo Cargo", includes: ["roles:read", "employees:create"] },
+  {
+    resource: "afp-assignment",
+    description: "Pantalla: Asignar AFP",
+    includes: ["employees:read", "previsional-institutions:read", "previsional-profiles:read", "previsional-profiles:update"],
+  },
+  {
+    resource: "health-plan-assignment",
+    description: "Pantalla: Asignar Salud",
+    includes: ["employees:read", "previsional-institutions:read", "previsional-profiles:read", "previsional-profiles:update"],
+  },
+  {
+    resource: "ccaf-mutual",
+    description: "Pantalla: CCAF y Mutualidad",
+    includes: ["previsional-institutions:read", "previred-settings:read", "previred-settings:update"],
+  },
+  {
+    resource: "payroll-configuration",
+    description: "Pantalla: Configuración de Remuneraciones",
+    includes: ["payroll-settings:read", "payroll-settings:update", "payroll-parameters:read", "payroll-parameters:update"],
+  },
+  { resource: "role-creation", description: "Pantalla: Nuevo Rol", includes: ["roles:create", "permissions:read"] },
+  { resource: "role-view", description: "Pantalla: Ver Rol", includes: ["roles:read"] },
+
+  // Gerencia de TI > Permisos
+  { resource: "permission-creation", description: "Pantalla: Nuevo Permiso", includes: ["permissions:create"] },
+  { resource: "permission-view", description: "Pantalla: Ver Permisos", includes: ["permissions:read"] },
+  {
+    resource: "role-permission-assignment",
+    description: "Pantalla: Modificar Permisos",
+    includes: ["permissions:update", "roles:read"],
+  },
+  {
+    resource: "access-permission-management",
+    description: "Pantalla: Permisos de Pantalla",
+    includes: ["permissions:update"],
+  },
+  { resource: "role-deactivation", description: "Pantalla: Deshabilitar Roles", includes: ["roles:read", "roles:delete"] },
+  {
+    resource: "role-activation",
+    description: "Pantalla: Habilitar Roles",
+    includes: ["roles:read", "roles:update", "roles:activate"],
+  },
+
+  // Gerencia de TI > Pantallas
+  { resource: "screen-view", description: "Pantalla: Ver Pantallas", includes: ["menu-items:read"] },
+  // permissions:create para crear el permiso de pantalla desde la misma vista
+  // (sin el, la vista solo deja elegir uno existente). GET /menu-items acepta
+  // create, no hace falta menu-items:read.
+  {
+    resource: "screen-creation",
+    description: "Pantalla: Nueva Pantalla",
+    includes: ["menu-items:create", "permissions:create"],
+  },
+  // menu-items:update ademas de lo que exige la vista hoy (create + roles:read,
+  // vista todavia sin implementar): era el permiso de su item de menu y es su
+  // proposito real.
+  {
+    resource: "screen-permission-assignment",
+    description: "Pantalla: Asignar Permisos",
+    includes: ["menu-items:create", "menu-items:update", "roles:read"],
+  },
+
+  // Adquisiciones
+  {
+    resource: "supplier-creation",
+    description: "Pantalla: Crear Proveedor",
+    includes: ["business-partners:create", "suppliers:create", "supplier-service-types:create", "supplier-delivery-terms:create"],
+  },
+  { resource: "quote-request", description: "Pantalla: Solicitar Cotización", includes: ["purchase-requests:read", "quotes:create"] },
+  {
+    resource: "quote-upload",
+    description: "Pantalla: Cargar Cotizaciones",
+    includes: [
+      "purchase-requests:read",
+      "purchase-request-lines:read",
+      "quotes:read",
+      "quotes:create",
+      "suppliers:read",
+      "products:read",
+      "supplier-products:read",
+    ],
+  },
+  {
+    resource: "purchase-order-sending",
+    description: "Pantalla: Enviar Orden de Compra",
+    includes: ["purchase-requests:read", "purchase-orders:read", "quotes:create", "suppliers:read", "supplier-contacts:read"],
+  },
+  { resource: "product-creation", description: "Pantalla: Nuevo Producto", includes: ["products:create"] },
+  { resource: "product-list", description: "Pantalla: Ver Productos", includes: ["products:read"] },
+  {
+    resource: "supplier-product-linking",
+    description: "Pantalla: Vincular Productos a Proveedor",
+    includes: ["suppliers:read", "products:read", "supplier-products:read", "supplier-products:create", "supplier-products:delete"],
+  },
+  { resource: "category-creation", description: "Pantalla: Nueva Categoria", includes: ["product-categories:create"] },
+  { resource: "category-view", description: "Pantalla: Ver Categorias", includes: ["product-categories:read"] },
+  { resource: "category-update", description: "Pantalla: Actualizar Categorias", includes: ["product-categories:update"] },
+
+  // Solicitudes de compra
+  {
+    resource: "purchase-request-creation",
+    description: "Pantalla: Nueva Solicitud",
+    includes: ["purchase-requests:create", "purchase-request-lines:create"],
+  },
+  {
+    resource: "request-approval",
+    description: "Pantalla: Autorizar Solicitud",
+    includes: ["purchase-requests:approve", "purchase-request-lines:read", "purchase-request-lines:update"],
+  },
+  {
+    resource: "quote-approval",
+    description: "Pantalla: Aprobar Cotización",
+    includes: [
+      "purchase-requests:approve",
+      "purchase-requests:read",
+      "purchase-request-lines:read",
+      "quotes:read",
+      "authorizations:create",
+      "suppliers:read",
+    ],
+  },
+  {
+    resource: "purchase-order-attachment",
+    description: "Pantalla: Adjuntar Orden de Compra",
+    includes: [
+      "purchase-requests:create",
+      "purchase-requests:read",
+      "quotes:read",
+      "purchase-orders:read",
+      "purchase-orders:create",
+      "purchase-orders:update",
+      "products:read",
+      "suppliers:read",
+    ],
+  },
+  {
+    resource: "goods-receipt",
+    description: "Pantalla: Recepcionar Mercadería",
+    includes: [
+      "purchase-requests:read",
+      "purchase-orders:read",
+      "goods-receipts:read",
+      "goods-receipts:create",
+      "authorizations:read",
+      "authorizations:create",
+      "suppliers:read",
+    ],
+  },
+  {
+    resource: "request-asset-status",
+    description: "Pantalla: Estado de Activos por Solicitud",
+    includes: ["purchase-requests:read", "assets:read"],
+  },
+
+  // Activos
+  { resource: "asset-assignment", description: "Pantalla: Asignar Activos", includes: ["assets:read", "asset-movements:create"] },
+  { resource: "asset-labels", description: "Pantalla: Etiquetas de Activos", includes: ["assets:read"] },
+  {
+    resource: "asset-kardex-view",
+    description: "Pantalla: Kardex de Activos",
+    includes: ["asset-kardex:read", "assets:read", "products:read"],
+  },
+  { resource: "inventory-taking", description: "Pantalla: Toma de Inventario", includes: ["inventory-counts:read"] },
+  { resource: "asset-valuation-view", description: "Pantalla: Valorización de Activos", includes: ["asset-valuation:read"] },
+  { resource: "asset-return-management", description: "Pantalla: Devoluciones de Activos", includes: ["asset-returns:read"] },
+  { resource: "asset-bulk-import", description: "Pantalla: Carga Masiva de Activos", includes: ["asset-imports:read"] },
 ];
