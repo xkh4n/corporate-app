@@ -10,6 +10,7 @@ import "./../models/mssql/passwordHistory.model";
 import "./../models/postgres/role.model";
 import "./../models/postgres/permission.model";
 import "./../models/postgres/rolePermission.model";
+import "./../models/postgres/permissionInclude.model";
 import "./../models/postgres/menuItem.model";
 
 // Geografia (country -> city -> states)

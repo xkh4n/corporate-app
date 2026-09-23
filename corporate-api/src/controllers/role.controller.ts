@@ -13,7 +13,12 @@ export const createRoleSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-export const updateRoleSchema = createRoleSchema.partial();
+// Sin isActive: habilitar/deshabilitar tienen sus propias rutas y permisos
+// (PATCH /:id/activate con roles:update+roles:activate, DELETE /:id con
+// roles:delete). Si PUT lo aceptara, cualquiera con roles:update podria
+// saltarse ambos. .strict() para que un isActive mandado igual sea un 400
+// explicito y no se descarte en silencio.
+export const updateRoleSchema = createRoleSchema.omit({ isActive: true }).partial().strict();
 
 export const setRolePermissionsSchema = z.object({
   permissionIds: z.array(z.number().int().positive()),
@@ -62,6 +67,15 @@ export async function update(req: Request, res: Response, next: NextFunction): P
   }
 }
 
+export async function activate(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const role = await roleService.activateRole(Number(req.params.id));
+    sendOk(res, role, "Rol habilitado exitosamente");
+  } catch (err) {
+    next(err);
+  }
+}
+
 // Ademas de marcar isActive=false (hasPermission ya lo exige, ver
 // permission.service.ts), invalida de inmediato la sesion/access-token de
 // cada usuario que tenia este rol -sin esto, alguien con una sesion ya
@@ -88,7 +102,7 @@ export async function deactivate(req: Request, res: Response, next: NextFunction
 
 export async function getPermissions(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const permissions = await permissionService.getPermissionsForRole(Number(req.params.id));
+    const permissions = await permissionService.getAssignedPermissionsForRole(Number(req.params.id));
     sendOk(res, permissions, "Permisos del rol obtenidos exitosamente");
   } catch (err) {
     next(err);

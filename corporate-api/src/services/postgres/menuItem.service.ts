@@ -1,8 +1,8 @@
 import { Op } from "sequelize";
 import { MenuItemModel } from "../../models/postgres/menuItem.model";
 import { PermissionModel } from "../../models/postgres/permission.model";
-import { getPermissionsForRole } from "./permission.service";
-import { BadRequestError, ConflictError, NotFoundError } from "../../library/errors";
+import { getEffectivePermissionsForRole } from "./permission.service";
+import { BadRequestError, ConflictError, NotFoundError, isUniqueConstraintError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
@@ -39,6 +39,25 @@ async function assertParentIsValid(parentId: number): Promise<void> {
   }
 }
 
+// label es UNIQUE en la tabla (clave estable del seed, ver menu-catalog.ts)
+// y link no lo es, pero dos items activos con el mismo link duplicarian la
+// ruta en el front (AppRoutes arma una <Route> por link). Se chequean antes
+// para responder 409 con un mensaje claro en vez del 500 de la UNIQUE.
+async function assertLabelAndLinkAvailable(
+  data: { label?: string; link?: string | null },
+  excludeId?: number,
+): Promise<void> {
+  const notSelf = excludeId !== undefined ? { id: { [Op.ne]: excludeId } } : {};
+  if (data.label) {
+    const byLabel = await MenuItemModel.findOne({ where: { label: data.label, ...notSelf } });
+    if (byLabel) throw new ConflictError(`Ya existe un item de menu llamado '${data.label}'`);
+  }
+  if (data.link) {
+    const byLink = await MenuItemModel.findOne({ where: { link: data.link, isActive: true, ...notSelf } });
+    if (byLink) throw new ConflictError(`La ruta '${data.link}' ya la usa el item de menu '${byLink.label}'`);
+  }
+}
+
 // "recurso:accion" -> id real en permissions. El regex del controller
 // (PERMISSION_KEY_REGEX) ya garantiza un solo ":", separar por split(":")
 // es seguro incluso con resource/action que traen guiones propios
@@ -70,10 +89,18 @@ export async function createMenuItem(data: MenuItemCreationAttributes): Promise<
     await assertParentIsValid(data.parentId);
   }
 
+  await assertLabelAndLinkAvailable(data);
+
   const { permissionKey, ...rest } = data;
   const permissionId = permissionKey ? await resolvePermissionId(permissionKey) : undefined;
 
-  return MenuItemModel.create({ ...rest, permissionId });
+  try {
+    return await MenuItemModel.create({ ...rest, permissionId });
+  } catch (err) {
+    // Carrera entre dos altas con el mismo label: la UNIQUE es la que manda.
+    if (isUniqueConstraintError(err)) throw new ConflictError(`Ya existe un item de menu llamado '${data.label}'`);
+    throw err;
+  }
 }
 
 export async function updateMenuItem(id: number, data: MenuItemUpdateAttributes): Promise<MenuItemModel> {
@@ -83,6 +110,13 @@ export async function updateMenuItem(id: number, data: MenuItemUpdateAttributes)
     await assertParentIsValid(data.parentId);
     await assertNoCycle(id, data.parentId);
   }
+  await assertLabelAndLinkAvailable(
+    {
+      label: data.label !== menuItem.label ? data.label : undefined,
+      link: data.link !== menuItem.link ? data.link : undefined,
+    },
+    id,
+  );
 
   const { permissionKey, ...rest } = data;
   const permissionId = permissionKey ? await resolvePermissionId(permissionKey) : undefined;
@@ -122,7 +156,7 @@ export async function getMenuTreeForRole(roleId: number, isAdmin: boolean): Prom
 
   let permissionIds: Set<number> | null = null;
   if (!isAdmin) {
-    const permissions = await getPermissionsForRole(roleId);
+    const permissions = await getEffectivePermissionsForRole(roleId);
     permissionIds = new Set(permissions.map((p) => p.id));
   }
 
