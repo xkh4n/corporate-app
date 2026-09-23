@@ -161,3 +161,40 @@ export async function createManualEntry(input: CreateManualKardexEntryInput): Pr
     );
   });
 }
+
+// Asientos de la gestion contable (plan 007): CAPITALIZATION suma los costos
+// atribuibles al capitalizar, DEPRECIATION resta la cuota de un cierre mensual
+// y DEPRECIATION_REVERSAL la devuelve al anular el ultimo cierre. "amount" va
+// con signo; el saldo se calcula bajo el mismo lock que el resto de los
+// asientos. SIEMPRE dentro de la transaccion de la operacion que lo origina.
+export async function recordAccountingEntry(
+  input: {
+    assetId: number;
+    entryType: "CAPITALIZATION" | "DEPRECIATION" | "DEPRECIATION_REVERSAL";
+    amount: number;
+    reference?: string | null;
+    notes?: string | null;
+    createdBy?: number | null;
+  },
+  transaction: Transaction,
+): Promise<AssetKardexEntryModel> {
+  const asset = await getAssetByIdOrThrow(input.assetId, transaction);
+  const previousBalance = await lockAndGetPreviousBalance(input.assetId, transaction);
+  const amount = input.amount.toFixed(2);
+  const balance = (previousBalance + Number(amount)).toFixed(2);
+  return AssetKardexEntryModel.create(
+    {
+      assetId: input.assetId,
+      productId: asset.productId,
+      entryType: input.entryType,
+      entryDate: new Date(),
+      unitCost: Math.abs(input.amount).toFixed(2),
+      amount,
+      balance,
+      reference: input.reference ?? null,
+      notes: input.notes ?? null,
+      createdBy: input.createdBy ?? null,
+    },
+    { transaction },
+  );
+}

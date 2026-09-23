@@ -376,6 +376,52 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     permissionKey: "purchase-order-attachment:access",
     sortOrder: 60,
   },
+  // Contabilidad > Gestion de Activos (plan 007). Mismos labels que el
+  // usuario ya creo desde "Nueva Pantalla" en Development (la siembra hace
+  // upsert por label y adopta esas filas); "Capitalizacion" va sin tilde,
+  // igual que en la BD.
+  { label: "Contabilidad", icon: "IoCashSharp", sortOrder: 30 },
+  { label: "Gestión de Activos", icon: "IoDesktop", parentLabel: "Contabilidad", sortOrder: 10 },
+  {
+    label: "Clasificación Contable",
+    icon: "IoGitBranchOutline",
+    link: "/accounting/classification",
+    parentLabel: "Gestión de Activos",
+    permissionKey: "accounting-classification:access",
+    sortOrder: 10,
+  },
+  {
+    label: "Determinar Costo",
+    icon: "IoCalculatorOutline",
+    link: "/accounting/cost",
+    parentLabel: "Gestión de Activos",
+    permissionKey: "accounting-cost:access",
+    sortOrder: 20,
+  },
+  {
+    label: "Capitalizacion",
+    icon: "IoCashOutline",
+    link: "/accounting-capitalization",
+    parentLabel: "Gestión de Activos",
+    permissionKey: "accounting-capitalization:access",
+    sortOrder: 30,
+  },
+  {
+    label: "Depreciación",
+    icon: "IoTrendingDownOutline",
+    link: "/accounting/depreciation",
+    parentLabel: "Gestión de Activos",
+    permissionKey: "accounting-depreciation:access",
+    sortOrder: 40,
+  },
+  {
+    label: "Política Contable de Activos",
+    icon: "IoOptionsOutline",
+    link: "/accounting/policy",
+    parentLabel: "Gestión de Activos",
+    permissionKey: "accounting-policy:access",
+    sortOrder: 50,
+  },
 ];
 
 // Items que salieron de MENU_CATALOG pero que ya pueden existir en
