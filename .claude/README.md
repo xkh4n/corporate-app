@@ -18,6 +18,31 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-23 (5) — La siembra garantiza el mínimo de cada pantalla
+
+### Contexto
+Lo que se ajustaba a mano en «Permisos de Pantalla» se perdía al levantar con volúmenes limpios o en otro host.
+Y al revés: una pantalla creada antes desde la UI (Capitalizacion en Development) nunca recibía los includes del
+catálogo, porque la siembra solo completaba agrupadores sin includes.
+
+### Hecho
+- **Mínimo de cada pantalla:** los `includes` de `SCREEN_ACCESS_CATALOG` pasan a ser el mínimo de la pantalla.
+  `seedScreenAccessIncludes` agrega en **cada arranque** los que falten y nunca quita nada: lo agregado desde la
+  UI se conserva. El otorgamiento a roles existentes sigue siendo solo la primera vez.
+- **No se pueden quitar:** `removePermissionInclude` responde 409 si se intenta quitar un include del mínimo del
+  catálogo (`isCatalogScreenInclude`). Antes la siembra lo habría devuelto en silencio en el siguiente arranque.
+- **Consecuencia:** Capitalizacion recibe `asset-accounting:read`, `asset-capitalization:create` y `assets:read`
+  al reiniciar la API de Development, sin pasos manuales. Sus otros 7 includes siguen ahí.
+- **Tests:** el de siembra ahora exige todos los includes del catálogo. Uno nuevo reproduce el caso de
+  Development: completa sin quitar lo de la UI, lo de la UI se puede quitar y el mínimo responde 409. Suite
+  completa: 36 archivos, 318 tests OK.
+
+### Límite
+Sacar un include del catálogo **no** lo borra de las bases ya sembradas (la siembra solo agrega). Eso sigue
+siendo manual desde «Permisos de Pantalla».
+
+---
+
 ## 2026-09-23 (4) — Gestión contable de activos: clasificación, costo, capitalización y depreciación (plan 007)
 
 ### Contexto
@@ -71,9 +96,6 @@ Plan: `.claude/planes/007-gestion-contable-activos.html`.
   - dos cierres simultáneos que dejan uno solo.
 
 ### Pendiente
-- **Development:** `accounting-capitalization:access` ya existía con otros permisos incluidos y la siembra no los
-  pisa. Hay que agregarle `asset-accounting:read`, `asset-capitalization:create` y `assets:read` desde
-  «Permisos de Pantalla».
 - **Prueba en navegador.**
 
 ### Revisión de seguridad
