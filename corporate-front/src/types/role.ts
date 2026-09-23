@@ -14,4 +14,6 @@ export interface RoleCreateInput {
   isActive?: boolean;
 }
 
-export type RoleUpdateInput = Partial<RoleCreateInput>;
+// Sin isActive: PUT /roles/:id lo rechaza (400). Habilitar/deshabilitar van
+// por roleService.activate / roleService.deactivate.
+export type RoleUpdateInput = Partial<Omit<RoleCreateInput, "isActive">>;

@@ -7,9 +7,12 @@ import { showSuccessToast } from "../../components/Toast";
 import type { Role, Permission } from "../../types";
 import { roleService, permissionService } from "../../services";
 
-const REQUIRED_PERMISSIONS = ["roles:update", "permissions:read"] as const;
+// "permissions:update" gatea GET/POST/DELETE /roles/:id/permissions (ver
+// role.routes.ts en corporate-api); "roles:read" hace falta para el combo de
+// roles (GET /roles). GET /permissions esta abierto a cualquier autenticado.
+const REQUIRED_PERMISSIONS = ["permissions:update", "roles:read"] as const;
 
-function permissionKey(permission: Permission): string {
+function permissionKey(permission: Pick<Permission, "resource" | "action">): string {
     return `${permission.resource}:${permission.action}`;
 }
 
@@ -92,6 +95,19 @@ export default function AsignarPermissionToRole() {
     // idempotente), pero asi queda claro en la UI que ya esta asignado.
     const availablePermisos = permisos.filter((permission) => !assignedIds.has(permission.id));
 
+    // Permisos de pantalla ("access", plan 006) asignados al rol y lo que
+    // incluye cada uno (GET /permissions ya trae includedPermissions). Un
+    // permiso base cubierto por una pantalla asignada no se puede quitar
+    // directo: el backend responde 409 porque el rol lo seguiria teniendo.
+    const includesById = new Map(permisos.map((permission) => [permission.id, permission.includedPermissions ?? []]));
+    const coveredBy = new Map<number, Permission[]>();
+    for (const assigned of assignedPermissions) {
+        for (const included of includesById.get(assigned.id) ?? []) {
+            coveredBy.set(included.id, [...(coveredBy.get(included.id) ?? []), assigned]);
+        }
+    }
+    const pendingRemovalCoveredBy = pendingRemoval ? (coveredBy.get(pendingRemoval.id) ?? []) : [];
+
     function handleRoleChange(value: string) {
         setRoleSelected(value);
         setPermisoSelected("");
@@ -159,7 +175,7 @@ export default function AsignarPermissionToRole() {
     return (
         <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
             <div className="flex flex-col items-center justify-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
-                <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">Asignar Permiso al Role</h1>
+                <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">Modificar Permisos</h1>
                 {catalogsLoading ? (
                     <div className="flex justify-center py-12">
                         <Spinner />
@@ -244,8 +260,30 @@ export default function AsignarPermissionToRole() {
                             </div>
                         )}
 
+                        {/* QUITAR UN PERMISO QUE UNA PANTALLA ASIGNADA SIGUE OTORGANDO: no se ofrece */}
+                        {pendingRemoval && selectedRole && pendingRemovalCoveredBy.length > 0 && (
+                            <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
+                                <p className="text-sm text-amber-900">
+                                    El rol <span className="font-semibold">{selectedRole.name}</span> seguiría teniendo{" "}
+                                    <span className="font-semibold">
+                                        {pendingRemoval.description ?? permissionKey(pendingRemoval)}
+                                    </span>{" "}
+                                    por{" "}
+                                    {pendingRemovalCoveredBy
+                                        .map((bundle) => `«${bundle.description ?? permissionKey(bundle)}»`)
+                                        .join(", ")}
+                                    . Quite primero esa pantalla del rol o edítela en «Permisos de Pantalla».
+                                </p>
+                                <div className="mt-3 flex justify-end">
+                                    <Button type="button" variant="secondary" onClick={handleCancelRemoval}>
+                                        Entendido
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+
                         {/* CONFIRMACION PARA QUITAR UN PERMISO YA ASIGNADO */}
-                        {pendingRemoval && selectedRole && (
+                        {pendingRemoval && selectedRole && pendingRemovalCoveredBy.length === 0 && (
                             <div className="mt-4 rounded-lg border border-rose-300 bg-rose-50 p-4">
                                 <p className="text-sm text-rose-900">
                                     ¿Desea quitar el permiso{" "}
@@ -303,6 +341,25 @@ export default function AsignarPermissionToRole() {
                                                     <p className="mt-1 text-xs text-emerald-700">
                                                         <code>{permissionKey(permission)}</code>
                                                     </p>
+                                                    {(includesById.get(permission.id) ?? []).length > 0 && (
+                                                        <ul className="mt-2 list-disc space-y-0.5 pl-4 text-xs text-emerald-800">
+                                                            {includesById.get(permission.id)!.map((included) => (
+                                                                <li key={included.id}>
+                                                                    {included.description ?? permissionKey(included)}
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    )}
+                                                    {coveredBy.has(permission.id) && (
+                                                        <p className="mt-2 text-xs text-amber-700">
+                                                            También lo otorga{" "}
+                                                            {coveredBy
+                                                                .get(permission.id)!
+                                                                .map((bundle) => `«${bundle.description ?? permissionKey(bundle)}»`)
+                                                                .join(", ")}
+                                                            .
+                                                        </p>
+                                                    )}
                                                 </div>
                                                 <Button
                                                     type="button"

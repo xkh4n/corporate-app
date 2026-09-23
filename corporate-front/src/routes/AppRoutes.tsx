@@ -33,7 +33,16 @@ import UpdateProductCategory from "../pages/adquisiciones/category/UpdateProduct
 import LinkSupplierProducts from "../pages/adquisiciones/supplierProducts/LinkSupplierProducts";
 import NuevaPantalla from "../pages/pantallas/NuevaPantalla";
 import AsignarPermisos from "../pages/pantallas/AsignarPermisos";
-import { AsignarPermissionToRole, NuevoRole } from "../pages/permissions";
+import VerPantallas from "../pages/pantallas/VerPantallas";
+import {
+  AsignarPermissionToRole,
+  DeshabilitarRoles,
+  HabilitarRoles,
+  PermisosDePantalla,
+  NuevoPermiso,
+  NuevoRole,
+  VerPermisos,
+} from "../pages/permissions";
 import {
   ListarRole,
   CreatePersonPage,
@@ -59,8 +68,11 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/category/view": () => <ViewProductCategory />,
   "/category/update": () => <UpdateProductCategory />,
   "/supplier-products/manage": () => <LinkSupplierProducts />,
-  "/menu-items/create": () => <NuevaPantalla />,
+  // Referencia diferida a MODULE_PAGES (se evalua al renderizar, no al
+  // definir el objeto): la vista sugiere las rutas con pagina implementada.
+  "/menu-items/create": () => <NuevaPantalla implementedLinks={Object.keys(MODULE_PAGES)} />,
   "/menu-items/update": () => <AsignarPermisos />,
+  "/menu-items/read": () => <VerPantallas />,
   "/tickets/validate": () => <AproveRequest />,
   "/quotes/request": () => <RequestQuotation />,
   "/quotes/upload": () => <UploadQuotes />,
@@ -77,8 +89,13 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/assets/returns": () => <AssetReturns />,
   "/assets/import": () => <ImportAssets />,
   "/roles/create": () => <NuevoRole />,
-  "/roles/update": () => <AsignarPermissionToRole />,
+  "/permissions/create": () => <NuevoPermiso />,
+  "/permissions/read": () => <VerPermisos />,
+  "/permissions/update": () => <AsignarPermissionToRole />,
+  "/permissions/access": () => <PermisosDePantalla />,
   "/roles/read": () => <ListarRole />,
+  "/roles/deactivate": () => <DeshabilitarRoles />,
+  "/roles/activate": () => <HabilitarRoles />,
   "/employees/cargos": () => <NuevoCargo />,
   "/employees/previsional/afp": () => <AsignarAfp />,
   "/employees/previsional/salud": () => <AsignarSalud />,

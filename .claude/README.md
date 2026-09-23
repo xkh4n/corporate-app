@@ -18,6 +18,142 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-23 (3) — Revisión de seguridad de las entradas de hoy y mitigación
+
+### Contexto
+Revisión de seguridad (`security-review`) sobre los cambios sin commitear de las entradas de hoy (plan 006 y
+«Nueva Pantalla»): **1 Medium, ninguno High**.
+
+### Hallazgo
+- **Medium, revocación sin efecto:**
+  - **Origen:** la siembra le otorgó a cada rol existente el permiso de pantalla cuyos permisos base ya tenía,
+    así que esos permisos quedaron por dos vías: directa y por el agrupador.
+  - **Síntoma:** quitar un permiso base en «Modificar Permisos» borraba solo la fila directa y respondía 204,
+    pero `hasPermission` lo seguía concediendo vía el agrupador.
+  - **Riesgo:** el admin creía haber revocado un acceso que seguía abierto.
+
+### Hecho (las tres mitigaciones recomendadas)
+- **Siembra:**
+  - Al otorgar un agrupador en su primera siembra, en la misma transacción se borran las asignaciones directas
+    que ese agrupador cubre. El acceso efectivo no cambia.
+  - El bloque `grantToUser` ya no vuelve a asignar directo a `user` lo que ese rol obtiene por un agrupador
+    (`getPermissionIdsCoveredByBundles`). Sin eso, el duplicado reaparecería en cada arranque.
+- **API:**
+  - `DELETE` y `PUT /roles/:id/permissions` responden **409**, sin borrar nada, si el rol seguiría teniendo el
+    permiso por una pantalla asignada (`assertRevocationIsEffective`).
+  - El mensaje nombra esas pantallas, y `details.stillGranted` las lista.
+- **Front («Modificar Permisos»):**
+  - Muestra lo que incluye cada pantalla asignada y marca los permisos base que «También lo otorga …».
+  - Al pedir quitar uno cubierto, explica qué pantalla quitar o editar, en vez de ofrecer confirmar.
+
+### Verificación
+- **Compilación y lint:** `tsc` de API y front, y ESLint completo del front.
+- **Suite completa contra Testing:** 34 archivos, 305 tests OK.
+- **`permission.service.integration.test.ts`** (8 tests) cubre además:
+  - los 409 de `DELETE` y `PUT`, sin borrado;
+  - la revocación que sí aplica después de quitar la pantalla;
+  - la siembra real de una pantalla del catálogo: la otorga y deja una sola fuente de acceso.
+
+### Pendiente
+- **Marca de revisión:** hay que crearla para el commit que se promueva a `master`
+  (`security-gate-mark`, `SECURITY-GATE.md`).
+- **Base de Testing:** sigue con los duplicados directos que dejó la siembra anterior, porque esa base ya
+  estaba sembrada. En esos roles, quitar un permiso cubierto ahora responde 409 y explica qué pantalla lo
+  otorga, así que no queda una revocación silenciosa.
+
+---
+
+## 2026-09-23 (2) — Vista «Nueva Pantalla» (`/menu-items/create`)
+
+### Hecho
+- **Formulario:** crea un ítem de menú de tipo **Pantalla** (con ruta) o **Carpeta** (sin ruta). Pide:
+  - nombre;
+  - «Depende de», con las carpetas activas mostradas con su ruta completa;
+  - orden;
+  - icono, desde un **recuadro con los ~1.300 iconos de Ionicons 5**, con búsqueda y hasta 120 visibles.
+- **Ruta:** sugiere las que tienen vista en `MODULE_PAGES` y todavía no están en el menú. Avisa si la ruta no
+  tiene vista (página en construcción) o si ya la usa otro ítem.
+- **Permiso de pantalla:** se crea en la misma vista, con nombre sugerido desde la ruta, descripción
+  «Pantalla: <nombre>» y la lista de permisos base, o se elige uno existente viendo lo que incluye.
+  Si el permiso se crea pero el ítem falla, queda seleccionado como existente para no duplicarlo.
+- **Refresco:** tras guardar se recargan `/auth/me` y `/auth/menu` (nuevo `refreshSession` en el AuthContext),
+  sin recargar la página.
+- **Componentes nuevos:** `IconPicker` y `PermissionChecklist`. «Nuevo Permiso» ahora usa este último.
+- **API:**
+  - `POST`/`PUT /menu-items` responden **409** si el nombre ya existe (antes daba 500 por la UNIQUE) o si
+    la ruta la usa otro ítem activo.
+  - `link` se valida con el formato `/segmento/segmento`.
+  - `GET /menu-items` acepta `read` **o** `create`.
+
+### Decisiones
+- **Por qué `GET /menu-items` acepta `create`:** los includes de un agrupador se siembran una sola vez, así
+  que agregar `menu-items:read` a «Nueva Pantalla» no habría llegado a las bases ya sembradas. La vista solo
+  exige `menu-items:create`, y `permissions:create` es opcional (sin él, solo «usar uno existente»).
+
+### Verificación
+- `tsc` de API y front y ESLint completo del front.
+- Suite de integración contra Testing: 303 OK, con el nuevo `menuItem.service.integration.test.ts`.
+- **1 fallo intermitente preexistente:** `purchaseOrder.service.integration.test.ts` › «no flipea hasta que
+  TODAS las OC…» falla 1 de cada 3 veces incluso corrido solo. No toca menú ni permisos. Queda pendiente.
+
+---
+
+## 2026-09-23 — Administración de permisos en caliente, roles y permisos de pantalla (plan 006)
+
+### Contexto
+Crear un permiso exigía editar `permission-catalog.ts` y recrear los contenedores. Además, cada pantalla exige varios
+permisos base (hasta 8) que el admin tenía que conocer y asignar uno por uno: esa lista solo vivía en el
+`REQUIRED_PERMISSIONS` de cada vista. Plan: `.claude/planes/006-permisos-de-pantalla.html`.
+
+### Hecho
+- **Permisos en caliente:**
+  - `POST /permissions` (`permissions:create`) con las pantallas «Nuevo Permiso» y «Ver Permisos».
+  - El seed sigue siendo aditivo y no borra lo creado por API.
+  - Menú Gerencia de TI > Serv. Productivos > Permisos, con rutas `/permissions/*`.
+- **Modificar Permisos:**
+  - La pantalla que antes era «Asignar Autorización» salió de Personas > Roles. El seed la desactiva con `RETIRED_MENU_LABELS`.
+  - Asignar o quitar permisos a un rol exige `permissions:update`. Leer los permisos de un rol exige `roles:read`.
+- **Roles:**
+  - «Ver Rol» ahora es real: lista los roles y sus permisos por descripción.
+  - «Deshabilitar Roles» exige `roles:delete`.
+  - «Habilitar Roles» usa `PATCH /roles/:id/activate`, que exige **`roles:update` y `roles:activate`**, esta última una acción nueva.
+  - `PUT /roles/:id` ya no acepta `isActive` (400): con eso se esquivaban ambos permisos.
+  - `admin` no se puede desactivar, habilitar ni renombrar por la API (409). Solo por query directa en el motor.
+- **Permisos de pantalla (acción `access`):**
+  - Tabla `permission_includes`. Un agrupador `<slug>:access` incluye los permisos base de su vista, en un solo nivel.
+  - `hasPermission` (una consulta con EXISTS), `getRoleIdsWithPermission`, `/auth/me`, el menú y `/users/:id/access` lo expanden.
+  - `GET /roles/:id/permissions` devuelve solo lo asignado directamente.
+  - `SCREEN_ACCESS_CATALOG` siembra 40 pantallas. Los includes se transcribieron del `REQUIRED_PERMISSIONS` de cada vista.
+  - Las hojas del menú pasan a `<slug>:access`.
+  - La primera vez, cada rol que ya tenía todos los permisos base recibe el agrupador, en una transacción.
+- **Pantallas nuevas:**
+  - «Permisos de Pantalla» (`/permissions/access`): agregar o quitar lo que incluye un agrupador.
+  - «Ver Pantallas» (`/menu-items/read`): cada pantalla con su permiso y lo que incluye.
+  - «Nuevo Permiso» permite elegir los includes al crear un `access`.
+
+### Decisiones
+- **Agrupador expandido en el backend**, en lugar de una lista en `menu_items` o un permiso exclusivo por pantalla que cada endpoint tuviera que aceptar.
+- **Nombres de acción:** se eligió `access` y no `activate`, que ya significa «habilitar algo desactivado». Los slugs van en inglés y no repiten un resource base.
+- **Qué se siembra una sola vez:** los includes se siembran solo si el agrupador no tiene ninguno; después manda lo que edite el admin.
+
+### Verificación
+- `tsc` de API y front (`-p tsconfig.app.json`) y ESLint completo del front.
+- Suite completa contra el stack de Testing: **33 archivos, 301 tests OK**. Incluye el nuevo
+  `permission.service.integration.test.ts`, que cubre:
+  - expansión;
+  - rol inactivo;
+  - aprobadores vía agrupador;
+  - rechazo de anidar;
+  - siembra de las 40 pantallas.
+
+### Pendiente
+- **Pruebas en navegador:** ninguna pantalla se probó en un navegador real. Falta reconstruir API y front en Development.
+- **Efecto aceptado:** un rol que veía un ítem con un solo permiso, pero no tenía el resto (la vista le daba 403), deja de verlo.
+- **Stubs:** «Nueva Pantalla» y «Asignar Permisos» siguen siendo stubs sin llamadas a la API.
+- **Sin commit:** todo lo anterior está sin commitear.
+
+---
+
 ## 2026-09-21 (10) — Ronda de `cybersecurity-orchestrator` sobre la carga masiva de activos y su endurecimiento
 
 ### Contexto

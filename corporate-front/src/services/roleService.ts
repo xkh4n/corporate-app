@@ -15,6 +15,8 @@ export const roleService = {
 
   deactivate: (id: number) => apiFetch<void>(`/roles/${id}`, { method: "DELETE" }),
 
+  activate: (id: number) => apiFetch<Role>(`/roles/${id}/activate`, { method: "PATCH" }),
+
   getPermissions: (id: number) => apiFetch<Permission[]>(`/roles/${id}/permissions`),
 
   setPermissions: (id: number, permissionIds: number[]) =>

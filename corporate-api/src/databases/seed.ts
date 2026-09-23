@@ -2,6 +2,7 @@ import { UserModel } from "../models/mssql/user.model";
 import { createPerson } from "../services/mssql/person.service";
 import { createUser } from "../services/mssql/user.service";
 import { getRoleByName } from "../services/postgres/role.service";
+import { getPermissionIdsCoveredByBundles } from "../services/postgres/permission.service";
 import { seedCountries } from "../services/mssql/country.service";
 import { seedCities } from "../services/mssql/city.service";
 import { seedStates } from "../services/mssql/state.service";
@@ -14,8 +15,10 @@ import {
 import { PermissionModel } from "../models/postgres/permission.model";
 import { RolePermissionModel } from "../models/postgres/rolePermission.model";
 import { MenuItemModel } from "../models/postgres/menuItem.model";
-import { PERMISSION_CATALOG } from "./permission-catalog";
-import { MENU_CATALOG } from "./menu-catalog";
+import { PermissionIncludeModel } from "../models/postgres/permissionInclude.model";
+import { postgres } from "./postgres/connection";
+import { PERMISSION_CATALOG, SCREEN_ACCESS_CATALOG } from "./permission-catalog";
+import { MENU_CATALOG, RETIRED_MENU_LABELS } from "./menu-catalog";
 import { readSecretFromEnv } from "../library/secrets";
 import { env } from "../library/env";
 import { logger } from "../library/logger";
@@ -60,6 +63,16 @@ export async function seedPermissions(): Promise<void> {
     updateOnDuplicate: ["description"],
     conflictAttributes: ["resource", "action"],
   });
+  // Permisos de pantalla (agrupadores, plan 006). Antes del findAll de abajo
+  // para que "admin" los reciba igual que el resto del catalogo.
+  await PermissionModel.bulkCreate(
+    SCREEN_ACCESS_CATALOG.map((entry) => ({
+      resource: entry.resource,
+      action: "access" as const,
+      description: entry.description,
+    })),
+    { updateOnDuplicate: ["description"], conflictAttributes: ["resource", "action"] },
+  );
 
   const allPermissions = await PermissionModel.findAll();
   const [adminRole, userRole] = await Promise.all([getRoleByName("admin"), getRoleByName("user")]);
@@ -77,8 +90,16 @@ export async function seedPermissions(): Promise<void> {
         (entry) => `${entry.resource}:${entry.action}`,
       ),
     );
-    const userPermissions = allPermissions.filter((permission) =>
-      userGrantableKeys.has(`${permission.resource}:${permission.action}`),
+    // Lo que "user" ya obtiene via un agrupador asignado no se vuelve a
+    // asignar directo: la asignacion directa duplicada hace que quitar el
+    // permiso en "Modificar Permisos" no revoque nada (ver
+    // assertRevocationIsEffective en permission.service.ts), y sin este
+    // filtro reaparecia en cada arranque despues de que la limpieza de
+    // seedScreenAccessIncludes la borrara.
+    const coveredForUser = await getPermissionIdsCoveredByBundles(userRole.id);
+    const userPermissions = allPermissions.filter(
+      (permission) =>
+        userGrantableKeys.has(`${permission.resource}:${permission.action}`) && !coveredForUser.has(permission.id),
     );
     await RolePermissionModel.bulkCreate(
       userPermissions.map((permission) => ({ roleId: userRole.id, permissionId: permission.id })),
@@ -102,6 +123,99 @@ export async function seedPermissions(): Promise<void> {
       });
     }
   }
+
+  // Al final: necesita las asignaciones de "user" ya sembradas arriba para
+  // otorgarle los agrupadores cuyas pantallas ya cubria.
+  await seedScreenAccessIncludes(allPermissions, adminRole?.id ?? null);
+}
+
+// Siembra los includes de cada agrupador de SCREEN_ACCESS_CATALOG, SOLO si
+// todavia no tiene ninguno (primera vez): despues manda lo que el admin edite
+// en "Permisos de Pantalla", el seed no lo pisa ni lo "repara".
+// En esa misma primera vez le otorga el agrupador a cada rol no-admin que ya
+// tenga TODOS sus permisos base asignados directamente: el menu pasa a
+// gatearse con "<slug>:access" (menu-catalog.ts), y sin esto los roles
+// existentes perderian sus pantallas. Un rol que tenia el permiso del menu
+// pero no el resto (la vista le daba 403 igual) no lo recibe.
+// Con las 3 replicas en paralelo, dos pueden ver "sin includes" a la vez:
+// ignoreDuplicates hace que la segunda sea un no-op.
+async function seedScreenAccessIncludes(allPermissions: PermissionModel[], adminRoleId: number | null): Promise<void> {
+  const idByKey = new Map(allPermissions.map((permission) => [`${permission.resource}:${permission.action}`, permission.id]));
+
+  const bundles = SCREEN_ACCESS_CATALOG.map((entry) => {
+    const accessId = idByKey.get(`${entry.resource}:access`);
+    if (accessId === undefined) {
+      throw new Error(`SCREEN_ACCESS_CATALOG: "${entry.resource}:access" no quedo sembrado en permissions.`);
+    }
+    const includedIds = entry.includes.map((key) => {
+      const id = idByKey.get(key);
+      if (id === undefined || key.endsWith(":access")) {
+        throw new Error(
+          `SCREEN_ACCESS_CATALOG: "${entry.resource}" incluye "${key}", que no existe en el catalogo base ` +
+            "o es otro permiso de pantalla (ver permission-catalog.ts).",
+        );
+      }
+      return id;
+    });
+    return { accessId, includedIds: [...new Set(includedIds)] };
+  });
+
+  const seeded = await PermissionIncludeModel.findAll({
+    where: { permissionId: bundles.map((bundle) => bundle.accessId) },
+    attributes: ["permissionId"],
+  });
+  const alreadySeeded = new Set(seeded.map((link) => link.permissionId));
+  const pending = bundles.filter((bundle) => !alreadySeeded.has(bundle.accessId));
+  if (pending.length === 0) return;
+
+  // Una transaccion: si el proceso muere entre los includes y los
+  // otorgamientos, el proximo arranque vuelve a ver "sin includes" y repite
+  // ambos -sin ella los roles existentes quedarian sin sus agrupadores.
+  const grants = await postgres.transaction(async (transaction) => {
+    await PermissionIncludeModel.bulkCreate(
+      pending.flatMap((bundle) =>
+        bundle.includedIds.map((includedPermissionId) => ({ permissionId: bundle.accessId, includedPermissionId })),
+      ),
+      { ignoreDuplicates: true, transaction },
+    );
+
+    const assignments = await RolePermissionModel.findAll({ attributes: ["roleId", "permissionId"], transaction });
+    const directByRole = new Map<number, Set<number>>();
+    for (const { roleId, permissionId } of assignments) {
+      if (roleId === adminRoleId) continue;
+      if (!directByRole.has(roleId)) directByRole.set(roleId, new Set());
+      directByRole.get(roleId)!.add(permissionId);
+    }
+
+    const rows = [...directByRole.entries()].flatMap(([roleId, direct]) =>
+      pending
+        .filter((bundle) => bundle.includedIds.every((id) => direct.has(id)))
+        .map((bundle) => ({ roleId, permissionId: bundle.accessId })),
+    );
+    if (rows.length > 0) {
+      await RolePermissionModel.bulkCreate(rows, { ignoreDuplicates: true, transaction });
+
+      // Una sola fuente de acceso por permiso (hallazgo de la revision de
+      // seguridad 2026-09-23): se borran las asignaciones directas que el
+      // agrupador recien otorgado ya cubre. Si quedaran, quitar ese permiso
+      // en "Modificar Permisos" no revocaria nada, porque el agrupador lo
+      // sigue concediendo. El acceso efectivo del rol no cambia.
+      const coveredByRole = new Map<number, Set<number>>();
+      const includedByBundle = new Map(pending.map((bundle) => [bundle.accessId, bundle.includedIds]));
+      for (const { roleId, permissionId } of rows) {
+        if (!coveredByRole.has(roleId)) coveredByRole.set(roleId, new Set());
+        for (const id of includedByBundle.get(permissionId) ?? []) coveredByRole.get(roleId)!.add(id);
+      }
+      for (const [roleId, covered] of coveredByRole) {
+        await RolePermissionModel.destroy({ where: { roleId, permissionId: [...covered] }, transaction });
+      }
+    }
+    return rows;
+  });
+  logger.info(
+    { screens: pending.length, grants: grants.length },
+    "Permisos de pantalla: includes sembrados y agrupadores otorgados a roles existentes",
+  );
 }
 
 // Siembra el arbol de navegacion (databases/menu-catalog.ts) contra
@@ -161,6 +275,11 @@ export async function seedMenuItems(): Promise<void> {
       { conflictFields: ["label"] },
     );
     idByLabel.set(entry.label, menuItem.id);
+  }
+
+  // Idempotente: no-op si el item nunca existio o ya estaba inactivo.
+  if (RETIRED_MENU_LABELS.length > 0) {
+    await MenuItemModel.update({ isActive: false }, { where: { label: RETIRED_MENU_LABELS, isActive: true } });
   }
 }
 
