@@ -175,7 +175,7 @@ async function migratePermissions(): Promise<void> {
   // ese choque especifico.
   await runDdl(`
     ALTER TABLE permissions ADD CONSTRAINT permissions_action_allowed
-      CHECK (action IN ('create','read','update','delete','approve'));
+      CHECK (action IN ('create','read','update','delete','approve','activate','access'));
   `);
 
   await runDdl(`
@@ -185,6 +185,27 @@ async function migratePermissions(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       PRIMARY KEY (role_id, permission_id)
     );
+  `);
+
+  // Permisos de pantalla (action = 'access', plan 006): un agrupador incluye
+  // los permisos base que su pantalla necesita, y hasPermission() lo expande
+  // (ver permission.service.ts). Un solo nivel -solo un 'access' incluye y
+  // nunca a otro 'access'-: esa regla vive en el servicio, no en un CHECK,
+  // porque depende de la fila referenciada.
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS permission_includes (
+      permission_id INTEGER NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+      included_permission_id INTEGER NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (permission_id, included_permission_id),
+      CHECK (permission_id <> included_permission_id)
+    );
+  `);
+  // Para la expansion inversa ("¿que agrupadores incluyen X?"), que corre en
+  // cada request via hasPermission().
+  await runDdl(`
+    CREATE INDEX IF NOT EXISTS idx_permission_includes_included
+      ON permission_includes (included_permission_id);
   `);
 }
 

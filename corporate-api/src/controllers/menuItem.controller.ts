@@ -14,7 +14,13 @@ const PERMISSION_KEY_REGEX = /^[a-z-]+:[a-z-]+$/;
 export const createMenuItemSchema = z.object({
   label: z.string().min(1).max(100),
   icon: z.string().max(50).optional(),
-  link: z.string().max(255).optional(),
+  // Ruta interna del front: "/" + segmentos en minusculas, numeros y guiones
+  // (ej. "/assets/kardex"). Es la clave con la que AppRoutes busca la vista.
+  link: z
+    .string()
+    .max(255)
+    .regex(/^\/[a-z0-9-]+(\/[a-z0-9-]+)*$/, "Formato esperado: /segmento/segmento (minusculas, numeros y guiones)")
+    .optional(),
   parentId: z.number().int().positive().optional(),
   permissionKey: z
     .string()

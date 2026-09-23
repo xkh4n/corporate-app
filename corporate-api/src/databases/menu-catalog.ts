@@ -11,6 +11,9 @@ export interface MenuCatalogEntry {
   // resuelto contra el catalogo de permissions al sembrar. Los nodos
   // "carpeta" no llevan permissionKey: su visibilidad se deriva de tener al
   // menos un hijo alcanzable (ver getMenuTreeForRole, menuItem.service.ts).
+  // Desde el plan 006 las hojas con vista implementada usan su permiso de
+  // pantalla "<slug>:access" (SCREEN_ACCESS_CATALOG en permission-catalog.ts),
+  // que incluye los permisos base de la vista.
   permissionKey?: string;
   sortOrder: number;
 }
@@ -35,7 +38,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoPersonAdd",
     link: "/employees/create",
     parentLabel: "Colaboradores",
-    permissionKey: "employees:create",
+    permissionKey: "employee-onboarding:access",
     sortOrder: 10,
   },
   { label: "Cargos", icon: "IoLibrary", parentLabel: "Colaboradores", sortOrder: 10 },
@@ -44,7 +47,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoDocumentAttachOutline",
     link: "/employees/cargos",
     parentLabel: "Cargos",
-    permissionKey: "employees:create",
+    permissionKey: "position-creation:access",
     sortOrder: 10,
   },
   { label: "Previsión", icon: "IoShieldCheckmark", parentLabel: "Gerencia de Personas", sortOrder: 10 },
@@ -53,7 +56,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoWallet",
     link: "/employees/previsional/afp",
     parentLabel: "Previsión",
-    permissionKey: "previsional-profiles:update",
+    permissionKey: "afp-assignment:access",
     sortOrder: 10,
   },
   {
@@ -61,7 +64,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoMedkit",
     link: "/employees/previsional/salud",
     parentLabel: "Previsión",
-    permissionKey: "previsional-profiles:update",
+    permissionKey: "health-plan-assignment:access",
     sortOrder: 20,
   },
   {
@@ -69,7 +72,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoBusiness",
     link: "/company/previsional",
     parentLabel: "Previsión",
-    permissionKey: "previred-settings:update",
+    permissionKey: "ccaf-mutual:access",
     sortOrder: 30,
   },
   { label: "Remuneraciones", icon: "IoCash", parentLabel: "Gerencia de Personas", sortOrder: 10 },
@@ -78,7 +81,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoOptions",
     link: "/payroll/settings",
     parentLabel: "Remuneraciones",
-    permissionKey: "payroll-settings:update",
+    permissionKey: "payroll-configuration:access",
     sortOrder: 10,
   },
   { label: "Roles", icon: "IoLibrary", parentLabel: "Gerencia de Personas", sortOrder: 10 },
@@ -88,7 +91,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoLaptop",
     link: "/roles/create",
     parentLabel: "Roles",
-    permissionKey: "roles:create",
+    permissionKey: "role-creation:access",
     sortOrder: 10,
   },
   {
@@ -96,15 +99,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoInformationCircleOutline",
     link: "/roles/read",
     parentLabel: "Roles",
-    permissionKey: "roles:read",
-    sortOrder: 10,
-  },
-  {
-    label: "Asignar Autorización",
-    icon: "IoLink",
-    link: "/roles/update",
-    parentLabel: "Roles",
-    permissionKey: "roles:update",
+    permissionKey: "role-view:access",
     sortOrder: 10,
   },
   { label: "Gerencia de TI", icon: "IoDesktop", sortOrder: 20 },
@@ -114,35 +109,67 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
   {
     label: "Nuevo Permiso",
     icon: "IoGitPullRequest",
-    link: "/permision/create",
+    link: "/permissions/create",
     parentLabel: "Permisos",
-    permissionKey: "permissions:create",
+    permissionKey: "permission-creation:access",
     sortOrder: 10,
   },
   {
     label: "Ver Permisos",
     icon: "IoGitCompare",
-    link: "/permision/read",
+    link: "/permissions/read",
     parentLabel: "Permisos",
-    permissionKey: "permissions:read",
+    permissionKey: "permission-view:access",
     sortOrder: 10,
   },
   {
     label: "Modificar Permisos",
     icon: "IoHammer",
-    link: "/permision/update",
+    link: "/permissions/update",
     parentLabel: "Permisos",
-    permissionKey: "permissions:update",
+    permissionKey: "role-permission-assignment:access",
     sortOrder: 10,
+  },
+  {
+    label: "Permisos de Pantalla",
+    icon: "IoLayers",
+    link: "/permissions/access",
+    parentLabel: "Permisos",
+    permissionKey: "access-permission-management:access",
+    sortOrder: 15,
+  },
+  {
+    label: "Deshabilitar Roles",
+    icon: "IoBan",
+    link: "/roles/deactivate",
+    parentLabel: "Permisos",
+    permissionKey: "role-deactivation:access",
+    sortOrder: 20,
+  },
+  {
+    label: "Habilitar Roles",
+    icon: "IoCheckmarkCircle",
+    link: "/roles/activate",
+    parentLabel: "Permisos",
+    permissionKey: "role-activation:access",
+    sortOrder: 30,
   },
 
   { label: "Pantallas", icon: "IoDesktop", parentLabel: "Serv. Productivos", sortOrder: 10 },
+  {
+    label: "Ver Pantallas",
+    icon: "IoList",
+    link: "/menu-items/read",
+    parentLabel: "Pantallas",
+    permissionKey: "screen-view:access",
+    sortOrder: 5,
+  },
   {
     label: "Nueva Pantalla",
     icon: "IoDesktopOutline",
     link: "/menu-items/create",
     parentLabel: "Pantallas",
-    permissionKey: "menu-items:create",
+    permissionKey: "screen-creation:access",
     sortOrder: 10,
   },
   {
@@ -150,7 +177,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoDocumentLockOutline",
     link: "/menu-items/update",
     parentLabel: "Pantallas",
-    permissionKey: "menu-items:update",
+    permissionKey: "screen-permission-assignment:access",
     sortOrder: 10,
   },
   { label: "Adquisiciones", icon: "IoCart", parentLabel: "Serv. Productivos", sortOrder: 10 },
@@ -161,7 +188,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoBriefcaseOutline",
     link: "/suppliers/create",
     parentLabel: "Proveedores",
-    permissionKey: "suppliers:create",
+    permissionKey: "supplier-creation:access",
     sortOrder: 10,
   },
   { label: "Compras", icon: "IoCart", parentLabel: "Adquisiciones", sortOrder: 20 },
@@ -170,7 +197,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoPricetagsOutline",
     link: "/quotes/request",
     parentLabel: "Compras",
-    permissionKey: "quotes:create",
+    permissionKey: "quote-request:access",
     sortOrder: 30,
   },
   {
@@ -178,7 +205,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoDocumentAttachOutline",
     link: "/quotes/upload",
     parentLabel: "Compras",
-    permissionKey: "quotes:create",
+    permissionKey: "quote-upload:access",
     sortOrder: 40,
   },
   {
@@ -186,7 +213,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoSendOutline",
     link: "/purchase-orders/send",
     parentLabel: "Compras",
-    permissionKey: "quotes:create",
+    permissionKey: "purchase-order-sending:access",
     sortOrder: 70,
   },
   { label: "Productos", icon: "IoBasket", parentLabel: "Adquisiciones", sortOrder: 20 },
@@ -195,7 +222,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoBagAddSharp",
     link: "/products/create",
     parentLabel: "Productos",
-    permissionKey: "products:create",
+    permissionKey: "product-creation:access",
     sortOrder: 10,
   },
   {
@@ -203,7 +230,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoBagAddSharp",
     link: "/products/list",
     parentLabel: "Productos",
-    permissionKey: "products:read",
+    permissionKey: "product-list:access",
     sortOrder: 20,
   },
   {
@@ -211,7 +238,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoCubeOutline",
     link: "/goods-receipts/create",
     parentLabel: "Productos",
-    permissionKey: "goods-receipts:create",
+    permissionKey: "goods-receipt:access",
     sortOrder: 80,
   },
   {
@@ -219,7 +246,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoPersonAddOutline",
     link: "/assets/assign",
     parentLabel: "Productos",
-    permissionKey: "asset-movements:create",
+    permissionKey: "asset-assignment:access",
     sortOrder: 90,
   },
   {
@@ -227,7 +254,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoListOutline",
     link: "/solicitudes/estado-activos",
     parentLabel: "Productos",
-    permissionKey: "purchase-requests:read",
+    permissionKey: "request-asset-status:access",
     sortOrder: 92,
   },
   {
@@ -235,7 +262,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoPricetagOutline",
     link: "/assets/labels",
     parentLabel: "Productos",
-    permissionKey: "assets:read",
+    permissionKey: "asset-labels:access",
     sortOrder: 95,
   },
   {
@@ -243,7 +270,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoCalculatorOutline",
     link: "/assets/kardex",
     parentLabel: "Productos",
-    permissionKey: "asset-kardex:read",
+    permissionKey: "asset-kardex-view:access",
     sortOrder: 100,
   },
   {
@@ -251,7 +278,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoClipboardOutline",
     link: "/inventory/counts",
     parentLabel: "Productos",
-    permissionKey: "inventory-counts:read",
+    permissionKey: "inventory-taking:access",
     sortOrder: 105,
   },
   {
@@ -260,7 +287,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     link: "/assets/valuation",
     parentLabel: "Productos",
     // :read (igual que el GET de la API y la pantalla): con :update solo, el item aparecia y la pantalla negaba el acceso.
-    permissionKey: "asset-valuation:read",
+    permissionKey: "asset-valuation-view:access",
     sortOrder: 110,
   },
   {
@@ -268,7 +295,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoReturnDownBackOutline",
     link: "/assets/returns",
     parentLabel: "Productos",
-    permissionKey: "asset-returns:read",
+    permissionKey: "asset-return-management:access",
     sortOrder: 108,
   },
   {
@@ -277,7 +304,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     link: "/assets/import",
     parentLabel: "Productos",
     // :read (igual que el GET de la API y la pantalla): subir e iniciar cargas exige ademas :create, que se asigna junto.
-    permissionKey: "asset-imports:read",
+    permissionKey: "asset-bulk-import:access",
     sortOrder: 112,
   },
 
@@ -286,7 +313,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoLink",
     link: "/supplier-products/manage",
     parentLabel: "Productos",
-    permissionKey: "supplier-products:create",
+    permissionKey: "supplier-product-linking:access",
     sortOrder: 25,
   },
 
@@ -296,7 +323,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoLibraryOutline",
     link: "/category/create",
     parentLabel: "Categoria Productos",
-    permissionKey: "product-categories:create",
+    permissionKey: "category-creation:access",
     sortOrder: 10,
   },
   {
@@ -304,7 +331,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoLocateOutline",
     link: "/category/view",
     parentLabel: "Categoria Productos",
-    permissionKey: "product-categories:read",
+    permissionKey: "category-view:access",
     sortOrder: 20,
   },
   {
@@ -312,7 +339,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoColorWandOutline",
     link: "/category/update",
     parentLabel: "Categoria Productos",
-    permissionKey: "product-categories:update",
+    permissionKey: "category-update:access",
     sortOrder: 30,
   },
 
@@ -322,7 +349,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoMailOpenOutline",
     link: "/tickets/create",
     parentLabel: "Solicitudes",
-    permissionKey: "purchase-requests:create",
+    permissionKey: "purchase-request-creation:access",
     sortOrder: 10,
   },
   {
@@ -330,7 +357,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoMailUnreadOutline",
     link: "/tickets/validate",
     parentLabel: "Solicitudes",
-    permissionKey: "purchase-requests:approve",
+    permissionKey: "request-approval:access",
     sortOrder: 20,
   },
   {
@@ -338,7 +365,7 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoCheckmarkDoneOutline",
     link: "/quotes/approve",
     parentLabel: "Solicitudes",
-    permissionKey: "authorizations:create",
+    permissionKey: "quote-approval:access",
     sortOrder: 50,
   },
   {
@@ -346,7 +373,15 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     icon: "IoDocumentTextOutline",
     link: "/purchase-orders/attach",
     parentLabel: "Solicitudes",
-    permissionKey: "purchase-orders:update",
+    permissionKey: "purchase-order-attachment:access",
     sortOrder: 60,
   },
 ];
+
+// Items que salieron de MENU_CATALOG pero que ya pueden existir en
+// menu_items de un arranque anterior: seedMenuItems es aditivo (upsert por
+// label), asi que sacarlos del array no alcanza -se desactivan explicitamente
+// (isActive=false, mismo soft-delete que DELETE /menu-items/:id).
+// "Asignar Autorización" (Personas > Roles, /roles/update) se reemplazo por
+// Permisos > "Modificar Permisos" (/permissions/update) el 2026-09-23.
+export const RETIRED_MENU_LABELS: string[] = ["Asignar Autorización"];

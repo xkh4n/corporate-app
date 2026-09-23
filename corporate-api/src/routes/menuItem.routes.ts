@@ -1,7 +1,7 @@
 import { Router } from "express";
 import * as menuItemController from "../controllers/menuItem.controller";
 import { authenticate } from "../middlewares/authenticate";
-import { authorize } from "../middlewares/authorize";
+import { authorize, authorizeAny } from "../middlewares/authorize";
 import { validateBody } from "../middlewares/validate";
 
 export const menuItemRouter = Router();
@@ -12,9 +12,13 @@ menuItemRouter.use(authenticate);
 // -sin grantToUser, admin-only: a diferencia del catalogo de permisos (solo
 // strings resource+action), esto expone labels/estructura real de
 // funcionalidades del sistema. El arbol PODADO por permisos del usuario
-// logueado es GET /auth/menu (auth.routes.ts), no este.
-menuItemRouter.get("/", authorize("menu-items", "read"), menuItemController.list);
-menuItemRouter.get("/:id", authorize("menu-items", "read"), menuItemController.getById);
+// logueado es GET /auth/menu (auth.routes.ts), no este. Acepta tambien
+// "menu-items:create": "Nueva Pantalla" necesita listar las carpetas padre y
+// las rutas en uso, y quien puede crear items ya decide sobre esa misma
+// estructura (mismo criterio que asset-imports, donde create alcanza para
+// consultar).
+menuItemRouter.get("/", authorizeAny("menu-items", ["read", "create"]), menuItemController.list);
+menuItemRouter.get("/:id", authorizeAny("menu-items", ["read", "create"]), menuItemController.getById);
 
 menuItemRouter.post(
   "/",

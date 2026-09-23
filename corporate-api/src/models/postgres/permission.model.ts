@@ -1,10 +1,15 @@
 import { CreationOptional, DataTypes, InferAttributes, InferCreationAttributes, Model } from "sequelize";
 import { postgres } from "../../databases/postgres/connection";
 
-export type PermissionAction = "create" | "read" | "update" | "delete" | "approve";
+// "activate": habilitar algo que estaba desactivado (hoy solo roles:activate),
+// separado de "update" para poder otorgarlo a usuarios puntuales.
+// "access": permiso de pantalla (agrupador), incluye los permisos base que su
+// vista necesita -ver PermissionIncludeModel y plan 006.
+export type PermissionAction = "create" | "read" | "update" | "delete" | "approve" | "activate" | "access";
 
-// Catalogo fijo (resource+action), sembrado en databases/permission-catalog.ts
-// -no se crea via API, solo se asigna/desasigna a roles (ver RolePermissionModel).
+// Catalogo de permisos (resource+action): la base se siembra desde
+// databases/permission-catalog.ts y se pueden sumar mas en caliente via
+// POST /permissions; se asignan/desasignan a roles via RolePermissionModel.
 export class PermissionModel extends Model<
   InferAttributes<PermissionModel>,
   InferCreationAttributes<PermissionModel>
