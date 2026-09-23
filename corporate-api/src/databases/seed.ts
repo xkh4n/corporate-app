@@ -129,10 +129,12 @@ export async function seedPermissions(): Promise<void> {
   await seedScreenAccessIncludes(allPermissions, adminRole?.id ?? null);
 }
 
-// Siembra los includes de cada agrupador de SCREEN_ACCESS_CATALOG, SOLO si
-// todavia no tiene ninguno (primera vez): despues manda lo que el admin edite
-// en "Permisos de Pantalla", el seed no lo pisa ni lo "repara".
-// En esa misma primera vez le otorga el agrupador a cada rol no-admin que ya
+// Siembra los includes de cada agrupador de SCREEN_ACCESS_CATALOG. Son el
+// minimo de la pantalla y se reconcilian en CADA arranque, solo agregando:
+// un agrupador creado antes desde "Nueva Pantalla", o sembrado con una
+// version anterior del catalogo, recibe los que le falten, y lo que el admin
+// le haya agregado desde "Permisos de Pantalla" se conserva.
+// La PRIMERA vez (agrupador sin includes) ademas le otorga el agrupador a cada rol no-admin que ya
 // tenga TODOS sus permisos base asignados directamente: el menu pasa a
 // gatearse con "<slug>:access" (menu-catalog.ts), y sin esto los roles
 // existentes perderian sus pantallas. Un rol que tenia el permiso del menu
@@ -162,9 +164,23 @@ async function seedScreenAccessIncludes(allPermissions: PermissionModel[], admin
 
   const seeded = await PermissionIncludeModel.findAll({
     where: { permissionId: bundles.map((bundle) => bundle.accessId) },
-    attributes: ["permissionId"],
+    attributes: ["permissionId", "includedPermissionId"],
   });
   const alreadySeeded = new Set(seeded.map((link) => link.permissionId));
+  const existingLinks = new Set(seeded.map((link) => `${link.permissionId}:${link.includedPermissionId}`));
+
+  const missing = bundles
+    .filter((bundle) => alreadySeeded.has(bundle.accessId))
+    .flatMap((bundle) =>
+      bundle.includedIds
+        .filter((id) => !existingLinks.has(`${bundle.accessId}:${id}`))
+        .map((includedPermissionId) => ({ permissionId: bundle.accessId, includedPermissionId })),
+    );
+  if (missing.length > 0) {
+    await PermissionIncludeModel.bulkCreate(missing, { ignoreDuplicates: true });
+    logger.info({ includes: missing.length }, "Permisos de pantalla: includes minimos del catalogo agregados");
+  }
+
   const pending = bundles.filter((bundle) => !alreadySeeded.has(bundle.accessId));
   if (pending.length === 0) return;
 
