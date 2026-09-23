@@ -114,6 +114,7 @@ async function applyPostgresMigrations(): Promise<void> {
   await migrateAssetKardex();
   await migrateInventoryCounts();
   await migrateAssetReturns();
+  await migrateAssetAccounting();
   await migrateIntegrityAndIndexes();
 
   logger.info("Migracion de Postgres aplicada");
@@ -478,6 +479,147 @@ async function migrateAssetKardex(): Promise<void> {
   await runDdl(`
     CREATE INDEX IF NOT EXISTS ix_asset_kardex_entries_product_id ON asset_kardex_entries(product_id);
   `);
+}
+
+// Gestion contable de activos (plan 007, ciclo ITIL): clasificacion contable,
+// costo (adquisicion + atribuibles), capitalizacion y depreciacion con cierre
+// mensual. El valor libro sigue siendo el saldo del Kardex: capitalizar
+// escribe CAPITALIZATION (los atribuibles) y cada cierre escribe DEPRECIATION
+// (negativo); anular el ultimo cierre escribe DEPRECIATION_REVERSAL. Nada se
+// borra del Kardex (mismo criterio insert-only de migrateAssetKardex).
+async function migrateAssetAccounting(): Promise<void> {
+  // "DEPRECIATION_REVERSAL" tiene 21 caracteres: se amplia entry_type a 30.
+  // Ampliar un VARCHAR no reescribe la tabla, pero igual pide un lock
+  // exclusivo: se consulta primero para no tomarlo en cada arranque.
+  const [entryType] = await postgres.query<{ length: number | null }>(
+    `SELECT character_maximum_length AS length FROM information_schema.columns
+      WHERE table_schema = current_schema() AND table_name = 'asset_kardex_entries' AND column_name = 'entry_type'`,
+    { type: QueryTypes.SELECT },
+  );
+  if (entryType?.length !== undefined && entryType.length !== null && entryType.length < 30) {
+    await runDdl(`ALTER TABLE asset_kardex_entries ALTER COLUMN entry_type TYPE VARCHAR(30);`);
+  }
+
+  // CHECK con nombre explicito (antes inline, con el nombre que le puso
+  // Postgres) para poder ensancharlo de forma idempotente -mismo patron que
+  // permissions_action_allowed.
+  await runDdl(`ALTER TABLE asset_kardex_entries DROP CONSTRAINT IF EXISTS asset_kardex_entries_entry_type_check;`);
+  await runDdl(`ALTER TABLE asset_kardex_entries DROP CONSTRAINT IF EXISTS asset_kardex_entries_entry_type_allowed;`);
+  await runDdl(`
+    ALTER TABLE asset_kardex_entries ADD CONSTRAINT asset_kardex_entries_entry_type_allowed
+      CHECK (entry_type IN ('ACQUISITION','ADJUSTMENT','WRITE_OFF','CAPITALIZATION','DEPRECIATION','DEPRECIATION_REVERSAL'));
+  `);
+
+  // Politica contable: clases de activo con sus valores por defecto (vida
+  // util SII, metodo, tasa residual). No se borran: is_active.
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS asset_accounting_classes (
+      id SERIAL PRIMARY KEY,
+      code VARCHAR(30) NOT NULL UNIQUE,
+      name VARCHAR(100) NOT NULL,
+      useful_life_months INTEGER NOT NULL CHECK (useful_life_months > 0 AND useful_life_months <= 1200),
+      default_method VARCHAR(20) NOT NULL CHECK (default_method IN ('LINEAR','ACCELERATED')),
+      residual_rate NUMERIC(5,4) NOT NULL DEFAULT 0 CHECK (residual_rate >= 0 AND residual_rate < 1),
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  // Vida util normal segun la tabla del SII (en meses), editable despues
+  // desde "Politica Contable de Activos". ON CONFLICT: no pisa lo editado.
+  await postgres.query(`
+    INSERT INTO asset_accounting_classes (code, name, useful_life_months, default_method) VALUES
+      ('COMPUTER-EQUIPMENT', 'Equipos computacionales', 72, 'LINEAR'),
+      ('FURNITURE', 'Muebles y enseres', 84, 'LINEAR'),
+      ('VEHICLES', 'Vehiculos', 84, 'LINEAR'),
+      ('MACHINERY', 'Maquinaria y equipos', 180, 'LINEAR')
+    ON CONFLICT (code) DO NOTHING;
+  `);
+
+  // Una sola fila (id = 1): umbral minimo para capitalizar (bajo el, se
+  // sugiere clasificar como gasto).
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS asset_accounting_policy (
+      id SMALLINT PRIMARY KEY CHECK (id = 1),
+      capitalization_threshold NUMERIC(18,2) NOT NULL DEFAULT 0 CHECK (capitalization_threshold >= 0),
+      updated_by INTEGER,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await postgres.query(`INSERT INTO asset_accounting_policy (id) VALUES (1) ON CONFLICT (id) DO NOTHING;`);
+
+  // 1:1 con assets. Sin fila = pendiente de clasificar. EXPENSE/INVENTORY
+  // quedan en CLASSIFIED como estado final (no se capitalizan ni deprecian).
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS asset_accounting (
+      asset_id INTEGER PRIMARY KEY REFERENCES assets(id),
+      classification VARCHAR(20) NOT NULL CHECK (classification IN ('FIXED_ASSET','EXPENSE','INVENTORY')),
+      class_id INTEGER REFERENCES asset_accounting_classes(id),
+      stage VARCHAR(20) NOT NULL
+        CHECK (stage IN ('CLASSIFIED','COSTED','CAPITALIZED','DEPRECIATING','FULLY_DEPRECIATED')),
+      acquisition_cost NUMERIC(18,2),
+      capitalized_cost NUMERIC(18,2),
+      useful_life_months INTEGER CHECK (useful_life_months > 0 AND useful_life_months <= 1200),
+      depreciation_method VARCHAR(20) CHECK (depreciation_method IN ('LINEAR','ACCELERATED')),
+      residual_value NUMERIC(18,2) CHECK (residual_value >= 0),
+      depreciation_start_date DATE CHECK (EXTRACT(DAY FROM depreciation_start_date) = 1),
+      classified_by INTEGER,
+      classified_at TIMESTAMPTZ,
+      costed_by INTEGER,
+      costed_at TIMESTAMPTZ,
+      capitalized_by INTEGER,
+      capitalized_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CHECK (classification <> 'FIXED_ASSET' OR class_id IS NOT NULL)
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_asset_accounting_stage ON asset_accounting(stage);`);
+
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS asset_attributable_costs (
+      id SERIAL PRIMARY KEY,
+      asset_id INTEGER NOT NULL REFERENCES asset_accounting(asset_id),
+      concept VARCHAR(150) NOT NULL,
+      amount NUMERIC(18,2) NOT NULL CHECK (amount > 0),
+      document_ref VARCHAR(50),
+      created_by INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_asset_attributable_costs_asset_id ON asset_attributable_costs(asset_id);`);
+
+  // Cierres mensuales. Un periodo puede tener cierres VOIDED (anulados) y a lo
+  // mas UNO CLOSED: el indice unico parcial es el que impide un cierre doble
+  // entre las 3 replicas aunque fallara el advisory lock del servicio.
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS asset_depreciation_runs (
+      id SERIAL PRIMARY KEY,
+      period DATE NOT NULL CHECK (EXTRACT(DAY FROM period) = 1),
+      status VARCHAR(10) NOT NULL CHECK (status IN ('CLOSED','VOIDED')),
+      asset_count INTEGER NOT NULL DEFAULT 0,
+      total_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+      closed_by INTEGER,
+      closed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      voided_by INTEGER,
+      voided_at TIMESTAMPTZ
+    );
+  `);
+  await runDdl(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_asset_depreciation_runs_closed_period
+      ON asset_depreciation_runs(period) WHERE status = 'CLOSED';
+  `);
+
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS asset_depreciation_entries (
+      run_id INTEGER NOT NULL REFERENCES asset_depreciation_runs(id),
+      asset_id INTEGER NOT NULL REFERENCES assets(id),
+      amount NUMERIC(18,2) NOT NULL CHECK (amount > 0),
+      accumulated NUMERIC(18,2) NOT NULL,
+      book_value NUMERIC(18,2) NOT NULL,
+      PRIMARY KEY (run_id, asset_id)
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_asset_depreciation_entries_asset_id ON asset_depreciation_entries(asset_id);`);
 }
 
 // Toma de inventario fisica (levantamiento por un auditor). Ver

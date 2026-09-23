@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import * as Io from "react-icons/io5";
 import type { IconType } from "react-icons";
-import { Input } from "./ui";
+import { Button, Input } from "./ui";
 
 // Mismo set que resuelve MenuIcon.tsx (react-icons/io5, ~1.300 iconos): se
 // guarda el nombre de export tal cual (ej. "IoWallet") en menu_items.icon.
@@ -9,9 +9,9 @@ const ICONS = Object.entries(Io as unknown as Record<string, IconType>)
     .filter(([name]) => name.startsWith("Io"))
     .sort(([a], [b]) => a.localeCompare(b));
 
-// Tope de iconos renderizados a la vez: dibujar los ~1.300 juntos hace
-// pesado el recuadro, se pide afinar la busqueda en vez de paginar.
-const MAX_VISIBLE = 120;
+// Iconos por pagina: dibujar los ~1.300 juntos hace pesado el recuadro, asi
+// que se pagina (y la busqueda acota el total).
+const PAGE_SIZE = 120;
 
 // "IoWalletOutline" -> "wallet outline", para buscar sin el prefijo ni el
 // CamelCase ("wallet", "outline", "people").
@@ -24,6 +24,7 @@ function searchableName(name: string): string {
 
 export function IconPicker({ value, onChange }: { value: string; onChange: (name: string) => void }) {
     const [search, setSearch] = useState("");
+    const [page, setPage] = useState(1);
 
     const filtered = useMemo(() => {
         const term = search.trim().toLowerCase();
@@ -31,8 +32,45 @@ export function IconPicker({ value, onChange }: { value: string; onChange: (name
         return ICONS.filter(([name]) => searchableName(name).includes(term) || name.toLowerCase().includes(term));
     }, [search]);
 
-    const visible = filtered.slice(0, MAX_VISIBLE);
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const currentPage = Math.min(page, totalPages);
+    const visible = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
     const SelectedIcon = value ? (Io as unknown as Record<string, IconType>)[value] : undefined;
+
+    function handleSearchChange(term: string) {
+        setSearch(term);
+        setPage(1);
+    }
+
+    // Arriba y abajo de la grilla, igual que en los listados paginados.
+    const pagination =
+        totalPages > 1 ? (
+            <div className="flex items-center justify-between gap-2 text-xs text-slate-600">
+                <span>
+                    Página {currentPage} de {totalPages} ({filtered.length} iconos)
+                </span>
+                <div className="flex gap-2">
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        className="px-2! py-1! text-xs"
+                        disabled={currentPage <= 1}
+                        onClick={() => setPage(currentPage - 1)}
+                    >
+                        Anterior
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        className="px-2! py-1! text-xs"
+                        disabled={currentPage >= totalPages}
+                        onClick={() => setPage(currentPage + 1)}
+                    >
+                        Siguiente
+                    </Button>
+                </div>
+            </div>
+        ) : null;
 
     return (
         <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -48,15 +86,17 @@ export function IconPicker({ value, onChange }: { value: string; onChange: (name
                     <Input
                         placeholder="Buscar icono (ej. people, wallet, cart)..."
                         value={search}
-                        onChange={(e) => setSearch(e.target.value)}
+                        onChange={(e) => handleSearchChange(e.target.value)}
                         className="bg-zinc-100 focus:bg-indigo-100"
                         aria-label="Buscar icono"
                     />
                 </div>
             </div>
 
+            {pagination && <div className="mt-3">{pagination}</div>}
+
             <div
-                className="mt-3 grid max-h-72 grid-cols-6 gap-1 overflow-y-auto min-[500px]:grid-cols-8 min-[800px]:grid-cols-12"
+                className="mt-3 grid grid-cols-6 gap-1 min-[500px]:grid-cols-8 min-[800px]:grid-cols-12"
                 role="listbox"
                 aria-label="Iconos disponibles"
             >
@@ -83,13 +123,13 @@ export function IconPicker({ value, onChange }: { value: string; onChange: (name
                 })}
             </div>
 
-            <p className="mt-2 text-xs text-slate-500">
-                {filtered.length === 0
-                    ? "No hay iconos con ese nombre."
-                    : filtered.length > MAX_VISIBLE
-                      ? `Mostrando ${MAX_VISIBLE} de ${filtered.length} iconos; escriba para afinar la búsqueda.`
-                      : `${filtered.length} iconos.`}
-            </p>
+            {pagination ? (
+                <div className="mt-3">{pagination}</div>
+            ) : (
+                <p className="mt-2 text-xs text-slate-500">
+                    {filtered.length === 0 ? "No hay iconos con ese nombre." : `${filtered.length} iconos.`}
+                </p>
+            )}
         </div>
     );
 }

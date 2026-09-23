@@ -18,6 +18,79 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-23 (4) — Gestión contable de activos: clasificación, costo, capitalización y depreciación (plan 007)
+
+### Contexto
+El usuario creó desde «Nueva Pantalla» la rama **Contabilidad › Gestión de Activos › Capitalizacion** para cumplir el
+ciclo ITIL contable de un activo: clasificación, costo, capitalización y depreciación.
+Plan: `.claude/planes/007-gestion-contable-activos.html`.
+
+### Hecho
+- **Modelo (Postgres, `migrateAssetAccounting`):**
+  - `asset_accounting_classes`: se siembran 4 clases con la vida útil SII;
+  - `asset_accounting_policy`: umbral de capitalización;
+  - `asset_accounting` (1:1 con `assets`, con la etapa `CLASSIFIED → COSTED → CAPITALIZED → DEPRECIATING →
+    FULLY_DEPRECIATED`);
+  - `asset_attributable_costs`;
+  - `asset_depreciation_runs`, con un índice único parcial: un solo cierre `CLOSED` por mes;
+  - `asset_depreciation_entries`.
+- **Kardex:** tipos nuevos `CAPITALIZATION`, `DEPRECIATION` y `DEPRECIATION_REVERSAL`. El CHECK pasó a tener
+  nombre y `entry_type` se amplió a `VARCHAR(30)` (solo si hace falta, para no tomar el lock en cada arranque).
+- **Cálculo:** `library/depreciation.ts` (lineal y acelerada SII = vida útil / 3), en centavos, con ajuste de la
+  última cuota. Tiene tests unitarios.
+- **API:**
+  - `/asset-accounting`: pendientes, clasificar, costos atribuibles, fijar costo, capitalizar, parámetros y
+    tabla proyectada;
+  - `/asset-depreciation-runs`: vista previa, cerrar y anular el último;
+  - `/asset-accounting-policy`: umbral y clases.
+- **Reglas del cierre:**
+  - los cierres van en orden y nunca a futuro;
+  - advisory lock global y una sola transacción;
+  - solo se anula el último cierre, con reversas en el Kardex.
+- **Permisos base:**
+  - `asset-accounting:read|update`;
+  - `asset-capitalization:create`;
+  - `asset-depreciation:read|create|delete`;
+  - `asset-accounting-policy:read|update`.
+  - Los 5 permisos de pantalla y el menú van en el catálogo, con los mismos labels que creó el usuario, así la
+    siembra adopta esas filas.
+- **Front (`pages/contabilidad/`):** Clasificación Contable, Determinar Costo, Capitalización, Depreciación
+  (cierre mensual, historial y tabla proyectada) y Política Contable de Activos. Las etiquetas de los tipos
+  nuevos se agregaron al Kardex.
+
+### Verificación
+- **Compilación y lint:** `tsc` de API y front, y ESLint completo del front.
+- **Suite completa contra Testing:** 36 archivos, 317 tests OK. Front: 68 OK.
+- **`assetAccounting.service.integration.test.ts`** cubre:
+  - umbral;
+  - costo sin valor;
+  - capitalización y saldo del Kardex;
+  - cierre en orden hasta el residual;
+  - anulación solo del último;
+  - período futuro;
+  - dos cierres simultáneos que dejan uno solo.
+
+### Pendiente
+- **Development:** `accounting-capitalization:access` ya existía con otros permisos incluidos y la siembra no los
+  pisa. Hay que agregarle `asset-accounting:read`, `asset-capitalization:create` y `assets:read` desde
+  «Permisos de Pantalla».
+- **Prueba en navegador.**
+
+### Revisión de seguridad
+`security-review` sobre los cambios sin commitear: **sin hallazgos**.
+- Cada ruta nueva usa `authenticate` y el `authorize()` que corresponde a su acción. Capitalizar, cerrar y anular
+  tienen permisos propios, y ninguno se otorga al rol `user` por defecto.
+- Todo el SQL usa `replacements`. Los ORDER BY son fijos, y los filtros de etapa y clasificación pasan por una
+  lista blanca.
+- zod descarta las claves que no conoce, así que ningún body puede fijar la etapa, los costos, los `*_by` ni el
+  tipo de asiento. El endpoint manual del Kardex sigue aceptando solo `ADJUSTMENT` y `WRITE_OFF`.
+- Nota menor (no es vulnerabilidad): los `:id` de cierres y clases no se validan como enteros. Un id inválido
+  termina en un 500, sin inyección.
+
+Se commitea junto con el arreglo de paginación del selector de íconos (`IconPicker`).
+
+---
+
 ## 2026-09-23 (3) — Revisión de seguridad de las entradas de hoy y mitigación
 
 ### Contexto
@@ -272,8 +345,10 @@ schemas**. Decisiones del usuario: reanudable con Redis (retomar desde la últim
   (con `qpdf` instalado, para que se ejecuten los del saneador de PDF) y, para el front, `tsc -p tsconfig.app.json`, ESLint,
   tests y build. `pnpm install --frozen-lockfile` (ambos lockfiles verificados al día). No corre hacia `master`: allí los
   tests no viajan (`master-excluded-paths.txt`) y el PR lo cubre `master-no-testing-artifacts.yml`.
-- Los tests de **integración** siguen a mano (`.un.ps1 bdd test`): necesitan las bases reales del stack de Testing.
-- Flujo a producción: `develop` → PR a `testing` (CI) → `.un.ps1 pre prod` (mezcla `testing` en `release/master` sin tests
+- Los tests de **integración** siguen a mano (`.
+un.ps1 bdd test`): necesitan las bases reales del stack de Testing.
+- Flujo a producción: `develop` → PR a `testing` (CI) → `.
+un.ps1 pre prod` (mezcla `testing` en `release/master` sin tests
   ni composes de test) → PR a `master`. `corporate-api/test/pdfFixtures.ts` se agregó a las rutas excluidas de `master`.
 - Para que el CI sea obligatorio hay que marcar sus jobs (`API (tsc + tests unitarios)`, `Web (tsc + lint + tests + build)`)
   como checks requeridos en la protección de rama de `develop`/`testing` en GitHub (no se configura desde el repo).
