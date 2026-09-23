@@ -1,7 +1,7 @@
 import { Op } from "sequelize";
 import { afterEach, describe, expect, it } from "vitest";
 import { BadRequestError, ConflictError } from "../../library/errors";
-import { PermissionModel } from "../../models/postgres/permission.model";
+import { PermissionModel, type PermissionAction } from "../../models/postgres/permission.model";
 import { PermissionIncludeModel } from "../../models/postgres/permissionInclude.model";
 import { RoleModel } from "../../models/postgres/role.model";
 import { SCREEN_ACCESS_CATALOG } from "../../databases/permission-catalog";
@@ -187,15 +187,42 @@ describe("permisos de pantalla (agrupadores access)", () => {
     expect(await PermissionIncludeModel.count({ where: { permissionId: bundle!.id } })).toBe(entry.includes.length);
   });
 
-  // Solo "existe y tiene includes", no "coincide con el catalogo": los
-  // includes se siembran una unica vez y despues pueden cambiar (edicion del
-  // admin o una base sembrada con una version anterior del catalogo).
-  it("la siembra deja cada pantalla del catalogo con includes", async () => {
+  it("la siembra deja cada pantalla del catalogo con todos sus includes minimos", async () => {
+    const keyById = new Map(
+      (await PermissionModel.findAll()).map((permission) => [permission.id, `${permission.resource}:${permission.action}`]),
+    );
     for (const entry of SCREEN_ACCESS_CATALOG) {
       const bundle = await PermissionModel.findOne({ where: { resource: entry.resource, action: "access" } });
       expect(bundle, entry.resource).not.toBeNull();
-      const count = await PermissionIncludeModel.count({ where: { permissionId: bundle!.id } });
-      expect(count, entry.resource).toBeGreaterThan(0);
+      const links = await PermissionIncludeModel.findAll({ where: { permissionId: bundle!.id } });
+      const keys = links.map((link) => keyById.get(link.includedPermissionId));
+      expect(keys, entry.resource).toEqual(expect.arrayContaining(entry.includes));
     }
+  });
+
+  it("la siembra completa un agrupador existente sin quitarle lo agregado desde la UI", async () => {
+    const entry = SCREEN_ACCESS_CATALOG.find((screen) => screen.resource === "accounting-capitalization")!;
+    const bundle = await PermissionModel.findOne({ where: { resource: entry.resource, action: "access" } });
+    const productsRead = await basePermission("products", "read");
+    const [firstKey] = entry.includes;
+    const [firstResource, firstAction] = firstKey!.split(":");
+    const first = await PermissionModel.findOne({
+      where: { resource: firstResource!, action: firstAction as PermissionAction },
+    });
+
+    // Como en Development: el agrupador tiene includes elegidos en la UI y le
+    // falta parte del minimo del catalogo.
+    await PermissionIncludeModel.destroy({ where: { permissionId: bundle!.id, includedPermissionId: first!.id } });
+    await addPermissionInclude(bundle!.id, productsRead.id);
+    await seedPermissions();
+
+    const includedIds = (await PermissionIncludeModel.findAll({ where: { permissionId: bundle!.id } })).map(
+      (link) => link.includedPermissionId,
+    );
+    expect(includedIds).toEqual(expect.arrayContaining([first!.id, productsRead.id]));
+
+    // Lo agregado desde la UI se puede quitar; el minimo del catalogo no.
+    await removePermissionInclude(bundle!.id, productsRead.id);
+    await expect(removePermissionInclude(bundle!.id, first!.id)).rejects.toBeInstanceOf(ConflictError);
   });
 });
