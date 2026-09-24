@@ -33,6 +33,19 @@ http {
         ""      close;
     }
 
+    # IP real del navegador cuando el trafico llega via nginx-front: se confia
+    # en su X-Forwarded-For SOLO si la conexion viene de la subred de
+    # frontapi-net (red --internal donde solo viven nginx-front y este nginx,
+    # fijada por run.ps1/run.sh como <base>.13.0/24). Con real_ip_recursive se
+    # toma la ultima IP NO confiable del header, o sea la que agrego nginx-front
+    # -un XFF inventado por el cliente queda a la izquierda y se ignora-. El
+    # acceso directo por ALLOCATED_IP (Insomnia) llega desde el gateway de
+    # backend-net, fuera de esa subred: su XFF se ignora y $remote_addr queda
+    # como la IP real de la conexion, igual que antes.
+    set_real_ip_from ${FRONTAPI_SUBNET};
+    real_ip_header X-Forwarded-For;
+    real_ip_recursive on;
+
     # Balanceo entre las 3 réplicas (round-robin, algoritmo default de
     # nginx). max_fails/fail_timeout = health check PASIVO: tras 3 fallos en
     # 10s, nginx marca esa réplica "down" y deja de mandarle tráfico durante
@@ -131,22 +144,12 @@ http {
             # que sin este fix, cambiar el XFF en cada intento evade por
             # completo el limite de fuerza bruta en ESE camino.
             #
-            # Trade-off aceptado, no resuelto del todo: cuando el trafico
-            # llega via nginx-frontdev (proxy_pass a este mismo host desde
-            # "frontapi-net", ver corporate-front/nginx/config/nginx.conf*.
-            # template), $remote_addr aca pasa a ser la IP interna de
-            # nginx-frontdev, no la del navegador real -nginx-frontdev SI
-            # arma bien el XFF real antes de reenviar, pero esta linea lo
-            # descarta igual. Efecto: todos los usuarios que entran por el
-            # front comparten un mismo bucket de rate-limit en vez de uno por
-            # IP real (peor UX bajo trafico legitimo alto, pero no un
-            # agujero de seguridad). Solucion completa: "set_real_ip_from"
-            # (ngx_http_realip_module) confiando SOLO en la subred de
-            # frontapi-net para recien ahi tomar su X-Forwarded-For -no
-            # aplicado aca porque esa subred la asigna Docker
-            # automaticamente (no esta pineada en la creacion de la red,
-            # root run.ps1) y hardcodearla in aumentaria el acoplamiento sin
-            # garantia de que se mantenga estable entre ambientes.
+            # Cuando el trafico llega via nginx-front, $remote_addr ya es la
+            # IP real del navegador: la resuelve "set_real_ip_from" (bloque
+            # http de arriba) confiando solo en la subred de frontapi-net.
+            # Antes de ese cambio, todos los usuarios que entraban por el
+            # front compartian un unico bucket de rate-limit (el de la IP de
+            # nginx-front).
             proxy_set_header X-Forwarded-For $remote_addr;
             proxy_set_header X-Forwarded-Proto $scheme;
             # Default de nginx (incluye "error" y "timeout"): si la réplica

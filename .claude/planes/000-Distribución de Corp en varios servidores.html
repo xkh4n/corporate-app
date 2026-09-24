@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>000 — Distribución de Corp en varios servidores</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc;
+    --warn-bg:#fff8e6; --warn-border:#f0b429; --risk-bg:#fdecec; --risk-border:#d64545; --ok-bg:#ecfdf3; --ok-border:#2f9e61; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:960px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.8rem; font-size:1.3rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  h3 { margin-top:1.8rem; font-size:1.08rem; }
+  h4 { margin-top:1.3rem; font-size:.98rem; color:var(--muted); }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  pre { background:var(--code-bg); border:1px solid var(--border); border-radius:6px; padding:.8rem 1rem; overflow-x:auto;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.8rem; line-height:1.45; }
+  pre code { background:none; padding:0; font-size:inherit; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.88rem; display:block; overflow-x:auto; }
+  th, td { border:1px solid var(--border); padding:.45rem .65rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  .callout { border-left:4px solid var(--accent); background:var(--block-bg); padding:.7rem 1rem; margin:1rem 0; border-radius:0 6px 6px 0; }
+  .callout.warn { border-color:var(--warn-border); background:var(--warn-bg); }
+  .callout.risk { border-color:var(--risk-border); background:var(--risk-bg); }
+  .callout.ok { border-color:var(--ok-border); background:var(--ok-bg); }
+  .callout > :first-child { margin-top:0; } .callout > :last-child { margin-bottom:0; }
+  nav.toc { background:var(--block-bg); border:1px solid var(--border); border-radius:6px; padding:.8rem 1.2rem; }
+  nav.toc ol { margin:.3rem 0; } nav.toc a { color:var(--accent); text-decoration:none; }
+  .tag { display:inline-block; font-size:.72rem; font-weight:700; padding:.05rem .45rem; border-radius:999px; vertical-align:middle; }
+  .tag.new { background:#dbeafe; color:#1e40af; } .tag.chg { background:#fef3c7; color:#92400e; } .tag.del { background:#fee2e2; color:#991b1b; }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 000</span>
+  <h1>Distribución de corporate-app en varios servidores</h1>
+  <div class="meta">corporate-app · infra + api + front + mailer + monitoring · Estado: <strong>propuesta para evaluación, no implementada</strong> · 2026-09-24 ·
+  Preparado con los agentes <em>devops-engineer</em>, <em>security-engineer</em> e <em>infrastructure-maintainer</em> sobre la rama <code>develop</code>. Solo es análisis: no se modificó el código.</div>
+</header>
+
+<nav class="toc">
+  <strong>Contenido</strong>
+  <ol>
+    <li><a href="#resumen">Resumen ejecutivo</a></li>
+    <li><a href="#hoy">Cómo funciona hoy y qué se rompe al separar</a></li>
+    <li><a href="#hallazgos">Hallazgos del repositorio que condicionan el plan</a></li>
+    <li><a href="#topologia">Topología objetivo</a></li>
+    <li><a href="#dimensionamiento">Dimensionamiento de servidores</a></li>
+    <li><a href="#red">Red, DNS y direccionamiento</a></li>
+    <li><a href="#hosts">Configuración por host: compose, redes, puertos, volúmenes y variables</a></li>
+    <li><a href="#compose">Estrategia de archivos compose y de imágenes</a></li>
+    <li><a href="#seguridad">Seguridad: PKI, TLS por tramo, IP real y firewall</a></li>
+    <li><a href="#secretos">Secretos por host</a></li>
+    <li><a href="#datos">Datos, alta disponibilidad y respaldos</a></li>
+    <li><a href="#monitoreo">Monitoreo distribuido y alertas</a></li>
+    <li><a href="#so">Sistema operativo y hardening de hosts</a></li>
+    <li><a href="#fases">Plan de implementación por fases</a></li>
+    <li><a href="#verificacion">Verificación y rollback</a></li>
+    <li><a href="#operacion">Operación continua</a></li>
+    <li><a href="#riesgos">Riesgos y decisiones pendientes</a></li>
+    <li><a href="#inventario">Anexo: inventario de archivos a modificar</a></li>
+  </ol>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="resumen">1. Resumen ejecutivo</h2>
+
+<p>Hoy los cinco stacks (infra, api, front, mailer y monitoring) corren en <strong>un solo host Docker</strong>. Se comunican por <strong>redes bridge compartidas</strong> y por <strong>nombres de contenedor</strong>, y buena parte de ese tráfico va sin cifrar. Separarlos en servidores distintos cambia esa base: ni las redes bridge ni los nombres de contenedor funcionan entre máquinas, y el tráfico que hoy no sale del kernel pasa a viajar por la red.</p>
+
+<p><strong>Propuesta:</strong></p>
+<ul>
+  <li><strong>Un compose independiente por servidor, sin Swarm.</strong> Los servidores se comunican por una red privada cifrada con WireGuard y se encuentran por nombres DNS internos (<code>*.corp.internal</code>).</li>
+  <li><strong>Puertos publicados solo en la IP privada</strong> de cada host, con firewall por IP de origen.</li>
+  <li><strong>TLS verificado contra una CA interna en cada tramo.</strong> Además, mTLS en front→api, api→mailer y en la ingesta de monitoreo.</li>
+  <li><strong>Imágenes desde un registro privado</strong> con tag inmutable. Los servidores de producción no construyen imágenes.</li>
+  <li><strong>Un agente de monitoreo (Alloy) en cada host</strong>, que envía métricas y logs hacia el servidor de monitoreo. Así no hay que publicar exporters.</li>
+  <li><strong>Overrides <code>compose.distributed.yml</code>.</strong> Desarrollo y Testing siguen funcionando en un solo host sin cambios.</li>
+</ul>
+
+<table>
+  <tr><th>Tema</th><th>Conclusión</th></tr>
+  <tr><td>Viabilidad</td><td>Es viable, y la mayor parte del trabajo es configuración. Los cambios de código son acotados: TLS configurable en las 4 conexiones a bases de datos, cliente HTTPS con mTLS hacia el mailer, <code>trust proxy</code> configurable y guardas de arranque.</td></tr>
+  <tr><td>Servidores</td><td>5 hosts según lo pedido (INFRA, API, FRONT, MAILER y MON). Para producción real se recomiendan además un segundo host de base de datos (DB02) y una VM de operaciones para la CA (ver §4).</td></tr>
+  <tr><td>Bloqueantes previos</td><td>Hoy no hay respaldos ni Alertmanager. MSSQL corre en edición Developer. El tráfico a las bases de datos va en texto plano. Hay que resolver esto <strong>antes</strong> de separar.</td></tr>
+  <tr><td>Mayor riesgo técnico</td><td>La latencia de api→bases de datos. Hoy es cero porque todo corre en la misma máquina; pasa a sumar milisegundos en cada consulta. Hay que medirlo en un piloto antes de comprometer la topología.</td></tr>
+  <tr><td>Mayor riesgo de costo</td><td>La licencia de MSSQL: se licencia por núcleo, y el secundario legible también paga.</td></tr>
+  <tr><td>Esfuerzo orientativo</td><td>Unos 15 a 25 días-persona para cambios de repo, pruebas en Testing, aprovisionamiento y corte. No incluye la fase 2 de alta disponibilidad (failover automático, S3). El tamaño real de los datos, que no está medido, define la ventana de corte.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="hoy">2. Cómo funciona hoy y qué se rompe al separar</h2>
+
+<h3>2.1 Redes actuales (producción, base <code>10.200.0.0/16</code>)</h3>
+<table>
+  <tr><th>Stack</th><th>Red</th><th>internal</th><th>Subred</th><th>Origen</th></tr>
+  <tr><td>infra</td><td><code>backend</code></td><td>sí</td><td>10.200.1.0/24</td><td><code>corporate-infra/compose.prod.yml</code></td></tr>
+  <tr><td>infra</td><td><code>exporters</code></td><td>sí</td><td>10.200.2.0/24</td><td>ídem</td></tr>
+  <tr><td>infra</td><td><code>public</code></td><td>no</td><td>10.200.3.0/24</td><td>ídem (publica el nginx stream)</td></tr>
+  <tr><td>api</td><td><code>internal</code></td><td>sí</td><td>10.200.4.0/24</td><td><code>corporate-api/compose.prod.yml</code></td></tr>
+  <tr><td>api</td><td><code>api-exporters</code></td><td>sí</td><td>10.200.5.0/24</td><td>ídem</td></tr>
+  <tr><td>mailer</td><td><code>mailer-egress</code></td><td>no</td><td>10.200.6.0/24</td><td><code>corporate-mailer/compose.prod.yml</code> (único egreso real a Internet)</td></tr>
+  <tr><td>front</td><td><code>internal</code></td><td>sí</td><td>10.200.7.0/24</td><td><code>corporate-front/compose.prod.yml</code></td></tr>
+  <tr><td>monitoring</td><td><code>monitoring</code>, <code>proxy-internal</code>, <code>public</code></td><td>sí / sí / no</td><td>10.200.8–10.0/24</td><td><code>corporate-monitoring/compose.prod.yml</code></td></tr>
+  <tr><td>compartidas</td><td><code>backend-net-*</code>, <code>mailer-net-*</code>, <code>frontapi-net-*</code>, <code>frontend-net-*</code></td><td>no / sí / sí / no</td><td>10.200.11–14.0/24</td><td>creadas de forma imperativa por <code>run.ps1</code>/<code>run.sh</code> (<code>run.ps1:117-231</code>)</td></tr>
+</table>
+
+<h3>2.2 Dependencias entre stacks (el núcleo del problema)</h3>
+<table>
+  <tr><th>Origen → destino</th><th>Mecanismo actual</th><th>Al separar</th></tr>
+  <tr><td>api → bases de datos</td><td><code>POSTGRES_HOST: "${POSTGRES_HOST}01${SUFFIX}"</code> y equivalentes: nombre de contenedor dentro de la red externa <code>infra-backend</code>. <strong>No pasa por el nginx stream.</strong></td><td>El nombre no resuelve y la red no existe en el otro host.</td></tr>
+  <tr><td>api → mailer</td><td><code>MAILER_URL: http://${MAILER_HOST}${SUFFIX}:${MAILER_INTERNAL_PORT}/send</code> por <code>mailer-net</code>. El mailer <strong>no publica ningún puerto</strong>.</td><td>El mailer no queda alcanzable. Hay que agregarle un punto de entrada.</td></tr>
+  <tr><td>front → api</td><td><code>proxy_pass https://${API_PROXY_HOST}${SUFFIX}:443</code> con <code>proxy_ssl_verify off</code>, por <code>frontapi-net</code>.</td><td>El nombre no resuelve, y el TLS sin verificar pasa a ser inaceptable.</td></tr>
+  <tr><td>monitoring → exporters e instancias de la API</td><td>Prometheus consulta por nombre de contenedor dentro de redes <code>internal</code> que <strong>no publican puertos</strong>.</td><td>Hoy no existe ningún camino desde otra máquina. Requiere un rediseño (§12).</td></tr>
+  <tr><td>Monitoreo de logs</td><td>Alloy lee el <code>docker.sock</code> local a través de <code>dockerproxy</code> + filtro.</td><td>Los logs solo se pueden leer en el propio host: hace falta un agente por host.</td></tr>
+  <tr><td>Orden de arranque</td><td>Redes <code>external: true</code> y validaciones con <code>docker network ls</code> en <code>corporate-scripts/backend.ps1:46-52</code> y <code>monitoring.ps1:61-92</code>.</td><td>Esas validaciones dejan de funcionar entre hosts. El orden pasa a garantizarlo el pipeline, con chequeos de salud reales.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="hallazgos">3. Hallazgos del repositorio que condicionan el plan</h2>
+<p>Algunos existen desde antes y no los crea la distribución, pero al separar dejan de ser aceptables.</p>
+<table>
+  <tr><th>#</th><th>Hallazgo</th><th>Evidencia</th><th>Tratamiento</th></tr>
+  <tr><td>H1</td><td>El tráfico hacia las bases de datos va en texto plano. Postgres tiene <code>ssl:false</code> fijo; Mongo y Redis no usan TLS; MSSQL cifra pero con <code>trustServerCertificate:true</code>, así que no autentica al servidor.</td><td><code>corporate-api/src/databases/*/connection.ts</code></td><td>TLS verificado en los 4 motores (§9.3)</td></tr>
+  <tr><td>H2</td><td>En producción, la conexión a Mongo <strong>descubre el replica set</strong> (<code>MONGO_DIRECT_CONNECTION</code> no está definida y vale <code>false</code> por defecto). Los miembros se anuncian con nombres de contenedor, que no resuelven desde otro host.</td><td><code>env.ts:92</code>, <code>mongo/connection.ts</code>, <code>corporate-infra/MongoDB/init.sh</code></td><td>Fase 1: <code>directConnection=true</code> vía el stream. Fase 2: miembros anunciados por FQDN (§11)</td></tr>
+  <tr><td>H3</td><td>No existe ningún script de respaldo.</td><td>Sin <code>pg_dump</code>, <code>mongodump</code> ni <code>BACKUP DATABASE</code> operativos</td><td>Crearlo antes del corte (§11.4)</td></tr>
+  <tr><td>H4</td><td>No hay Alertmanager ni reglas de alerta. El ruler de Loki apunta a un <code>localhost:9093</code> que no existe.</td><td><code>prometheus.yml.template</code>, <code>Loki/loki-config.yml</code></td><td>Crearlo antes del corte (§12)</td></tr>
+  <tr><td>H5</td><td>MSSQL arranca en edición <strong>Developer</strong>, que no tiene licencia para producción. Además, un AG read-scale probablemente requiere Enterprise.</td><td><code>corporate-infra/MsSQL/entrypoint-wrapper.sh</code>, <code>scripts/setup-ag.sh</code></td><td>Decisión de licencia (§17)</td></tr>
+  <tr><td>H6</td><td>Las imágenes se construyen en el propio host (<code>up --build</code>).</td><td><code>corporate-scripts/*.sh|ps1</code></td><td>Registro privado + <code>IMAGE_TAG</code> (§8.3)</td></tr>
+  <tr><td>H7</td><td>La réplica de Postgres no tiene slot de replicación ni <code>wal_keep_size</code>. Con latencia de red, la réplica puede quedar irrecuperable.</td><td><code>corporate-infra/PostgreSQL/entrypoint-wrapper.sh</code></td><td><code>wal_keep_size=2GB</code> o slot físico</td></tr>
+  <tr><td>H8</td><td>Los límites de recursos están dimensionados para desarrollo (por ejemplo, "768M es holgado").</td><td><code>corporate-infra/compose.prod.yml</code></td><td>Subirlos (§5)</td></tr>
+  <tr><td>H9</td><td>Detrás del front, nginx-api reescribe <code>X-Forwarded-For</code> con <code>$remote_addr</code>, así que <strong>todos los usuarios comparten un solo contador de rate-limit en el login</strong>.</td><td><code>corporate-api/nginx/config/nginx.conf.template</code> (comentario sobre IP real), <code>api.ts:58</code>, <code>middlewares/rateLimit.ts</code></td><td><strong>Corregido el 2026-09-24 en el despliegue actual</strong> (<code>set_real_ip_from ${FRONTAPI_SUBNET}</code>). En multi-host pasa a usar la IP exacta del FRONT (§9.4)</td></tr>
+  <tr><td>H10</td><td>El SMTP del mailer usa STARTTLS <strong>oportunista</strong> (<code>secure:false</code> sin <code>requireTLS</code>): un atacante puede degradar la conexión y leer la contraseña SMTP.</td><td><code>corporate-mailer/src/library/mailer.ts</code></td><td><strong>Corregido el 2026-09-24</strong>: <code>requireTLS</code>, TLSv1.2 como mínimo y verificación del certificado</td></tr>
+  <tr><td>H11</td><td>La API se conecta a Redis con el usuario <code>default</code>, que tiene la contraseña de administrador y acceso a <code>CONFIG SET</code>.</td><td><code>redis/connection.ts</code>, <code>corporate-infra/Redis/entrypoint-wrapper.sh</code></td><td><strong>Corregido el 2026-09-24</strong>: usuario ACL <code>REDIS_APP_USER</code> sin <code>@admin</code>/<code>@dangerous</code></td></tr>
+  <tr><td>H12</td><td>El directorio <strong>completo</strong> <code>certs/</code>, con las claves TLS de api, front y monitoring, está montado en modo lectura-escritura en mssql01, mssql02 y mssql-init. Además hay un secreto sin uso: <code>db_gui_password</code>.</td><td><code>corporate-infra/compose.prod.yml</code></td><td>Subdirectorio <code>certs/mssql-ag/</code> de solo lectura; eliminar el secreto sin uso</td></tr>
+  <tr><td>H13</td><td>Los servicios de bases de datos se detienen con el <code>stop_grace_period</code> por defecto (10 s): SQL Server, Postgres o Mongo pueden recibir SIGKILL en pleno checkpoint.</td><td><code>corporate-infra/compose.prod.yml</code></td><td><code>stop_grace_period: 120s</code></td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="topologia">4. Topología objetivo</h2>
+
+<h3>4.1 Descartado: Docker Swarm</h3>
+<p>Las redes overlay cifradas de Swarm mantendrían los nombres de contenedor. Pero <code>docker stack deploy</code> ignora <code>container_name</code>, <code>build</code> y las condiciones de <code>depends_on</code>, y cambia todo el modelo operativo y los scripts. Solo convendría si más adelante se quiere repartir la API en varios hosts con balanceo automático.</p>
+
+<h3>4.2 Topología base: 5 hosts (lo solicitado)</h3>
+<pre><code>                         Internet
+                             | 443
+                 [Firewall / LB público]  erp.&lt;dominio-real&gt;
+                             | DNAT -&gt; WEB (8444)
+   DMZ 10.60.20.0/24         |
+   +-------------------------------------+
+   | FRONT  nginx-front + frontendprod   |   (única cara pública)
+   +-------------------------------------+
+                             | https + mTLS  api.corp.internal:3443
+   SERVIDORES 10.60.10.0/24  +  WireGuard wg0 10.60.99.0/24 (full mesh)
+   +-------------------------------------+        +--------------------------------+
+   | API    nginx-api + api01..03        |--mTLS-&gt;| MAILER nginx-mailer + mailer    |--587--&gt; relay SMTP
+   |        vol: api_uploads/downloads   |        +--------------------------------+
+   +-------------------------------------+
+        | TLS  pg / mssql / redis / mongo .infra.corp.internal (nginx stream)
+   +-------------------------------------+
+   | INFRA  pg01/02 mongo01/02+árbitro   |
+   |        mssql01/02 redis01/02        |
+   |        nginx stream + exporters     |
+   +-------------------------------------+
+   +-------------------------------------+
+   | MON    Prometheus Loki Grafana      |&lt;-- push mTLS (Alloy de cada host)
+   |        Alertmanager blackbox        |
+   +-------------------------------------+
+   Cada host: agente = Alloy + node-exporter + cAdvisor + dockerproxy(+filtro)
+   Respaldos: almacenamiento de objetos S3-compatible fuera del sitio, con Object Lock</code></pre>
+
+<h3>4.3 Qué conviene agregar o co-ubicar</h3>
+<table>
+  <tr><th>Opción</th><th>A favor</th><th>En contra</th><th>Recomendación</th></tr>
+  <tr><td>Mailer en su propio host (lo solicitado)</td><td>Aísla las credenciales SMTP y el único egreso a Internet.</td><td>Suma un tramo de red y un punto de entrada nuevo (nginx-mailer con mTLS).</td><td>Se mantiene como base.</td></tr>
+  <tr><td>Mailer co-ubicado con la API</td><td><code>mailer-net</code> sigue siendo una red interna local, sin puerto publicado ni certificado adicional.</td><td>El host de la API necesita egreso SMTP y comparte punto de falla con el mailer.</td><td>Alternativa válida si se quiere reducir costo o superficie de ataque.</td></tr>
+  <tr><td><strong>DB02</strong> con las réplicas</td><td>Hoy la réplica vive en el mismo host y disco que el primario, así que no protege contra una falla física.</td><td>Obliga a partir el compose de infra y a mover el árbitro de Mongo a un tercer host.</td><td><strong>Recomendado</strong> para producción (fase 2).</td></tr>
+  <tr><td>Árbitro de Mongo en MON</td><td>Es la única forma de tener failover real con dos hosts de bases de datos.</td><td>MON pasa a participar en el quórum.</td><td>Obligatorio si existe DB02.</td></tr>
+  <tr><td>Monitoreo junto a la API o a la base de datos</td><td>Ahorra un host.</td><td>Si cae ese host, la observabilidad cae justo durante el incidente.</td><td>No.</td></tr>
+  <tr><td>VM <em>ops</em> para la CA (step-ca)</td><td>La CA intermedia en línea queda fuera de las cargas de negocio.</td><td>Un host más, aunque pequeño.</td><td>Recomendado. La alternativa es alojarla en MON.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="dimensionamiento">5. Dimensionamiento de servidores</h2>
+<p>Se calcula sumando los <code>deploy.resources.limits</code> reales de cada <code>compose.prod.yml</code> y agregando el agente de monitoreo, unos 1,5 GB para el SO y Docker, la caché de páginas de las bases de datos y un 25 % de margen. Los límites de CPU son topes y admiten sobreasignación.</p>
+
+<table>
+  <tr><th>Stack</th><th>RAM (límites actuales)</th><th>CPU</th><th>Detalle</th></tr>
+  <tr><td>Postgres</td><td>1,75 GiB</td><td>2,5</td><td>2 nodos × 768M/1.0 + 2 exporters</td></tr>
+  <tr><td>Mongo</td><td>2,0 GiB</td><td>3,0</td><td>2 nodos × 768M/1.0 + árbitro 256M + 2 exporters</td></tr>
+  <tr><td>MSSQL</td><td>4,25 GiB</td><td>4,5</td><td>2 nodos × 2g/2.0 (mínimo para arrancar) + 2 exporters</td></tr>
+  <tr><td>Redis</td><td>1,25 GiB</td><td>1,5</td><td>2 nodos × 512M (<code>maxmemory 400mb</code>) + 2 exporters</td></tr>
+  <tr><td>nginx stream</td><td>0,25 GiB</td><td>0,5</td><td></td></tr>
+  <tr><td><strong>Total infra</strong></td><td><strong>≈ 9,5 GiB</strong></td><td><strong>12,0</strong></td><td></td></tr>
+  <tr><td>API</td><td>1,6 GiB</td><td>3,25</td><td>3 × 512M/1.0 + nginx-api</td></tr>
+  <tr><td>Mailer</td><td>0,25 GiB</td><td>0,5</td><td></td></tr>
+  <tr><td>Front</td><td>0,63 GiB</td><td>1,25</td><td></td></tr>
+  <tr><td>Monitoring</td><td>≈ 2,1 GiB</td><td>2,4</td><td></td></tr>
+  <tr><td>Agente por host <span class="tag new">nuevo</span></td><td>≈ 0,75 GiB</td><td>≈ 0,95</td><td>Alloy, cAdvisor, node-exporter, dockerproxy + filtro</td></tr>
+</table>
+
+<table>
+  <tr><th>Host</th><th>Mínimo viable</th><th>Recomendado (límites subidos para producción)</th><th>Disco</th></tr>
+  <tr><td><strong>INFRA</strong> (DB01)</td><td>8 vCPU / 16 GB</td><td>8 vCPU / 32 GB. PG 2G, Mongo 3G, MSSQL 6G (<code>MSSQL_MEMORY_LIMIT_MB</code> ≈ 80 %), Redis 1G con <code>maxmemory 800mb</code>.</td><td>SO 40 GB SSD. Datos 250 a 500 GB NVMe o bloque SSD en XFS: 3.000 IOPS mínimos, 6.000 a 10.000 recomendados. Staging de respaldos de 300 GB en otro disco.</td></tr>
+  <tr><td>DB02 (fase 2)</td><td>—</td><td>Igual que INFRA, porque tiene que soportar una promoción.</td><td>Igual que INFRA</td></tr>
+  <tr><td><strong>API</strong></td><td>4 vCPU / 8 GB</td><td>4 vCPU / 8 GB, con 768M a 1G por instancia (qpdf, PDF, importación CSV).</td><td>SO 40 GB. Uploads 100 GB SSD (crecen con las fotos y certificados del plan 008).</td></tr>
+  <tr><td><strong>FRONT</strong></td><td>2 vCPU / 2 GB</td><td>2 vCPU / 4 GB</td><td>30 GB SSD</td></tr>
+  <tr><td><strong>MAILER</strong></td><td>1 vCPU / 1 GB</td><td>2 vCPU / 2 GB</td><td>20 GB SSD</td></tr>
+  <tr><td><strong>MON</strong></td><td>2 vCPU / 4 GB</td><td>4 vCPU / 8 GB. Prometheus a 1,5 GB (≈ 50 mil series con 5 o 6 hosts).</td><td>100 a 200 GB SSD. Prometheus a 30 días ≈ 15 GB; Loki a 7 días entre 50 y 100 GB.</td></tr>
+  <tr><td>ops (step-ca)</td><td>1 vCPU / 1 GB</td><td>1 vCPU / 2 GB</td><td>20 GB con cifrado</td></tr>
+</table>
+<div class="callout warn"><p><strong>Supuesto:</strong> el tamaño real de los datos no está medido. Antes de comprometer discos y una ventana de corte hay que ejecutar <code>docker system df -v</code> en el host actual. Los discos de datos se dimensionan para quedar bajo el 40 % de uso y se revisan cada mes con <code>predict_linear</code>.</p></div>
+
+<!-- ============================================================ -->
+<h2 id="red">6. Red, DNS y direccionamiento</h2>
+
+<h3>6.1 Rangos</h3>
+<ul>
+  <li><strong>Rangos que hay que evitar:</strong> <code>10.200.0.0/16</code> (bridges de producción), <code>10.10.0.0/16</code> (Testing), <code>172.16.0.0/16</code> (desarrollo), <code>172.17.0.0/16</code> y siguientes (Docker por defecto) y la LAN actual <code>192.168.10.0/24</code>.
+    <ul><li>Los bridges son locales de cada host y pueden repetirse entre servidores. Pero si la red de los hosts cae dentro de uno de esos rangos, un contenedor enruta el tráfico a su bridge local en vez de sacarlo por la NIC.</li></ul>
+  </li>
+  <li><strong>Propuesta:</strong>
+    <ul>
+      <li>Servidores <code>10.60.10.0/24</code>: INFRA .11, DB02 .12, API .21, MAILER .22, MON .41, ops .42.</li>
+      <li>DMZ <code>10.60.20.0/24</code>: FRONT .31.</li>
+      <li>WireGuard <code>wg0</code> <code>10.60.99.0/24</code>, con el mismo último octeto que la IP de servidor.</li>
+    </ul>
+  </li>
+  <li><strong>Docker:</strong> <code>default-address-pools</code> en <code>10.201.0.0/16</code> y <code>bip</code> en <code>10.202.0.1/24</code> en todos los hosts.</li>
+  <li><strong>MTU:</strong> 1420 en <code>wg0</code>, más clamping de MSS (<code>--clamp-mss-to-pmtu</code>). Así no hay que tocar el MTU de cada red en los compose.</li>
+</ul>
+
+<h3>6.2 WireGuard frente a una LAN dedicada</h3>
+<table>
+  <tr><th></th><th>WireGuard en malla completa</th><th>LAN/VLAN dedicada sin cifrar</th></tr>
+  <tr><td>Cifrado</td><td>Cifra todo, incluso los tramos que no llevan TLS (exporters, replicación).</td><td>No cifra.</td></tr>
+  <tr><td>Confianza por IP</td><td><strong>Criptográfica</strong>: la IP de origen queda atada a una clave (<code>AllowedIPs</code>). Eso hace confiables las reglas de firewall y <code>set_real_ip_from</code>.</td><td>Depende de que nadie falsifique ARP. Requiere un switch gestionado con DAI y port-security.</td></tr>
+  <tr><td>Costo operativo</td><td>Gestión de claves (10 pares con 5 nodos), MTU y monitoreo del túnel.</td><td>Mínimo.</td></tr>
+</table>
+<p><strong>Recomendación:</strong> WireGuard sobre la LAN, aunque exista una VLAN dedicada, más TLS en cada tramo. WireGuard <strong>no reemplaza</strong> el TLS, porque no protege frente a un host de la malla que ya esté comprometido.</p>
+
+<h3>6.3 DNS interno</h3>
+<ul>
+  <li><strong>Zona:</strong> <code>corp.internal</code> (TLD reservado por ICANN) o un subdominio del dominio real. <strong>No <code>.local</code></strong>, que está reservado para mDNS (RFC 6762) y se resuelve por multicast.</li>
+  <li><strong>Registros:</strong>
+    <table>
+      <tr><th>Nombre</th><th>Destino</th></tr>
+      <tr><td><code>pg.infra</code>, <code>mssql.infra</code>, <code>redis.infra</code>, <code>mongo.infra</code></td><td>INFRA. Un nombre por motor, para tener un certificado por motor.</td></tr>
+      <tr><td><code>api</code></td><td>API</td></tr>
+      <tr><td><code>mailer</code></td><td>MAILER</td></tr>
+      <tr><td><code>ingest.mon</code>, <code>grafana</code></td><td>MON</td></tr>
+      <tr><td><code>ca</code></td><td>ops</td></tr>
+      <tr><td><code>mongo-a</code>, <code>mongo-b</code>, <code>mongo-arb</code> (fase 2)</td><td>Miembros del replica set</td></tr>
+    </table>
+  </li>
+  <li><strong>Resolución:</strong> DNS corporativo (AD, BIND o Unbound). Los contenedores resuelven a través del DNS embebido de Docker (<code>127.0.0.11</code>), que reenvía al resolver del host. <code>extra_hosts</code> solo sirve como solución temporal, porque duplica configuración e impide mover un registro durante un failover.</li>
+  <li><strong>nginx</strong> resuelve un <code>proxy_pass</code> estático una sola vez, al arrancar, y no arranca si el nombre no resuelve. Si se piensa mover registros, usar <code>resolver</code> más una variable en el <code>proxy_pass</code>.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="hosts">7. Configuración por host</h2>
+<p>Leyenda: <span class="tag new">nuevo</span> <span class="tag chg">cambia</span> <span class="tag del">se elimina</span></p>
+
+<h3>7.1 INFRA</h3>
+<table>
+  <tr><th>Aspecto</th><th>Detalle</th></tr>
+  <tr><td>Redes</td><td><code>backend</code> y <code>exporters</code> siguen <code>internal</code> y locales. <code>public</code> se mantiene para el nginx stream. En Linux nativo puede no hacer falta que <code>public</code> sea <code>internal:false</code>; hay que validarlo (§17).</td></tr>
+  <tr><td>Puertos</td><td><span class="tag chg">cambia</span> Los 4 puertos del nginx stream (<code>POSTGRE_PORT</code> 6432, <code>MONGO_PORT</code> 19027, <code>REDIS_PORT</code> 5580, <code>MSSQL_PORT</code> 6037) pasan a bindearse en la IP de <code>wg0</code> de INFRA. Además, en cada <code>server{}</code> de <code>streams.prod.conf</code>: <code>allow &lt;IP API&gt;; deny all;</code>. Los exporters <strong>no se publican</strong>.</td></tr>
+  <tr><td>Volúmenes</td><td>Los 9 volúmenes de datos se quedan en este host y se migran una sola vez (§14, fase 4).</td></tr>
+  <tr><td>Cambios</td><td>
+    <ul>
+      <li>TLS en los 4 motores (§9.3).</li>
+      <li><code>pg_hba</code> con solo <code>hostssl</code>.</li>
+      <li>Usuarios ACL en Redis.</li>
+      <li><code>wal_keep_size</code> en Postgres.</li>
+      <li><code>stop_grace_period: 120s</code>.</li>
+      <li><code>certs/mssql-ag/</code> de solo lectura.</li>
+      <li>Log de acceso del stream con <code>$remote_addr</code>.</li>
+    </ul>
+  </td></tr>
+</table>
+
+<h3>7.2 API</h3>
+<table>
+  <tr><th>Aspecto</th><th>Detalle</th></tr>
+  <tr><td>Redes</td><td>
+    <ul>
+      <li>Siguen <code>internal</code> y <code>api-exporters</code>.</li>
+      <li><span class="tag del">se elimina</span> <code>infra-backend</code>, <code>mailer-net</code> y <code>frontapi-net</code>.</li>
+      <li><code>public</code> (<code>backend-net-*</code>) se mantiene solo si el host real necesita el workaround de publicación de Docker Desktop, algo que en Linux es probable que no aplique.</li>
+    </ul>
+  </td></tr>
+  <tr><td>Puertos</td><td>nginx-api publica <code>API_SSL_PORT</code> (3443) en la IP de <code>wg0</code>, con firewall que solo acepta al FRONT. Las instancias <strong>no se publican</strong>: sus métricas las recoge el Alloy local.</td></tr>
+  <tr><td>Volúmenes</td><td><code>api_uploads</code> y <code>api_downloads</code> se quedan locales, compartidos por las 3 instancias. Si algún día la API se reparte en varios hosts, pasan a S3 o MinIO (§11.3).</td></tr>
+  <tr><td>nginx-api</td><td>
+    <ul>
+      <li><code>ssl_verify_client on</code> con pinning del CN <code>front.corp.internal</code>.</li>
+      <li><code>set_real_ip_from</code> con la IP exacta del FRONT (§9.4).</li>
+      <li>Revisar el acceso directo tipo Insomnia (§17).</li>
+    </ul>
+  </td></tr>
+</table>
+
+<p><strong>Variables de la API (antes → después):</strong></p>
+<table>
+  <tr><th>Variable</th><th>Antes</th><th>Después</th><th></th></tr>
+  <tr><td><code>POSTGRES_HOST</code></td><td><code>${POSTGRES_HOST}01${SUFFIX}</code></td><td><code>pg.infra.corp.internal</code></td><td><span class="tag chg">cambia</span></td></tr>
+  <tr><td><code>POSTGRES_INTERNAL_PORT</code></td><td>no definida (5432)</td><td><code>${POSTGRE_PORT}</code> (6432)</td><td><span class="tag new">nuevo en compose</span>, ya soportada en <code>env.ts</code></td></tr>
+  <tr><td><code>MSSQL_HOST</code> / <code>MSSQL_INTERNAL_PORT</code></td><td>contenedor / 1433</td><td><code>mssql.infra.corp.internal</code> / <code>${MSSQL_PORT}</code></td><td><span class="tag chg">cambia</span></td></tr>
+  <tr><td><code>REDIS_HOST</code> / <code>REDIS_INTERNAL_PORT</code></td><td>contenedor / 6379</td><td><code>redis.infra.corp.internal</code> / <code>${REDIS_PORT}</code></td><td><span class="tag chg">cambia</span></td></tr>
+  <tr><td><code>MONGO_HOST</code> / <code>MONGO_INTERNAL_PORT</code></td><td>contenedor / 27017</td><td><code>mongo.infra.corp.internal</code> / <code>${MONGO_PORT}</code></td><td><span class="tag chg">cambia</span></td></tr>
+  <tr><td><code>MONGO_DIRECT_CONNECTION</code></td><td>no definida (<code>false</code>)</td><td><code>true</code> (detrás del proxy L4)</td><td><span class="tag new">nuevo en compose</span></td></tr>
+  <tr><td><code>MAILER_URL</code></td><td><code>http://${MAILER_HOST}${SUFFIX}:4000/send</code></td><td><code>https://mailer.corp.internal:${MAILER_TLS_PORT}/send</code></td><td><span class="tag chg">cambia</span></td></tr>
+  <tr><td><code>TLS_CA_FILE</code></td><td>—</td><td><code>/run/pki/ca-chain.crt</code></td><td><span class="tag new">nueva</span></td></tr>
+  <tr><td><code>POSTGRES_SSL</code>, <code>MONGO_TLS</code>, <code>REDIS_TLS</code></td><td>—</td><td><code>true</code> (en desarrollo, <code>false</code>)</td><td><span class="tag new">nuevas</span></td></tr>
+  <tr><td><code>MSSQL_TRUST_SERVER_CERT</code></td><td>fijo <code>true</code> en el código</td><td><code>false</code> (en desarrollo, <code>true</code>)</td><td><span class="tag new">nueva</span></td></tr>
+  <tr><td><code>REDIS_USER</code></td><td>— (usa <code>default</code>)</td><td><code>api${SUFFIX}</code></td><td><span class="tag new">nueva</span></td></tr>
+  <tr><td><code>MAILER_CLIENT_CERT_FILE</code> / <code>MAILER_CLIENT_KEY_FILE</code></td><td>—</td><td><code>/run/pki/api-client/tls.{crt,key}</code></td><td><span class="tag new">nuevas</span></td></tr>
+  <tr><td><code>TRUST_PROXY</code></td><td>fijo <code>1</code> en <code>api.ts:58</code></td><td><code>10.200.4.0/24</code> (subred <code>internal</code>)</td><td><span class="tag new">nueva</span></td></tr>
+  <tr><td><code>REQUIRE_TRANSPORT_TLS</code></td><td>—</td><td><code>true</code>: guarda que <strong>aborta el arranque</strong> si falta algún TLS</td><td><span class="tag new">nueva</span></td></tr>
+</table>
+
+<h3>7.3 FRONT</h3>
+<table>
+  <tr><th>Aspecto</th><th>Detalle</th></tr>
+  <tr><td>Redes</td><td>
+    <ul>
+      <li>Se queda <code>internal</code>.</li>
+      <li><span class="tag del">se elimina</span> <code>frontapi-net</code>.</li>
+      <li><code>frontend-net</code> se revisa con el mismo criterio que <code>backend-net</code>.</li>
+    </ul>
+  </td></tr>
+  <tr><td>Puertos</td><td>443 (y 80 para redirigir) hacia la IP de la DMZ, detrás del firewall o balanceador público. Es el <strong>único</strong> host expuesto a Internet.</td></tr>
+  <tr><td>Certificados</td><td>
+    <ul>
+      <li><code>certs/front</code>: certificado de una <strong>CA pública</strong> (ACME o comercial) para el dominio real.</li>
+      <li><code>pki/front-client</code>: certificado de cliente para el mTLS hacia la API.</li>
+    </ul>
+  </td></tr>
+  <tr><td>nginx</td><td>
+    <ul>
+      <li><code>proxy_pass https://${API_FQDN}:${API_SSL_PORT}</code>, con <code>proxy_ssl_verify on</code> y certificado de cliente.</li>
+      <li><code>X-Forwarded-For</code> se <strong>reemplaza</strong> con <code>$remote_addr</code> en vez de acumularse.</li>
+    </ul>
+  </td></tr>
+  <tr><td>Variables</td><td><span class="tag new">nueva</span> <code>API_FQDN=api.corp.internal</code>, para no reutilizar <code>${API_PROXY_HOST}${SUFFIX}</code>, que es un nombre de contenedor. El template debe sustituir además <code>API_SSL_PORT</code>.</td></tr>
+</table>
+
+<h3>7.4 MAILER</h3>
+<table>
+  <tr><th>Aspecto</th><th>Detalle</th></tr>
+  <tr><td>Redes</td><td>
+    <ul>
+      <li>Se queda <code>mailer-egress</code>, que sigue siendo la única salida a Internet.</li>
+      <li><span class="tag del">se elimina</span> <code>mailer-net</code>.</li>
+      <li><span class="tag new">nueva</span> <code>internal</code>, que conecta nginx-mailer con mailer.</li>
+    </ul>
+  </td></tr>
+  <tr><td>Servicio nuevo</td><td><span class="tag new">nuevo</span> <code>nginx-mailerprod</code>: escucha <code>MAILER_TLS_PORT</code> (8443) en la IP de <code>wg0</code>, con mTLS y <strong>pinning del CN</strong> <code>api-mailer-client</code>. Solo expone <code>/send</code> y <code>/health</code>; cualquier otra ruta devuelve 404. El mailer no cambia de código y sigue escuchando HTTP solo en la red interna.</td></tr>
+  <tr><td>Código</td><td><code>mailer.ts</code>: <code>requireTLS: true</code> y <code>tls.minVersion: "TLSv1.2"</code> (H10). <code>verifySharedSecret.ts</code>: aceptar 2 tokens durante la rotación.</td></tr>
+  <tr><td>Firewall</td><td>Entrada solo desde la API. Salida solo al relay SMTP (587) y al DNS.</td></tr>
+</table>
+
+<h3>7.5 MON</h3>
+<table>
+  <tr><th>Aspecto</th><th>Detalle</th></tr>
+  <tr><td>Redes</td><td>
+    <ul>
+      <li>Se quedan <code>monitoring</code>, <code>proxy-internal</code> y <code>public</code>.</li>
+      <li><span class="tag del">se eliminan</span> <code>infra-exporters</code> y <code>api-exporters</code> como redes externas.</li>
+    </ul>
+  </td></tr>
+  <tr><td>Servicios nuevos</td><td>
+    <ul>
+      <li>Prometheus con <code>--web.enable-remote-write-receiver</code>.</li>
+      <li>Loki con <code>auth_enabled: true</code> (un tenant por host).</li>
+      <li><span class="tag new">nuevos</span> Alertmanager y blackbox-exporter.</li>
+      <li>nginx de ingesta (<code>ingest.mon.corp.internal</code>) con mTLS, que fija <code>X-Scope-OrgID</code> según el CN del cliente.</li>
+    </ul>
+  </td></tr>
+  <tr><td>Puertos</td><td>Grafana en <code>MONITORING_SSL_PORT</code> (9445), accesible solo desde el bastión o la VPN de administración. Ingesta en 443 o en el puerto que se defina, solo desde los hosts de la malla.</td></tr>
+  <tr><td>Volúmenes</td><td><code>prometheus_data</code>, <code>loki_data</code> y <code>grafana_data</code> se quedan locales. Prometheus sube de 15 a 30 días de retención.</td></tr>
+</table>
+
+<h3>7.6 Variables por host (archivo nuevo <code>.env.host-&lt;rol&gt;</code>)</h3>
+<p>El <code>.env</code> de ambiente sigue diciendo <em>qué ambiente es</em> (<code>SUFFIX</code>, <code>PROJECT_NAME*</code>, <code>NODE_ENV</code> y los puertos). Un tercer <code>--env-file</code> nuevo dice <em>en qué host corre</em>:</p>
+<pre><code># corporate-secrets/Production/.env.host-api.example   (nuevo; uno por rol)
+ALLOCATED_IP=10.60.99.21          # conserva el nombre, pero ahora es la IP wg0 de ESTE host
+INFRA_PG_FQDN=pg.infra.corp.internal
+INFRA_MSSQL_FQDN=mssql.infra.corp.internal
+INFRA_REDIS_FQDN=redis.infra.corp.internal
+INFRA_MONGO_FQDN=mongo.infra.corp.internal
+MAILER_FQDN=mailer.corp.internal
+MAILER_TLS_PORT=8443
+FRONT_PRIVATE_IP=10.60.99.31      # para set_real_ip_from (IP exacta, nunca un rango)
+MON_INGEST_URL=https://ingest.mon.corp.internal
+SECRETS_DIR=/etc/corporate-app/secrets/prod
+PKI_DIR=/etc/corporate-app/pki
+IMAGE_TAG=2026.10.0               # tag inmutable del registro</code></pre>
+<p>Conservar el nombre <code>ALLOCATED_IP</code> con el significado de "IP de este host" evita tocar los <code>ports:</code> de los compose. <code>SECRETS_DIR</code> toma por defecto el valor <code>../corporate-secrets/${SECRETS_ENV}</code>, así que desarrollo no cambia.</p>
+
+<!-- ============================================================ -->
+<h2 id="compose">8. Estrategia de archivos compose y de imágenes</h2>
+
+<h3>8.1 Principio</h3>
+<p>Los <code>compose.dev.yml</code>, <code>compose.test.yml</code> y <code>compose.prod.yml</code> <strong>no se tocan</strong>. Cada stack suma un <code>compose.distributed.yml</code> que solo cambia lo que difiere al separar hosts. Requiere Docker Compose <strong>2.24 o superior</strong> (por <code>!reset</code> y <code>!override</code>). Se invoca así:</p>
+<pre><code>docker compose \
+  -f corporate-api/compose.prod.yml -f corporate-api/compose.distributed.yml \
+  --env-file corporate-secrets/Production/.env \
+  --env-file corporate-secrets/Environment/.env \
+  --env-file corporate-secrets/Production/.env.host-api \
+  up -d --wait --wait-timeout 300          # sin --build: las imágenes vienen del registro</code></pre>
+
+<div class="callout warn"><p><strong>Precauciones con el merge de Compose</strong>, verificadas contra el compose actual:</p>
+<ul>
+  <li><strong>Anclas YAML:</strong> no cruzan archivos. <code>x-api-common</code> vive en <code>compose.prod.yml</code>, y redefinirla en el override <strong>no cambia</strong> a <code>api01prod</code>–<code>api03prod</code>. Hay que sobrescribir cada servicio, apoyándose en un ancla propia del override.</li>
+  <li><strong><code>environment</code>:</strong> se fusiona por clave, así que basta con declarar solo las variables que cambian, sin <code>!override</code>.</li>
+  <li><strong><code>networks</code> y <code>ports</code> de un servicio:</strong> también se fusionan. Para quitar redes hay que usar <code>networks: !override</code>.</li>
+</ul></div>
+
+<h3>8.2 Ejemplo: <code>corporate-api/compose.distributed.yml</code></h3>
+<pre><code># Override para despliegue distribuido. Se aplica DESPUES de compose.prod.yml.
+x-api-distributed: &amp;api-distributed
+  image: registry.corp.internal/corporate-app/api:${IMAGE_TAG}
+  build: !reset null
+  environment:                         # merge por clave: solo lo que cambia
+    POSTGRES_HOST: ${INFRA_PG_FQDN}
+    POSTGRES_INTERNAL_PORT: ${POSTGRE_PORT}
+    POSTGRES_SSL: "true"
+    MSSQL_HOST: ${INFRA_MSSQL_FQDN}
+    MSSQL_INTERNAL_PORT: ${MSSQL_PORT}
+    MSSQL_TRUST_SERVER_CERT: "false"
+    REDIS_HOST: ${INFRA_REDIS_FQDN}
+    REDIS_INTERNAL_PORT: ${REDIS_PORT}
+    REDIS_TLS: "true"
+    REDIS_USER: api${SUFFIX}
+    MONGO_HOST: ${INFRA_MONGO_FQDN}
+    MONGO_INTERNAL_PORT: ${MONGO_PORT}
+    MONGO_DIRECT_CONNECTION: "true"
+    MONGO_TLS: "true"
+    TLS_CA_FILE: /run/pki/ca-chain.crt
+    MAILER_URL: https://${MAILER_FQDN}:${MAILER_TLS_PORT}/send
+    MAILER_CLIENT_CERT_FILE: /run/pki/api-client/tls.crt
+    MAILER_CLIENT_KEY_FILE: /run/pki/api-client/tls.key
+    TRUST_PROXY: 10.200.4.0/24
+    REQUIRE_TRANSPORT_TLS: "true"
+  volumes:
+    - ${PKI_DIR}/ca-chain.crt:/run/pki/ca-chain.crt:ro
+    - ${PKI_DIR}/api-client:/run/pki/api-client:ro
+  networks: !override
+    - internal
+    - api-exporters
+
+services:
+  api01prod: *api-distributed
+  api02prod: *api-distributed
+  api03prod: *api-distributed
+
+  nginx-apiprod:
+    image: registry.corp.internal/corporate-app/nginx-api:${IMAGE_TAG}
+    build: !reset null
+    environment:
+      FRONT_PRIVATE_IP: ${FRONT_PRIVATE_IP}   # para set_real_ip_from
+    volumes:
+      - ${PKI_DIR}/api:/etc/nginx/certs:ro
+      - ${PKI_DIR}/ca-chain.crt:/etc/nginx/certs/ca-chain.crt:ro
+    networks: !override
+      - internal
+      - public                               # o !reset si en Linux ya no hace falta
+
+networks:
+  infra-backend: !reset null
+  mailer-net: !reset null
+  frontapi-net: !reset null</code></pre>
+<p><em>Nota:</em> el <code>volumes</code> del ancla se <strong>suma</strong> a <code>api_uploads</code> y <code>api_downloads</code> del archivo base. Los <code>!reset null</code> sobre redes de primer nivel y el merge de <code>volumes</code> deben validarse con <code>docker compose config</code> en Testing antes de darlos por buenos.</p>
+
+<h3>8.3 Imágenes: registro privado en vez de <code>build</code> en el servidor</h3>
+<ol>
+  <li><strong>CI:</strong> construye cada imagen, la analiza con Trivy y la publica como <code>registry.corp.internal/corporate-app/&lt;servicio&gt;:&lt;semver o sha&gt;</code>. Los servidores la referencian por <strong>digest</strong>.</li>
+  <li><strong>Overrides:</strong> reemplazan <code>build:</code> por <code>image:</code> en todos los servicios, incluidas las imágenes propias de los motores de infra (<code>corporate-infra/PostgreSQL</code>, etc.).</li>
+  <li><strong>Servidores:</strong> solo necesitan <code>docker login</code>, los compose, los templates (nginx, Prometheus, Alloy) y los secretos de su rol. No necesitan el monorepo completo.</li>
+  <li><strong>Registro:</strong> hay que elegir entre GHCR (el repo ya está en GitHub, aunque es privado y en plan gratuito), Harbor o Docker Registry autoalojado (§17).</li>
+</ol>
+
+<h3>8.4 Scripts de orquestación</h3>
+<ul>
+  <li><strong><code>run.sh</code>:</strong> agregar un modo <code>--distributed --rol &lt;infra|api|front|mailer|mon|agent&gt;</code>, que:
+    <ul>
+      <li>agrega <code>-f compose.distributed.yml</code> y <code>.env.host-&lt;rol&gt;</code>;</li>
+      <li><strong>no crea</strong> las redes compartidas (<code>run.ps1:117-231</code>);</li>
+      <li>reemplaza las validaciones con <code>docker network ls</code> por chequeos TCP o HTTPS contra los hosts de los que depende.</li>
+    </ul>
+    Los servidores serán Linux, así que el script de referencia es <code>run.sh</code>. <code>run.ps1</code> sigue para desarrollo.
+  </li>
+  <li><span class="tag new">nuevo</span> Stack <code>corporate-agent/</code>, con Alloy, node-exporter, cAdvisor, dockerproxy y filtro. Se despliega en todos los hosts.</li>
+  <li><span class="tag new">nuevo</span> <code>corporate-mailer/nginx/</code>, con su Dockerfile, template y entrypoint, siguiendo el patrón de <code>corporate-api/nginx</code>.</li>
+  <li>Los <code>ensure-*-tls-cert.*</code> quedan para desarrollo. En producción, los certificados los emite step-ca (§9.2).</li>
+  <li><strong>Automatización:</strong> un playbook de Ansible por rol, que cubre aprovisionamiento, secretos, WireGuard, firewall y despliegue. Es preferible a un runbook manual.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="seguridad">9. Seguridad: PKI, TLS por tramo, IP real y firewall</h2>
+
+<h3>9.1 Modelo de amenazas del cambio</h3>
+<table>
+  <tr><th>#</th><th>Amenaza</th><th>Vector en este sistema</th><th>Control</th></tr>
+  <tr><td>T1</td><td>Sniffing en la LAN</td><td>SCRAM, TDS, <code>AUTH</code> de Redis, <code>X-Mailer-Token</code>, cookies y JWT, PII en las consultas</td><td>TLS por tramo + WireGuard + guarda <code>REQUIRE_TRANSPORT_TLS</code></td></tr>
+  <tr><td>T2</td><td>Suplantar un servicio (MITM)</td><td>Un host se hace pasar por MSSQL (hoy se acepta por <code>trustServerCertificate</code>) o por la API (<code>proxy_ssl_verify off</code>)</td><td>Verificación contra la CA interna + hostname/SAN</td></tr>
+  <tr><td>T3</td><td>Suplantar un cliente</td><td>Cualquier host que llegue a la API o al mailer</td><td>mTLS con <strong>pinning del CN</strong> + firewall por origen</td></tr>
+  <tr><td>T4</td><td>Falsificar la IP del cliente</td><td><code>X-Forwarded-For</code> manipulado para evadir el rate-limit del login</td><td><code>set_real_ip_from</code> con /32 exacto; el FRONT reemplaza el XFF</td></tr>
+  <tr><td>T5</td><td>Puertos de base de datos expuestos</td><td>Los 4 puertos del stream alcanzables desde la LAN, y Docker <strong>se salta ufw</strong></td><td>Bind a <code>wg0</code> + <code>DOCKER-USER</code> con denegación por defecto + <code>allow/deny</code> en el stream</td></tr>
+  <tr><td>T6</td><td>Movimiento lateral</td><td>FRONT comprometido llega a las bases de datos; API comprometida usa <code>CONFIG SET</code> en Redis</td><td>Matriz de firewall + ACL de Redis + secretos por host</td></tr>
+  <tr><td>T7</td><td>Pérdida de atribución</td><td>Las bases de datos solo ven la IP del contenedor del stream</td><td>Log de acceso del stream enviado a Loki</td></tr>
+  <tr><td>T8</td><td>Telemetría falsificada</td><td>Cualquier host escribe en Loki (<code>auth_enabled:false</code>)</td><td>mTLS en la ingesta + tenant derivado del CN</td></tr>
+  <tr><td>T9</td><td>Abuso del mailer</td><td>Pasa a tener un puerto de red real</td><td>mTLS + pinning + rate-limit + firewall</td></tr>
+  <tr><td>T10</td><td>Compromiso de la PKI</td><td>Con la intermedia se emiten certificados para cualquier nombre</td><td>Raíz offline, intermedia con <code>nameConstraints</code>, vigencias cortas</td></tr>
+  <tr><td>T11</td><td>Degradación de SMTP</td><td>Eliminar STARTTLS en la conexión saliente</td><td><code>requireTLS: true</code></td></tr>
+  <tr><td>T12</td><td>Expansión de secretos</td><td>Hoy cada host tendría todos los secretos</td><td>Distribución por host (§10)</td></tr>
+</table>
+
+<h3>9.2 PKI interna (step-ca)</h3>
+<ul>
+  <li><strong>Raíz:</strong> EC P-384 con vigencia de 10 años. Se genera en una máquina sin red y la clave se guarda cifrada en 2 medios separados. Solo se usa para firmar la intermedia.</li>
+  <li><strong>Intermedia:</strong> 5 años, rotada cada 2. Lleva <code>nameConstraints</code> limitadas a <code>.corp.internal</code> y a la subred de WireGuard. Corre en <code>step-ca</code> en la VM ops, escuchando solo en <code>wg0</code>. Provisioner ACME o JWK por host, con <code>maxTLSCertDuration: 2160h</code>.</li>
+  <li><strong>Certificados finales:</strong> 90 días, renovados con <code>step ca renew --daemon --exec &lt;reload&gt;</code> a los 2/3 de su vida. Alerta si quedan menos de 21 días.</li>
+</ul>
+<table>
+  <tr><th>Certificado</th><th>Uso</th><th>SAN / CN</th><th>Host</th><th>Recarga</th></tr>
+  <tr><td>front-public</td><td>servidor</td><td>dominio real (<strong>CA pública</strong>)</td><td>FRONT</td><td><code>nginx -s reload</code></td></tr>
+  <tr><td>front-client</td><td>cliente</td><td>CN <code>front.corp.internal</code></td><td>FRONT</td><td><code>nginx -s reload</code></td></tr>
+  <tr><td>api</td><td>servidor</td><td><code>api.corp.internal</code></td><td>API (nginx-api)</td><td><code>nginx -s reload</code></td></tr>
+  <tr><td>api-client</td><td>cliente</td><td>CN <code>api-mailer-client</code></td><td>API (instancias)</td><td>Reinicio escalonado de las 3 instancias</td></tr>
+  <tr><td>mailer</td><td>servidor</td><td><code>mailer.corp.internal</code></td><td>MAILER</td><td><code>nginx -s reload</code></td></tr>
+  <tr><td>pg</td><td>servidor</td><td><code>pg.infra.corp.internal</code> + nombres de contenedor 01/02</td><td>INFRA</td><td><code>SELECT pg_reload_conf()</code></td></tr>
+  <tr><td>mssql</td><td>servidor</td><td><code>mssql.infra.corp.internal</code> + 01/02</td><td>INFRA</td><td>Reinicio escalonado con failover del AG</td></tr>
+  <tr><td>mongo</td><td>servidor + cliente</td><td><code>mongo.infra.corp.internal</code> + 01/02/árbitro</td><td>INFRA</td><td><code>rotateCertificates</code></td></tr>
+  <tr><td>redis</td><td>servidor + cliente</td><td><code>redis.infra.corp.internal</code> + 01/02</td><td>INFRA</td><td><code>CONFIG SET tls-cert-file</code></td></tr>
+  <tr><td>mon-ingest, grafana</td><td>servidor</td><td><code>ingest.mon</code>, <code>grafana</code></td><td>MON</td><td><code>nginx -s reload</code></td></tr>
+  <tr><td>alloy-&lt;rol&gt; ×5</td><td>cliente</td><td>CN <code>alloy-infra</code>, <code>alloy-api</code>, etc.</td><td>cada host</td><td>Reinicio de Alloy</td></tr>
+</table>
+<p><strong>Montaje:</strong></p>
+<ul>
+  <li>Cada certificado va en <code>/etc/corporate-app/pki/&lt;servicio&gt;/{tls.crt,tls.key}</code>, junto con <code>ca-chain.crt</code>, montados <code>:ro</code> solo en el contenedor que los usa.</li>
+  <li>Postgres, Mongo y Redis exigen que la clave pertenezca al usuario del motor con modo 0600. Para eso se reutiliza el patrón que ya existe en los <code>entrypoint-wrapper.sh</code>: <code>install -o &lt;user&gt; -m 0600</code> hacia un tmpfs, igual que el keyfile de Mongo.</li>
+</ul>
+
+<h3>9.3 TLS por tramo: cambios concretos</h3>
+<p>Estos cambios se implementan en el repo con los valores por defecto actuales, así que desarrollo y Testing no cambian de comportamiento. Todo el TLS se activa por variable.</p>
+<table>
+  <tr><th>Tramo</th><th>Servidor</th><th>Cliente (código)</th></tr>
+  <tr><td>API → Postgres</td><td>En <code>command</code>: <code>ssl=on</code>, <code>ssl_cert_file</code>, <code>ssl_key_file</code>, <code>ssl_min_protocol_version=TLSv1.2</code>. <code>02-pg-hba.sh</code> <strong>reemplaza</strong> las reglas por <code>hostssl … scram-sha-256</code> más <code>hostnossl all all 0.0.0.0/0 reject</code>. Exporters con <code>sslmode=verify-full</code>.</td><td><code>postgres/connection.ts</code>: <code>ssl: { require:true, rejectUnauthorized:true, ca, servername }</code> cuando <code>POSTGRES_SSL=true</code>.</td></tr>
+  <tr><td>API → MSSQL</td><td><code>mssql.conf [network]</code>: <code>tlscert</code>, <code>tlskey</code>, <code>tlsprotocols 1.2</code>, <code>forceencryption 1</code>.</td><td><code>mssql/connection.ts</code>: <code>trustServerCertificate: env</code> más <code>cryptoCredentialsDetails: { ca }</code>. Conectar siempre por nombre DNS, no por IP: así se evita el problema de tedious con IPs ya documentado en <code>env.ts</code>. Evaluar <code>encrypt:"strict"</code> (TDS 8).</td></tr>
+  <tr><td>API → Mongo</td><td>En <code>MONGOD_ARGS</code>: <code>--tlsMode requireTLS --tlsCertificateKeyFile … --tlsCAFile … --tlsDisabledProtocols TLS1_0,TLS1_1</code>. <code>clusterAuthMode</code> sigue en <code>keyFile</code>.</td><td><code>mongo/connection.ts</code>: <code>&amp;tls=true&amp;tlsCAFile=…</code>, nunca <code>tlsAllowInvalidHostnames</code>.</td></tr>
+  <tr><td>API → Redis</td><td><code>--port 0 --tls-port 6379 --tls-cert-file … --tls-ca-cert-file … --tls-auth-clients optional --tls-replication yes</code>. Usuario ACL <code>api${SUFFIX}</code> con <code>+@all -@admin -@dangerous</code> y usuario de replicación separado.</td><td><code>redis/connection.ts</code>: <code>socket: { tls:true, servername, ca }</code> y <code>username</code>. Validar con <code>ACL LOG</code> en Testing que connect-redis y rate-limit-redis sigan funcionando.</td></tr>
+  <tr><td>API → MAILER</td><td>nginx-mailer con <code>ssl_verify_client on</code> + <code>map $ssl_client_s_dn</code> que solo acepta el CN <code>api-mailer-client</code>. El token <code>X-Mailer-Token</code> se mantiene como segundo factor.</td><td><code>mailerClient.ts</code>: <code>fetch</code> y <code>Agent</code> del <strong>mismo</strong> paquete <code>undici</code>, con <code>connect: { ca, cert, key, servername }</code>.</td></tr>
+  <tr><td>MAILER → SMTP</td><td>—</td><td><code>mailer.ts</code>: <code>requireTLS: true</code>, <code>tls: { minVersion:"TLSv1.2", servername }</code>.</td></tr>
+  <tr><td>FRONT → API</td><td>nginx-api: <code>ssl_client_certificate</code>, <code>ssl_verify_client on</code> y pinning del CN <code>front.corp.internal</code>.</td><td>nginx-front: <code>proxy_ssl_verify on</code>, <code>proxy_ssl_trusted_certificate</code>, <code>proxy_ssl_name</code>, <code>proxy_ssl_server_name on</code>, <code>proxy_ssl_certificate(_key)</code>. La plantilla de desarrollo sigue con verificación desactivada.</td></tr>
+  <tr><td>Alloy → MON</td><td>nginx de ingesta con mTLS, que fija <code>X-Scope-OrgID</code> según el CN.</td><td>Alloy: <code>tls_config</code> con certificado de cliente.</td></tr>
+</table>
+<p><strong>Guarda al arrancar</strong> (nueva, en <code>env.ts</code>, con el mismo estilo que las guardas <code>DISABLE_*</code> que ya existen): si <code>REQUIRE_TRANSPORT_TLS=true</code> y se cumple cualquiera de estas condiciones, la API <strong>no arranca</strong>:</p>
+<ul>
+  <li><code>POSTGRES_SSL</code>, <code>MONGO_TLS</code> o <code>REDIS_TLS</code> están desactivadas;</li>
+  <li><code>MSSQL_TRUST_SERVER_CERT</code> está activada;</li>
+  <li>falta <code>TLS_CA_FILE</code>;</li>
+  <li><code>MAILER_URL</code> empieza con <code>http:</code>.</li>
+</ul>
+<p>La CA se carga una sola vez en un helper nuevo, <code>library/tls.ts</code>.</p>
+
+<h3>9.4 IP real del cliente</h3>
+<p>La cadena es: cliente → nginx-front (borde) → nginx-api → Express.</p>
+<pre><code># nginx-front (borde): REEMPLAZA, no acumula
+proxy_set_header X-Forwarded-For $remote_addr;
+proxy_set_header X-Real-IP       $remote_addr;
+
+# nginx-api
+set_real_ip_from  ${FRONT_PRIVATE_IP}/32;   # IP wg0 EXACTA del FRONT, nunca un rango
+real_ip_header    X-Forwarded-For;
+real_ip_recursive on;
+# (las líneas actuales "proxy_set_header X-Forwarded-For $remote_addr" se mantienen:
+#  la instancia recibe un único valor ya saneado)
+
+# Express (api.ts)
+app.set("trust proxy", env.trustProxy);   // TRUST_PROXY=10.200.4.0/24, confianza por subred y no por número de saltos</code></pre>
+<div class="callout risk"><p><strong>Si se configura mal:</strong></p>
+<ul>
+  <li><code>set_real_ip_from</code> con un rango permite que cualquier host falsifique la IP y evada el límite de 10 fallos cada 15 minutos del login.</li>
+  <li>Docker <em>rootless</em> o <code>userland-proxy</code> hacen que nginx-api vea la IP del gateway de Docker y vuelve el contador compartido. Por eso se exige Docker <strong>rootful</strong> con <code>"userland-proxy": false</code>.</li>
+</ul>
+<p>El comentario de <code>nginx.conf.template</code> sobre este trade-off hay que reescribirlo. Además, dice que la subred de <code>frontapi-net</code> no está fijada, lo que ya no es cierto (<code>run.ps1:177</code>).</p></div>
+
+<h3>9.5 Segmentación y firewall</h3>
+<p>La política es <strong>denegar por defecto</strong>. La matriz usa las IPs de <code>wg0</code>:</p>
+<table>
+  <tr><th>Origen</th><th>Destino</th><th>Puerto</th><th>Motivo</th></tr>
+  <tr><td>Internet</td><td>FRONT (IP pública)</td><td>443 (80 → 301)</td><td>Única cara pública</td></tr>
+  <tr><td>FRONT</td><td>API</td><td><code>API_SSL_PORT</code> (3443)</td><td><code>/api/</code> y Socket.IO, con mTLS</td></tr>
+  <tr><td>API</td><td>INFRA</td><td>6432, 19027, 5580, 6037</td><td>Datos, con TLS</td></tr>
+  <tr><td>API</td><td>MAILER</td><td><code>MAILER_TLS_PORT</code> (8443)</td><td>Correo, con mTLS</td></tr>
+  <tr><td>MAILER</td><td>Relay SMTP</td><td>587 + DNS</td><td>Único egreso a Internet</td></tr>
+  <tr><td>Todos</td><td>MON</td><td>443 (ingesta)</td><td>Envío desde Alloy, con mTLS</td></tr>
+  <tr><td>Todos</td><td>ops (step-ca)</td><td>9000</td><td>Renovación de certificados</td></tr>
+  <tr><td>Bastión / VPN de administración</td><td>Todos</td><td>22</td><td>Administración</td></tr>
+  <tr><td>Bastión / VPN de administración</td><td>MON</td><td>9445</td><td>Grafana (no público)</td></tr>
+  <tr><td>Todos ↔ todos</td><td>—</td><td>51820/udp (IPs LAN de los pares)</td><td>WireGuard</td></tr>
+  <tr><td>Todos</td><td>Repositorio de paquetes y registro (vía proxy), NTP, DNS</td><td>443, 123/udp, 53</td><td>Actualizaciones y hora</td></tr>
+  <tr><td colspan="4"><strong>Denegado explícitamente:</strong> FRONT→INFRA/MAILER, MAILER→INFRA, API→Internet, INFRA→Internet</td></tr>
+  <tr><td colspan="4"><strong>Fase 2 (DB02):</strong> INFRA↔DB02 en 5432, 27017, 1433, 5022 (AG) y 6379; MON↔INFRA/DB02 en 27017 (árbitro)</td></tr>
+</table>
+<div class="callout warn"><p><strong>Docker se salta ufw.</strong> Los puertos publicados pasan por DNAT en <code>PREROUTING</code> y luego por <code>FORWARD</code>, nunca por <code>INPUT</code>, así que una regla de ufw no los bloquea. El filtro va en la cadena <code>DOCKER-USER</code>, que se persiste con una unidad systemd <code>After=docker.service</code>. Ejemplo para INFRA:</p>
+<pre><code>iptables -F DOCKER-USER
+iptables -A DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+for p in 6432 19027 5580 6037; do
+  iptables -A DOCKER-USER -i wg0 -s 10.60.99.21 -p tcp -m conntrack --ctorigdstport $p --ctdir ORIGINAL -j RETURN
+done
+iptables -A DOCKER-USER -i wg0 -o docker+ -j LOG --log-prefix "DOCKER-USER-DROP " -m limit --limit 5/min
+iptables -A DOCKER-USER ! -i docker+ -o docker+ -j DROP   # nada externo entra a los contenedores
+iptables -A DOCKER-USER -i docker+ ! -o docker+ -j DROP   # INFRA no tiene egreso</code></pre>
+<p>Para <code>INPUT</code> (sshd, WireGuard, step-ca), nftables o ufw con <code>default deny incoming/outgoing</code> más las excepciones de la matriz.</p></div>
+
+<!-- ============================================================ -->
+<h2 id="secretos">10. Secretos por host (mínimo privilegio)</h2>
+<table>
+  <tr><th>Host</th><th>Secretos (<code>corporate-secrets/&lt;env&gt;/</code>)</th><th>Material PKI</th></tr>
+  <tr><td>INFRA</td><td>
+    <ul>
+      <li><strong>Postgres:</strong> <code>pg_password</code>, <code>pg_admin_password</code>, <code>pg_user_password</code>, <code>pg_replication_password</code>, <code>pg_logger_password</code>, <code>pg_exporter_password</code>.</li>
+      <li><strong>Mongo:</strong> <code>db_mongo_password</code>, <code>db_mongo_user_password</code>, <code>db_mongo_logs</code>, <code>db_mongo_exporter</code>, <code>MongoKeyfile/</code>.</li>
+      <li><strong>MSSQL:</strong> <code>mssql_password</code>, <code>mssql_app_password</code>, <code>mssql_exporter_password</code>.</li>
+      <li><strong>Redis:</strong> <code>redis_password</code>, <code>redis_exporter_password</code>, y los nuevos <code>redis_api_password</code> y <code>redis_replication_password</code>.</li>
+      <li><strong>Se elimina:</strong> <code>db_gui_password</code>.</li>
+    </ul>
+  </td><td><code>certs/mssql-ag/</code> (de solo lectura), <code>pki/{pg,mongo,redis,mssql}</code>, <code>ca-chain</code>, <code>alloy-infra</code></td></tr>
+  <tr><td>API</td><td>
+    <ul>
+      <li><strong>Bases de datos:</strong> <code>pg_user_password</code>, <code>mssql_app_password</code>, <code>db_mongo_user_password</code>, <code>redis_api_password</code>.</li>
+      <li><strong>Sesión y tokens:</strong> <code>jwt_access_secret</code>, <code>jwt_refresh_secret</code>, <code>session_secret</code>.</li>
+      <li><strong>Otros:</strong> <code>default_user_password</code>, <code>mailer_shared_secret</code>.</li>
+      <li><code>bootstrap_admin_password</code> <strong>solo en el primer arranque</strong>. Después se borra del host y se rota.</li>
+    </ul>
+  </td><td><code>pki/api</code>, <code>pki/api-client</code>, <code>ca-chain</code>, <code>alloy-api</code></td></tr>
+  <tr><td>FRONT</td><td>Ninguno de aplicación</td><td><code>certs/front</code> (CA pública), <code>pki/front-client</code>, <code>ca-chain</code>, <code>alloy-front</code></td></tr>
+  <tr><td>MAILER</td><td><code>smtp_password</code>, <code>mailer_shared_secret</code></td><td><code>pki/mailer</code>, <code>ca-chain</code>, <code>alloy-mailer</code></td></tr>
+  <tr><td>MON</td><td><code>gf_admin_password</code>, <code>gf_user_password</code></td><td><code>certs/monitoring</code>, <code>pki/mon-ingest</code>, <code>ca-chain</code></td></tr>
+  <tr><td>ops</td><td>Contraseña de la intermedia, sellada con <code>systemd-creds</code> o TPM</td><td>La intermedia</td></tr>
+</table>
+<ul>
+  <li><strong>Distribución:</strong> Ansible con <strong>SOPS + age</strong>. Hay un archivo cifrado por host (<code>secrets/prod/&lt;rol&gt;.sops.yaml</code>) cuyos destinatarios son la clave age de ese host más 2 claves de operadores para emergencias. Un host no puede descifrar los secretos de otro.
+    <ul>
+      <li>Ansible Vault se descarta porque usa una sola clave compartida.</li>
+      <li>HashiCorp Vault solo se justifica si más adelante se quieren credenciales dinámicas.</li>
+    </ul>
+  </li>
+  <li><strong>El <code>.env</code> también se parte por host:</strong> la API no necesita <code>SMTP_*</code> y el FRONT no necesita los nombres de usuarios de las bases de datos.</li>
+  <li><strong>Permisos:</strong> directorio <code>0750 root:deploy</code>, archivos <code>0440 root:&lt;gid del proceso&gt;</code>. En Compose sin Swarm, <code>secrets: file:</code> es un bind mount, así que los campos <code>uid/gid/mode</code> <strong>no se aplican</strong>: mandan los permisos del host. <code>find /etc/corporate-app -perm /o+rwx</code> tiene que devolver vacío.</li>
+  <li><strong>Rotación:</strong>
+    <ul>
+      <li>Contraseñas de aplicación de las bases de datos: cada 90 días, con usuarios alternos o <code>ALTER ROLE</code> más un despliegue escalonado.</li>
+      <li><code>mailer_shared_secret</code>: con doble token durante la transición.</li>
+      <li>JWT y sesión: el código usa un solo secreto sin <code>kid</code>, así que rotarlos cierra todas las sesiones (§17).</li>
+      <li>WireGuard: una vez al año.</li>
+    </ul>
+  </li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="datos">11. Datos, alta disponibilidad y respaldos</h2>
+
+<h3>11.1 El failover que existe realmente hoy</h3>
+<table>
+  <tr><th>Motor</th><th>Configuración</th><th>¿Failover automático?</th></tr>
+  <tr><td>Postgres</td><td>Streaming asíncrono con hot standby</td><td><strong>No.</strong> No hay promoción automática, y la API y el stream apuntan fijos a <code>01</code>.</td></tr>
+  <tr><td>Mongo</td><td>Primario, secundario y árbitro, con elección automática</td><td><strong>Parcial.</strong> Funciona solo para la API, que descubre el replica set. El stream apunta a <code>01</code>, y el healthcheck de mongo01 exige estado PRIMARY, así que después de un failover <code>up --wait</code> falla.</td></tr>
+  <tr><td>MSSQL</td><td>AG con <code>CLUSTER_TYPE=NONE</code>, asíncrono, <code>FAILOVER_MODE=MANUAL</code>, sin listener</td><td><strong>No.</strong> Solo un failover forzado manual, con posible pérdida de datos.</td></tr>
+  <tr><td>Redis</td><td><code>replicaof</code> con AOF, sin Sentinel</td><td><strong>No.</strong> Requiere <code>REPLICAOF NO ONE</code> manual.</td></tr>
+</table>
+<p>La réplica vive en el mismo host y disco que el primario, así que <strong>hoy no protege contra una falla física</strong>. La distribución de la fase 1 mantiene esa limitación, y la fase 2 la resuelve.</p>
+
+<h3>11.2 Fase 2: réplicas en DB02</h3>
+<ul>
+  <li><strong>Partir el compose de infra:</strong> <code>corporate-infra/compose.prod.yml</code> se divide en perfiles o archivos <code>db-primary</code> y <code>db-replica</code>, más un archivo para el árbitro en MON.
+    <ul>
+      <li>Los <code>depends_on</code> que cruzan hosts se reemplazan por esperas en los entrypoints.</li>
+      <li><code>PG_PRIMARY_HOST</code>, <code>REDIS_PRIMARY_HOST</code> y <code>MSSQL_*_HOST</code> pasan a ser FQDN.</li>
+    </ul>
+  </li>
+  <li><strong>Mongo:</strong>
+    <ul>
+      <li>Los miembros se anuncian por FQDN (<code>mongo-a</code>, <code>mongo-b</code>, <code>mongo-arb</code>) con <code>rs.reconfig</code>. Cada <code>mongod</code> tiene que poder resolverse a sí mismo.</li>
+      <li>La API se conecta a los tres FQDN con <code>replicaSet=</code>, <strong>sin pasar por el stream</strong>.</li>
+      <li>El árbitro va en MON. El riesgo de PSA sigue vigente: con el secundario caído, las escrituras con <code>w:majority</code> se bloquean.</li>
+    </ul>
+  </li>
+  <li><strong>Postgres:</strong> <code>wal_keep_size=2GB</code> o un slot físico. Promoción manual guiada con <code>pg_promote()</code>; Patroni queda como evolución posterior.</li>
+  <li><strong>MSSQL:</strong> el AG entre hosts funciona con el mismo <code>dbm_certificate</code>. Un listener o failover automático requiere Pacemaker (<code>CLUSTER_TYPE=EXTERNAL</code>).</li>
+  <li><strong>Redis:</strong> Sentinel con 3 instancias (INFRA, DB02 y MON) si las sesiones son críticas.</li>
+  <li><strong>El nginx stream es un punto único de falla.</strong> Para failover manual se cambia el destino a <code>02</code> y se recarga, o se mueve el registro DNS. Evolución posterior: VIP con keepalived.</li>
+</ul>
+
+<h3>11.3 <code>api_uploads</code> y <code>api_downloads</code></h3>
+<p>Mientras la API corra en un solo host, siguen como volúmenes locales con respaldo. Si la API se reparte en 2 o más hosts:</p>
+<ul>
+  <li><strong>NFS v4.1:</strong> sin cambios de código, pero es un punto único de falla salvo que el NAS tenga alta disponibilidad, y se comporta mal con la latencia de la VPN. Sirve como puente.</li>
+  <li><strong>MinIO o S3 (destino):</strong> versionado, ciclo de vida y replicación. Requiere refactorizar <code>documentStorage.ts</code> para usar el SDK de S3.</li>
+</ul>
+<p>Los leases de la importación CSV (plan 005) y las sesiones ya viven en Redis, así que esa parte ya escala.</p>
+
+<h3>11.4 Respaldos y recuperación ante desastres (hoy no existen: H3)</h3>
+<p>Cada respaldo se escribe en un staging local y se sube con restic a <strong>almacenamiento de objetos fuera del sitio con Object Lock</strong> (inmutable, como defensa contra ransomware), con cifrado.</p>
+<table>
+  <tr><th>Motor</th><th>Estrategia</th><th>Dónde corre</th><th>RPO / RTO</th></tr>
+  <tr><td>Postgres</td><td>pgBackRest: completo semanal, diferencial diario y archivado de WAL (<code>archive_timeout=60</code>) para PITR. Además, <code>pg_dump -Fc</code> nocturno.</td><td>Réplica (<code>backup-standby</code>)</td><td>≤ 5 min / 1 h</td></tr>
+  <tr><td>Mongo</td><td><code>mongodump --oplog</code> nocturno. Si se necesita PITR, PBM.</td><td>Secundario</td><td>24 h (15 min con PBM) / 2 h</td></tr>
+  <tr><td>MSSQL</td><td>Scripts de Ola Hallengren: completo diario, diferencial cada 6 h, log cada 15 min. <code>BACKUP TO URL</code> hacia S3.</td><td>Secundaria (<code>COPY_ONLY</code>)</td><td>15 min / 2 h</td></tr>
+  <tr><td>Redis</td><td>AOF + copia de <code>dump.rdb</code> cada hora</td><td>Réplica</td><td>1 h / 30 min (perder datos implica volver a iniciar sesión)</td></tr>
+  <tr><td>Uploads</td><td>restic incremental cada noche o cada hora</td><td>API</td><td>24 h (1 h) / 1 h</td></tr>
+  <tr><td>Configuración y secretos</td><td>SOPS en el repositorio de despliegue, más una bóveda aparte para el keyfile de Mongo, <code>dbm_certificate</code> y la raíz de la PKI</td><td>—</td><td>—</td></tr>
+</table>
+<ul>
+  <li><strong>Retención:</strong> 7 diarios, 4 semanales y 12 mensuales; WAL y logs de transacciones 14 días. <strong>Pendiente</strong> confirmar la retención legal contable, que en un ERP con cierres podría ser de varios años.</li>
+  <li><strong>Métrica:</strong> cada job escribe <code>backup_last_success_timestamp{engine}</code> en el textfile collector, y se alerta si pasan más de 26 h.</li>
+  <li><strong>Prueba de restauración:</strong>
+    <ul>
+      <li><strong>Mensual y automatizada:</strong> en un stack aislado tipo Testing, nunca sobre desarrollo, que es compartido. Se valida con conteos, checksums de tablas clave y <code>RESTORE VERIFYONLY</code>.</li>
+      <li><strong>Trimestral:</strong> simulacro completo, reconstruyendo INFRA desde cero y midiendo el RTO real.</li>
+    </ul>
+  </li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="monitoreo">12. Monitoreo distribuido y alertas</h2>
+<p>Se descarta publicar los 8 exporters y el <code>/metrics</code> de las 3 instancias para que Prometheus los consulte desde otra máquina, porque esos endpoints no tienen autenticación. En su lugar, se propone un <strong>stack <code>corporate-agent</code> en cada host</strong>:</p>
+<ul>
+  <li><strong>Alloy</strong> se une a las redes locales <code>exporters</code> y <code>api-exporters</code>, que siguen siendo <code>internal</code>, y consulta los exporters, node-exporter, cAdvisor y las métricas del daemon (<code>127.0.0.1:9323</code>).
+    <ul>
+      <li><code>prometheus.remote_write</code> hacia <code>https://ingest.mon.corp.internal/api/v1/write</code>.</li>
+      <li><code>loki.source.docker</code> y journald, auth.log y auditd hacia <code>/loki/api/v1/push</code>.</li>
+      <li>Todo por mTLS y con etiquetas <code>host</code>, <code>role</code> y <code>environment</code>.</li>
+    </ul>
+  </li>
+  <li><strong>dockerproxy y su filtro</strong> se replican en cada host con el mismo endurecimiento de hoy (<code>CONTAINERS=1</code>, <code>POST=0</code>).</li>
+  <li><strong>Detección de un host caído:</strong> con el modelo push no aparece <code>up=0</code>. Se resuelve con <strong>blackbox-exporter</strong> en MON (ICMP a cada host, TCP a los puertos del stream, HTTPS a <code>/health</code> y al front público, vencimiento de certificados) y con <code>absent_over_time(up{job="node",host="X"}[3m])</code>.</li>
+  <li><strong>Alertmanager</strong> envía por un canal <strong>independiente de la aplicación</strong>: relay SMTP directo más un webhook de Teams o Slack, nunca por el mailer, que cae junto con la API.</li>
+</ul>
+<table>
+  <tr><th>Grupo</th><th>Alertas mínimas</th></tr>
+  <tr><td>Hosts</td><td>Host o agente caído; disco sobre 80 % (aviso) o 90 % (crítico), o <code>predict_linear</code> a 24 h por debajo de 0; memoria; OOM de contenedores; más de 3 reinicios en 15 min; desfase NTP sobre 100 ms.</td></tr>
+  <tr><td>Replicación</td><td>
+    <ul>
+      <li>Postgres: lag sobre 60 s o WAL receiver caído.</li>
+      <li>Mongo: miembro no saludable o lag de oplog sobre 60 s.</li>
+      <li>MSSQL: sincronización del AG distinta de HEALTHY, o colas por encima del umbral.</li>
+      <li>Redis: <code>master_link_up==0</code>, o memoria sobre 85 % (con <code>noeviction</code>, las escrituras fallan).</li>
+    </ul>
+  </td></tr>
+  <tr><td>Servicios</td><td>Respaldo sin éxito en más de 26 h; certificado con menos de 21 días; tasa de 5xx y latencia p95 de la API; ingesta de Loki; errores de remote_write.</td></tr>
+  <tr><td>Seguridad</td><td>
+    <ul>
+      <li>SSH exitoso desde una IP distinta del bastión, y cualquier uso de <code>sudo</code>.</li>
+      <li>Picos de <code>DOCKER-USER-DROP</code>.</li>
+      <li>Errores de verificación de certificado de cliente o 403 por pinning (señal de movimiento lateral).</li>
+      <li>Fallas de autenticación en las bases de datos: PG <code>password authentication failed</code>, Mongo <code>Authentication failed</code>, <code>ACL LOG</code> de Redis y el error 18456 de MSSQL.</li>
+      <li>Picos de 429 en <code>/auth/login</code> por IP real.</li>
+      <li><code>docker exec</code> fuera de una ventana de despliegue.</li>
+      <li>Egreso a Internet desde INFRA, API o FRONT.</li>
+    </ul>
+  </td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="so">13. Sistema operativo y hardening de hosts</h2>
+<ul>
+  <li><strong>SO:</strong> Ubuntu Server 24.04 LTS, o RHEL/Rocky 9 si el estándar corporativo lo exige. Todos los hosts en UTC, con chrony contra el NTP corporativo.</li>
+  <li><strong>Docker Engine</strong> del repositorio oficial, rootful, con Compose ≥ 2.24. La versión se fija con <code>apt-mark hold</code> y debe ser la misma que se validó en Testing.</li>
+  <li><strong><code>/etc/docker/daemon.json</code>:</strong> en Linux sí se aplica. La advertencia sobre <code>daemon.json</code> vale solo para Docker Desktop en la máquina de desarrollo.
+<pre><code>{
+  "log-driver": "local", "log-opts": { "max-size": "50m", "max-file": "5" },
+  "live-restore": true, "userland-proxy": false, "no-new-privileges": true, "icc": false,
+  "default-address-pools": [{ "base": "10.201.0.0/16", "size": 24 }], "bip": "10.202.0.1/24",
+  "default-ulimits": { "nofile": { "Name": "nofile", "Soft": 64000, "Hard": 64000 } },
+  "metrics-addr": "127.0.0.1:9323"
+}</code></pre>
+  </li>
+  <li><strong>Kernel</strong> en los hosts de bases de datos: <code>vm.swappiness=1</code>, <code>vm.max_map_count=262144</code>, <code>vm.overcommit_memory=1</code> (lo necesita Redis), <code>net.core.somaxconn=4096</code>, <code>tcp_keepalive_time=120</code>, THP según lo que recomienda Mongo 8, perfil tuned <code>throughput-performance</code> y planificador <code>none</code> para NVMe. En todos los hosts: <code>rp_filter=1</code>, sin redirects y <code>log_martians=1</code>.</li>
+  <li><strong>Discos:</strong> <code>/var/lib/docker</code> en el disco de datos XFS con <code>ftype=1</code> y <code>noatime</code>. LUKS en INFRA (PII en reposo).</li>
+  <li><strong>SSH:</strong> solo por clave (ed25519-sk / FIDO2), sin root, <code>AllowGroups ssh-admins</code>, <code>ListenAddress</code> en <code>wg0</code> y acceso solo por el bastión (<code>ProxyJump</code>).</li>
+  <li><strong>Usuarios:</strong> cuentas nominativas y <code>sudo</code> con log. El grupo <code>docker</code> equivale a root, así que solo lo tiene la cuenta de despliegue.</li>
+  <li><strong>auditd:</strong> vigila <code>/etc/corporate-app/</code>, <code>docker.sock</code>, <code>/etc/docker/</code>, <code>sshd_config</code>, <code>sudoers</code> y los <code>execve</code> como root. <code>unattended-upgrades</code> solo para parches de seguridad. Lynis como línea base.</li>
+  <li><strong>Contenedores:</strong> se mantienen <code>cap_drop: ALL</code>, <code>read_only</code>, AppArmor y seccomp por defecto. Nunca <code>privileged</code>. No se usa <code>userns-remap</code>, porque rompe la propiedad de secretos y volúmenes.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="fases">14. Plan de implementación por fases</h2>
+
+<h3>Fase 0: decisiones y prerrequisitos (sin tocar código)</h3>
+<ul>
+  <li>Resolver las decisiones de §17: dominio interno, licencia de MSSQL, ubicación del mailer, registro de imágenes, DB02 sí o no, retención legal.</li>
+  <li>Medir el tamaño real de los volúmenes (<code>docker system df -v</code>) y la latencia entre los servidores candidatos.</li>
+  <li><strong>Piloto de latencia:</strong> correr la API en un host y las bases de datos en otro dentro de Testing, y medir el p95 de las pantallas más pesadas (Kardex, valorización, depreciación).</li>
+</ul>
+
+<h3>Fase 1: cambios en el repositorio, compatibles con un solo host</h3>
+<p>Todo entra con valores por defecto que mantienen el comportamiento actual y se valida en Testing antes de tocar producción.</p>
+<ol>
+  <li><strong>API:</strong>
+    <ul>
+      <li><code>library/tls.ts</code>.</li>
+      <li>Variables TLS en <code>env.ts</code> y la guarda <code>REQUIRE_TRANSPORT_TLS</code>.</li>
+      <li>Las 4 <code>connection.ts</code>.</li>
+      <li><code>REDIS_USER</code>.</li>
+      <li><code>mailerClient.ts</code> con undici y mTLS.</li>
+      <li><code>TRUST_PROXY</code>.</li>
+    </ul>
+  </li>
+  <li><strong>Mailer:</strong> <code>requireTLS</code> y doble token en <code>verifySharedSecret.ts</code>.</li>
+  <li><strong>Infra:</strong>
+    <ul>
+      <li>TLS opcional por variable en los 4 motores.</li>
+      <li><code>pg_hba</code> <code>hostssl</code>.</li>
+      <li>ACL de Redis.</li>
+      <li><code>wal_keep_size</code>.</li>
+      <li><code>stop_grace_period</code>.</li>
+      <li><code>certs/mssql-ag</code> de solo lectura.</li>
+      <li>Eliminar <code>db_gui_password</code>.</li>
+      <li>Log del stream.</li>
+    </ul>
+  </li>
+  <li><strong>nginx:</strong>
+    <ul>
+      <li>Plantilla <code>prod</code> del front con verificación y mTLS.</li>
+      <li>nginx-api con <code>set_real_ip_from</code> y <code>ssl_verify_client</code>.</li>
+      <li>Nuevo <code>corporate-mailer/nginx</code>.</li>
+    </ul>
+  </li>
+  <li><strong>Compose:</strong>
+    <ul>
+      <li><code>compose.distributed.yml</code> en los 5 stacks.</li>
+      <li>Nuevo stack <code>corporate-agent</code>.</li>
+      <li>Alertmanager y blackbox en monitoring.</li>
+      <li>Loki con autenticación.</li>
+      <li><code>SECRETS_DIR</code> y <code>PKI_DIR</code>.</li>
+    </ul>
+  </li>
+  <li><strong>CI:</strong> construcción, análisis y publicación de imágenes con tag inmutable.</li>
+  <li><strong>Respaldos:</strong> scripts por motor y prueba de restauración.</li>
+  <li><strong>Scripts:</strong> modo <code>--distributed --rol</code> en <code>run.sh</code> y archivos <code>.env.host-&lt;rol&gt;.example</code>.</li>
+  <li><strong>Validación en Testing:</strong> suite completa, <code>docker compose config</code> de cada override, y TLS activado de punta a punta en Testing con una CA de prueba.</li>
+</ol>
+
+<h3>Fase 2: aprovisionamiento</h3>
+<ol>
+  <li>Hosts con el SO base, hardening, <code>daemon.json</code>, sysctl y discos.</li>
+  <li>WireGuard en malla completa y DNS interno.</li>
+  <li>VM ops con step-ca. Ceremonia de la raíz offline y emisión de la intermedia.</li>
+  <li>Firewall: <code>DOCKER-USER</code> e <code>INPUT</code> con denegación por defecto.</li>
+  <li>Distribución de secretos (SOPS/age) y de certificados por host.</li>
+  <li>Acceso al registro de imágenes desde cada host.</li>
+</ol>
+
+<h3>Fase 3: despliegue en orden y con compuertas de salud</h3>
+<ol>
+  <li><strong>MON</strong>, para observar el resto del despliegue. Después, <code>corporate-agent</code> en todos los hosts.</li>
+  <li><strong>INFRA</strong>, primero con datos vacíos para validar conectividad y TLS desde la API. <code>mssql-init</code> y luego el perfil <code>mssql-monitoring</code>.</li>
+  <li><strong>MAILER</strong>, con compuerta: <code>/health</code> vía mTLS.</li>
+  <li><strong>API</strong>, con compuerta: <code>/health</code>, logs sin errores de conexión y un login real.</li>
+  <li><strong>FRONT</strong>, con compuerta: login de punta a punta desde un navegador y Socket.IO operativo.</li>
+</ol>
+
+<h3>Fase 4: migración de datos y corte</h3>
+<ol>
+  <li><strong>Congelar:</strong> página de mantenimiento en el sistema actual y <code>docker compose stop -t 120</code> del stack de infra actual. Nunca <code>down -v</code>.</li>
+  <li><strong>Respaldo lógico previo:</strong> <code>pg_dump</code>, <code>mongodump</code> y <code>BACKUP DATABASE</code>. Es el punto de retorno.</li>
+  <li><strong>Copiar los 9 volúmenes:</strong> <code>docker run --rm -v &lt;vol&gt;:/from -v /backup:/to alpine tar czf /to/&lt;vol&gt;.tar.gz -C /from .</code>, luego <code>rsync</code> por WireGuard y restauración en INFRA.</li>
+  <li><strong>Levantar INFRA y verificar integridad:</strong> <code>pg_isready</code> más conteos, <code>rs.status()</code> y conteos en Mongo, estado del AG, <code>INFO replication</code> y <code>DBSIZE</code> en Redis.</li>
+  <li>Reiniciar la API contra el nuevo INFRA y hacer una prueba funcional.</li>
+  <li><strong>Mover el DNS público</strong> al FRONT nuevo.</li>
+  <li><strong>Apagar el host original</strong> recién después de validar, conservando sus volúmenes al menos N días.</li>
+</ol>
+<p><strong>Downtime:</strong> depende de los pasos 2 a 4 y del tamaño real de los datos. Con el volumen actual deberían ser minutos, pero es un supuesto. Si la ventana resulta inaceptable, la alternativa es sumar una réplica de cada motor en el host nuevo, esperar la sincronización y promoverla, lo que cuesta mucho más trabajo.</p>
+
+<h3>Fase 5: alta disponibilidad (posterior)</h3>
+<p>DB02 con réplicas y el árbitro en MON; Mongo por FQDN; Sentinel en Redis; keepalived para el stream; uploads en MinIO o S3; mTLS hacia las bases de datos; Patroni o Pacemaker si se decide automatizar el failover.</p>
+
+<!-- ============================================================ -->
+<h2 id="verificacion">15. Verificación y rollback</h2>
+
+<h3>15.1 Verificación de seguridad después de implementar</h3>
+<pre><code>CA=/etc/corporate-app/pki/ca-chain.crt
+# FRONT→API: sin certificado de cliente FALLA; con front-client da 200; con un certificado válido de otro CN da 403
+openssl s_client -connect api.corp.internal:3443 -servername api.corp.internal -CAfile $CA -verify_return_error &lt;/dev/null
+curl -sS -o /dev/null -w '%{http_code}\n' --cacert $CA --cert front-client.crt --key front-client.key https://api.corp.internal:3443/health
+curl -sS -o /dev/null -w '%{http_code}\n' --cacert $CA --cert api-client.crt  --key api-client.key  https://api.corp.internal:3443/health
+
+# Desde la API: cada motor con verificación de hostname y rechazo sin TLS
+psql "host=pg.infra.corp.internal port=6432 user=$PG_APP_USER sslmode=verify-full sslrootcert=$CA" -c "select ssl from pg_stat_ssl where pid=pg_backend_pid()"
+psql "host=pg.infra.corp.internal port=6432 user=$PG_APP_USER sslmode=disable"          # debe fallar: pg_hba rechaza
+mongosh "mongodb://mongo.infra.corp.internal:19027/?tls=true&amp;tlsCAFile=$CA&amp;directConnection=true" --eval 'db.runCommand({ping:1})'
+redis-cli -h redis.infra.corp.internal -p 5580 --tls --cacert $CA --user api$SUFFIX --pass "$P" CONFIG GET dir   # NOPERM
+redis-cli -h redis.infra.corp.internal -p 5580 PING                                     # sin TLS: debe fallar
+# MSSQL:  SELECT encrypt_option FROM sys.dm_exec_connections;   → todas TRUE
+
+# Mailer
+curl --cacert $CA https://mailer.corp.internal:8443/health                              # 400: sin certificado de cliente
+openssl s_client -starttls smtp -connect $SMTP_HOST:587 -verify_return_error &lt;/dev/null
+
+# Segmentación (desde FRONT y desde un equipo de la LAN fuera de la malla)
+nmap -Pn -sT -p- 10.60.99.11 10.60.99.22     # todo filtrado
+nmap -Pn -p- &lt;IP pública FRONT&gt;             # solo 80 y 443
+testssl.sh https://&lt;dominio público&gt;
+ss -ltnp                                     # en cada host: solo escucha en wg0 (FRONT: 80/443)
+
+# Sin texto plano en la red
+tcpdump -i wg0 -A "tcp port 6432" | grep -iE 'select|insert|password'   # vacío
+
+# IP real / anti-spoofing: el intento 11 devuelve 429 aunque se cambie el XFF
+for i in $(seq 1 11); do curl -sk -o /dev/null -w '%{http_code} ' -H "X-Forwarded-For: 203.0.113.$i" \
+  -H 'content-type: application/json' -d '{"username":"x","password":"bad"}' https://&lt;FRONT&gt;/api/auth/login; done
+
+# Secretos y configuración
+find /etc/corporate-app -perm /o+rwx         # vacío
+docker exec &lt;mssql01&gt; ls /var/opt/mssql/certs   # solo dbm_certificate.*
+# Guarda: arrancar la API con REQUIRE_TRANSPORT_TLS=true y una variable TLS en false: debe abortar</code></pre>
+
+<h3>15.2 Rollback</h3>
+<ul>
+  <li><strong>Fases 1 a 3:</strong> no afectan producción. Si algo falla, se corrige y se reintenta. Los hosts sin estado (FRONT, MAILER, API) se bajan y se vuelven a levantar sin impacto.</li>
+  <li><strong>Fase 4:</strong> el host original conserva su stack y sus volúmenes intactos, y los <code>compose.prod.yml</code> de un solo host no se modificaron. Para volver atrás:
+    <ol>
+      <li>Revertir el DNS público.</li>
+      <li>Levantar el sistema original con <code>run.sh</code> o <code>run.ps1</code>, como hoy.</li>
+      <li>Si hubo escrituras en el sistema nuevo, restaurar desde el respaldo lógico previo al corte o reconciliar manualmente.</li>
+    </ol>
+    Por eso <strong>no se borra nada del origen</strong> hasta validar.
+  </li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="operacion">16. Operación continua</h2>
+<ul>
+  <li><strong>Arranque en frío:</strong> MON, INFRA (primarios), DB02 (réplicas, fase 2), árbitro, MAILER, API y FRONT. <strong>Parada:</strong> en orden inverso, con página de mantenimiento en el FRONT y <code>stop -t 120</code> en las bases de datos.</li>
+  <li><strong>Parches del SO:</strong> un host por vez. Con <code>live-restore</code>, actualizar el daemon no reinicia los contenedores. Con DB02, primero la réplica, después un failover manual si corresponde y luego el primario.</li>
+  <li><strong>Actualizaciones de la API, escalonadas:</strong>
+    <ul>
+      <li><code>up -d --no-deps api01prod</code>, esperar a que quede healthy y seguir con 02 y 03. <code>max_fails</code> y <code>proxy_next_upstream</code> de nginx-api cubren el intervalo.</li>
+      <li>Las migraciones de esquema deben ser compatibles hacia atrás (<em>expand/contract</em>), porque conviven versiones por un momento.</li>
+    </ul>
+  </li>
+  <li><strong>Crecimiento:</strong>
+    <ol>
+      <li>Escalar en vertical los hosts de bases de datos.</li>
+      <li>Agregar un segundo host de API, con uploads en S3 y un balanceador L4 o VIP delante de los dos nginx-api.</li>
+      <li>Usar el secundario de MSSQL para reportes.</li>
+    </ol>
+  </li>
+  <li><strong>Costo relativo</strong> (unidad = host de 2 vCPU / 4 GB):
+    <table>
+      <tr><th>Variante</th><th>Unidades</th><th>Detalle</th></tr>
+      <tr><td>Base</td><td>≈ 9</td><td>INFRA 4, API 2, FRONT 1, MAILER 1, MON 1</td></tr>
+      <tr><td>Recomendada</td><td>≈ 21</td><td>INFRA y DB02 de 32 GB (8 cada uno), API 2, FRONT 1, MAILER 1, MON 2, ops 0,5</td></tr>
+    </table>
+    A eso se suman el almacenamiento de objetos para respaldos y <strong>la licencia de MSSQL, que puede superar todo el hardware</strong>.
+  </li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="riesgos">17. Riesgos y decisiones pendientes</h2>
+<table>
+  <tr><th>#</th><th>Decisión o riesgo</th><th>Opciones</th><th>Recomendación</th></tr>
+  <tr><td>D1</td><td>Dominio interno</td><td><code>corp.local</code>, <code>corp.internal</code> o <code>int.&lt;dominio real&gt;</code></td><td><code>corp.internal</code> o subdominio real. Bloquea la emisión de certificados.</td></tr>
+  <tr><td>D2</td><td>Edición y licencia de MSSQL</td><td>Standard, Enterprise o Developer (no apta)</td><td>Resolverla antes de todo. Condiciona el AG y el costo.</td></tr>
+  <tr><td>D3</td><td>Ubicación del mailer</td><td>Host propio (lo pedido) o co-ubicado con la API</td><td>Host propio si se prioriza aislar las credenciales SMTP; co-ubicado si se prioriza simplicidad.</td></tr>
+  <tr><td>D4</td><td>Registro de imágenes</td><td>GHCR, Harbor o Registry autoalojado</td><td>GHCR si se acepta dependencia externa; Harbor si se quiere todo interno.</td></tr>
+  <tr><td>D5</td><td>DB02 y failover automático</td><td>Fase 1 con failover manual, o fase 2 con Patroni, Sentinel o Pacemaker</td><td>Fase 1 manual, documentada y ensayada. DB02 lo antes posible.</td></tr>
+  <tr><td>D6</td><td>Uploads al escalar la API</td><td>NFS o MinIO/S3</td><td>S3 como destino (requiere refactor); NFS solo como puente.</td></tr>
+  <tr><td>D7</td><td>Retención legal de respaldos contables</td><td>—</td><td>Confirmar con Contabilidad.</td></tr>
+  <tr><td>D8</td><td>Acceso directo tipo Insomnia a nginx-api en producción</td><td>Eliminar, o dejarlo en un listener aparte solo por la VPN de administración</td><td>Eliminar en producción.</td></tr>
+  <tr><td>D9</td><td>Rotación de JWT y sesión sin <code>kid</code></td><td>Aceptar cierre de sesiones al rotar, o soportar varias claves</td><td>Soportar varias claves antes del primer ciclo de rotación.</td></tr>
+  <tr><td>R1</td><td>Latencia api→bases de datos en cada consulta</td><td>—</td><td>Piloto de medición en la fase 0. Puede ser el mayor riesgo de rendimiento.</td></tr>
+  <tr><td>R2</td><td>Mongo sin failover detrás del proxy L4 (<code>directConnection=true</code>)</td><td>—</td><td>Aceptado para la fase 1; se resuelve con miembros por FQDN.</td></tr>
+  <tr><td>R3</td><td>Workaround <code>internal:false</code> de Docker Desktop copiado a Linux sin necesidad</td><td>—</td><td>Validar el publish en Linux nativo y volver a <code>internal:true</code> donde se pueda.</td></tr>
+  <tr><td>R4</td><td>Un compromiso del host API expone JWT, sesión y 4 credenciales de bases de datos</td><td>—</td><td>Inherente. Se mitiga con usuarios de mínimo privilegio, alertas y mTLS hacia las bases de datos (fase 2).</td></tr>
+  <tr><td>R5</td><td>step-ca en línea como activo crítico</td><td>—</td><td>VM ops dedicada, con raíz offline y <code>nameConstraints</code>.</td></tr>
+  <tr><td>R6</td><td>Detalles de librerías sin verificar en la práctica</td><td>—</td><td>Validar en Testing: <code>socket.tls</code> de <code>redis@6.2</code>, <code>encrypt:"strict"</code> de tedious contra 2022-CU26, permisos ACL que necesitan connect-redis y rate-limit-redis, y el merge de <code>!reset</code> en los overrides.</td></tr>
+  <tr><td>R7</td><td>El orden de arranque ya no lo garantiza Docker</td><td>—</td><td>Pipeline (Ansible) con compuertas de salud reales.</td></tr>
+</table>
+<p><strong>Se mantienen sin cambio</strong> las decisiones previas de seguridad: HSTS sin <code>preload</code> hasta confirmar el dominio público, redacción de cookies y tokens en logs, CSP, y la decisión de producto pendiente sobre Labelary/CSP.</p>
+
+<!-- ============================================================ -->
+<h2 id="inventario">18. Anexo: inventario de archivos a modificar</h2>
+<table>
+  <tr><th>Área</th><th>Archivos</th><th>Cambio</th></tr>
+  <tr><td>API: código</td><td><code>src/library/env.ts</code>, <span class="tag new">nuevo</span> <code>src/library/tls.ts</code>, <code>src/databases/{postgres,mssql,mongo,redis}/connection.ts</code>, <code>src/library/mailerClient.ts</code>, <code>api.ts</code></td><td>TLS configurable, guarda de arranque, mTLS hacia el mailer, <code>TRUST_PROXY</code>, <code>REDIS_USER</code></td></tr>
+  <tr><td>API: nginx</td><td><code>nginx/config/nginx.conf.template</code>, <code>entrypoint-wrapper.sh</code></td><td><code>set_real_ip_from</code>, <code>ssl_verify_client</code> + pinning, reescritura del comentario sobre IP real</td></tr>
+  <tr><td>API: compose</td><td><span class="tag new">nuevo</span> <code>compose.distributed.yml</code></td><td>§8.2</td></tr>
+  <tr><td>Front</td><td><code>nginx/config/nginx.conf.prod.template</code>, <code>entrypoint-wrapper.sh</code>, <span class="tag new">nuevo</span> <code>compose.distributed.yml</code></td><td>Upstream por FQDN y puerto, verificación y mTLS, XFF reemplazado</td></tr>
+  <tr><td>Mailer</td><td><code>src/library/mailer.ts</code>, <code>src/middlewares/verifySharedSecret.ts</code>, <span class="tag new">nuevo</span> <code>nginx/</code>, <span class="tag new">nuevo</span> <code>compose.distributed.yml</code></td><td><code>requireTLS</code>, doble token, nginx-mailer con mTLS</td></tr>
+  <tr><td>Infra</td><td><code>compose.prod.yml</code>, <code>PostgreSQL/entrypoint-wrapper.sh</code>, <code>PostgreSQL/init/02-pg-hba.sh</code>, <code>MongoDB/entrypoint-wrapper.sh</code>, <code>MsSQL/</code> (mssql.conf), <code>Redis/entrypoint-wrapper.sh</code>, <code>NGINX/config/streams.prod.conf</code>, <span class="tag new">nuevo</span> <code>compose.distributed.yml</code>, <span class="tag new">nuevos</span> scripts de respaldo</td><td>TLS opcional, <code>hostssl</code>, ACL, <code>wal_keep_size</code>, <code>stop_grace_period</code>, <code>certs/mssql-ag</code> de solo lectura, allow/deny y log en el stream</td></tr>
+  <tr><td>Monitoring</td><td><code>compose.prod.yml</code>, <code>Prometheus/prometheus.yml.template</code>, <code>Loki/loki-config.yml</code>, <code>Alloy/config.alloy</code>, <span class="tag new">nuevos</span> Alertmanager, blackbox y reglas de alerta</td><td>remote_write receiver, Loki con autenticación, nginx de ingesta con mTLS</td></tr>
+  <tr><td>Agente</td><td><span class="tag new">nuevo</span> <code>corporate-agent/</code></td><td>Alloy, node-exporter, cAdvisor, dockerproxy + filtro por host</td></tr>
+  <tr><td>Scripts</td><td><code>run.sh</code>, <code>corporate-scripts/*.sh</code>, <span class="tag new">nuevos</span> <code>.env.host-&lt;rol&gt;.example</code>, playbooks de Ansible</td><td>Modo <code>--distributed --rol</code>, sin creación de redes compartidas, compuertas de salud</td></tr>
+  <tr><td>Secretos</td><td><code>corporate-secrets/</code>, <span class="tag new">nuevo</span> <code>secrets/prod/&lt;rol&gt;.sops.yaml</code></td><td>Reparto por host, <code>redis_api_password</code>, <code>redis_replication_password</code>, eliminar <code>db_gui_password</code></td></tr>
+  <tr><td>CI</td><td><span class="tag new">nuevo</span> workflow de construcción y publicación de imágenes</td><td>Tag inmutable, Trivy, digest</td></tr>
+</table>
+
+<footer class="doc-footer">Plan 000 · corporate-app · guardado en <code>.claude/planes/</code> · propuesta para evaluación; ninguna parte está implementada. Los números de línea citados corresponden a la rama <code>develop</code> al 2026-09-24.</footer>
+</div>
+</body>
+</html>

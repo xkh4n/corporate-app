@@ -17,9 +17,12 @@ set -eu
 : "${REDIS_PASSWORD_FILE:?falta REDIS_PASSWORD_FILE}"
 : "${REDIS_EXPORTER_USER:?falta REDIS_EXPORTER_USER}"
 : "${REDIS_EXPORTER_PASSWORD_FILE:?falta REDIS_EXPORTER_PASSWORD_FILE}"
+: "${REDIS_APP_USER:?falta REDIS_APP_USER}"
+: "${REDIS_APP_PASSWORD_FILE:?falta REDIS_APP_PASSWORD_FILE}"
 
 REDIS_PASSWORD="$(cat "$REDIS_PASSWORD_FILE")"
 REDIS_EXPORTER_PASSWORD="$(cat "$REDIS_EXPORTER_PASSWORD_FILE")"
+REDIS_APP_PASSWORD="$(cat "$REDIS_APP_PASSWORD_FILE")"
 
 # Necesario tanto para volúmenes nuevos (el punto de montaje ya queda
 # redis:redis por la imagen base, pero por las dudas) como, sobre todo, para
@@ -61,6 +64,20 @@ set -- "$@" --user "$REDIS_EXPORTER_USER" on ">$REDIS_EXPORTER_PASSWORD" \
     -quit +zcard +type +xlen -readwrite -command +client -wait +scard +llen \
     +hlen +arcount +get +eval +slowlog +cluster\|info +cluster\|slots \
     +cluster\|nodes -hello -echo +info +latency +scan -reset -auth -asking
+
+# Usuario ACL de corporate-api (hallazgo del plan 000, 2026-09-24): antes la
+# API entraba con el usuario "default", o sea con la contraseña de
+# administrador, y podia correr CONFIG SET (escribir archivos en el
+# contenedor), FLUSHALL, ACL SETUSER, SHUTDOWN, etc. Ahora: todas las claves
+# (~*) y canales pub/sub (&*, adaptador de Socket.IO), todos los comandos
+# MENOS @admin y @dangerous (CONFIG, KEYS, FLUSH*, ACL, INFO, DEBUG, MONITOR,
+# REPLICAOF, SHUTDOWN, CLIENT KILL/LIST...). Lo que la API usa -GET/SET/
+# INCR/PTTL, MULTI, EVAL/EVALSHA/SCRIPT LOAD (rate-limit-redis y leases de la
+# carga masiva), SCAN (connect-redis, barrido de importaciones), SELECT,
+# PUBLISH/SUBSCRIBE, CLIENT SETINFO- queda permitido. "default" sigue igual
+# para replicacion (masterauth), healthchecks y administracion.
+set -- "$@" --user "$REDIS_APP_USER" on ">$REDIS_APP_PASSWORD" \
+    '~*' '&*' +@all -@admin -@dangerous
 
 if [ "$REDIS_ROLE" = "replica" ]; then
     : "${REDIS_PRIMARY_HOST:?falta REDIS_PRIMARY_HOST}"

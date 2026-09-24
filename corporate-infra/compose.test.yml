@@ -35,6 +35,8 @@ secrets:
         file: ../corporate-secrets/${SECRETS_ENV}/redis_password.txt
     redis_exporter_password:
         file: ../corporate-secrets/${SECRETS_ENV}/redis_exporter_password.txt
+    redis_app_password:
+        file: ../corporate-secrets/${SECRETS_ENV}/redis_app_password.txt
 
 networks:
     backend:
@@ -940,9 +942,12 @@ services:
             REDIS_PASSWORD_FILE: /run/secrets/redis_password
             REDIS_EXPORTER_USER: ${REDIS_EXPORTER_USER}${SUFFIX}
             REDIS_EXPORTER_PASSWORD_FILE: /run/secrets/redis_exporter_password
+            REDIS_APP_USER: ${REDIS_APP_USER}${SUFFIX}
+            REDIS_APP_PASSWORD_FILE: /run/secrets/redis_app_password
         secrets:
             - redis_password
             - redis_exporter_password
+            - redis_app_password
         volumes:
             - redis_primary_data:/data
         networks:
@@ -984,9 +989,12 @@ services:
             REDIS_PASSWORD_FILE: /run/secrets/redis_password
             REDIS_EXPORTER_USER: ${REDIS_EXPORTER_USER}${SUFFIX}
             REDIS_EXPORTER_PASSWORD_FILE: /run/secrets/redis_exporter_password
+            REDIS_APP_USER: ${REDIS_APP_USER}${SUFFIX}
+            REDIS_APP_PASSWORD_FILE: /run/secrets/redis_app_password
         secrets:
             - redis_password
             - redis_exporter_password
+            - redis_app_password
         volumes:
             - redis_replica_data:/data
         networks:

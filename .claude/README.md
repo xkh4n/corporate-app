@@ -18,6 +18,74 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-24 (3) — Correcciones de seguridad detectadas en el plan 000 (despliegue actual)
+
+### Hecho
+- **IP real del cliente en el rate-limit:** antes, todo el que entraba por el front compartía un solo contador.
+  - En nginx-api: `set_real_ip_from ${FRONTAPI_SUBNET}` + `real_ip_header X-Forwarded-For` + `real_ip_recursive on`.
+  - Nueva variable `FRONTAPI_SUBNET` en el `.env` de cada ambiente (`172.16`, `10.10` y `10.200` `.13.0/24`). Coincide con la subred que crea `run.ps1`/`run.sh`, y ambos lados llevan un comentario de sincronía.
+  - El acceso directo a nginx-api (Insomnia) sigue ignorando el `X-Forwarded-For`.
+- **SMTP:** `corporate-mailer/src/library/mailer.ts` pasa a `secure` solo en el puerto 465 y `requireTLS` en los demás, con `minVersion TLSv1.2`, `servername` y `rejectUnauthorized`.
+- **Redis:** usuario ACL propio para la API.
+  - En Redis: `REDIS_APP_USER`+SUFFIX (dev `rachaeldev`, test `pristest`, prod `roybattyprod`), con `~* &* +@all -@admin -@dangerous`, y un secreto nuevo `redis_app_password.txt` por ambiente.
+  - En la API: `REDIS_USER` en `env.ts` y `connection.ts`. Los compose de la API ya no montan `redis_password` (el de administrador).
+  - Se agregó el secreto nuevo a `ensure-infra-secrets.{ps1,sh}` y el usuario a `.env.test` y `.env.test.example`.
+
+### Verificación (dev)
+- **Redis del usuario de la API:**
+  - Funcionan `PING`, `SELECT`, `CLIENT SETINFO`, `EVAL`, `SCAN` y `PUBSUB`.
+  - `CONFIG`, `FLUSHALL`, `INFO`, `ACL` y `SHUTDOWN` responden NOPERM.
+  - La API corre con 9 conexiones `user=rachaeldev`, y el ACL LOG quedó vacío después de reiniciarla.
+- **Login con `X-Forwarded-For: 203.0.113.x` falsificado:**
+  - Por el front, la clave del contador fue `rl:172.16.14.1`: ni la IP falsificada ni la de nginx-front (`172.16.13.3`).
+  - Directo a nginx-api, fue `rl:172.16.11.1`.
+  - Las claves de prueba se borraron.
+- **SMTP:** `transporter.verify()` contra Gmail con TLS obligatorio respondió OK, sin enviar correo.
+- **Chequeos:** `tsc` de la API y del mailer OK; unit tests de la API: 111 correctos.
+
+### Pendiente
+- **Docker Desktop no conserva la IP de origen:** nginx-front ve a cualquier cliente externo como el gateway de `frontend-net` (`172.16.14.1`). En este host todos los navegadores siguen compartiendo un contador, ahora por limitación de Docker Desktop y no de nginx. En Linux con `userland-proxy: false` se ve la IP real (plan 000, §9.4).
+- **Testing:** el Redis de Testing tiene que recrearse (`run.ps1 bdd test`) para que exista `pristest` antes de correr los tests de integración.
+- **Producción:** hay que recrear Redis y la API con `run.ps1 bdd prod` y `run.ps1 backend prod`.
+
+---
+
+## 2026-09-24 (2) — Plan de distribución en varios servidores (plan 000, solo análisis)
+
+### Contexto
+El usuario pidió evaluar cómo separar infra, api, front y mailer en servidores anfitriones distintos: compose,
+redes, volúmenes, proxies y variables de entorno. Es para presentarlo a evaluación y estudiarlo antes de
+implementarlo. Plan: `.claude/planes/000-Distribución de Corp en varios servidores.html`.
+
+### Hecho
+- Análisis en paralelo de tres agentes (`devops-engineer`, `security-engineer`, `infrastructure-maintainer`),
+  integrado en un solo plan. No se modificó código.
+- Donde los agentes discrepaban, se decidió así:
+  - Monitoreo por agente Alloy en cada host, que empuja a MON. Se descartó publicar los exporters, porque no tienen autenticación.
+  - Dominio `corp.internal` en vez de `.local`, que choca con mDNS.
+  - El mailer va en su propio host, como se pidió, y la co-ubicación con la API queda como alternativa.
+- Corrección al análisis previo en el chat: en producción la API **sí** descubre el replica set de Mongo
+  (`MONGO_DIRECT_CONNECTION` no está definida y vale `false`). Distribuido, necesita `directConnection=true` o miembros por FQDN.
+- Corrección a la propuesta de DevOps: las anclas YAML (`x-api-common`) no cruzan archivos compose, así que el
+  override tiene que sobrescribir cada servicio `api0Nprod`.
+
+### Hallazgos que el plan deja registrados (existen hoy, no los crea la distribución)
+- No hay respaldos ni Alertmanager.
+- MSSQL corre en edición Developer.
+- El tráfico a las bases de datos va en texto plano (Postgres `ssl:false`, MSSQL `trustServerCertificate:true`).
+- STARTTLS del SMTP es oportunista.
+- La API usa el usuario `default` de Redis.
+- `certs/` se monta completo y en modo lectura-escritura en los contenedores MSSQL.
+- `db_gui_password` no tiene uso.
+- Detrás del front, todos los usuarios comparten un solo contador de rate-limit en el login.
+
+### Pendiente
+- Decisiones D1 a D9 del plan: dominio interno, licencia de MSSQL, ubicación del mailer, registro de imágenes, DB02,
+  uploads en S3, retención legal, acceso directo tipo Insomnia, rotación de JWT.
+- Piloto de latencia api→bases de datos antes de comprometer la topología.
+
+---
+
 ## 2026-09-24 — Auditoría de seguridad del delta desde el 17/09 (ping-pong) y mitigaciones
 
 ### Contexto

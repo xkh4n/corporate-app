@@ -5,8 +5,8 @@ secrets:
         file: ../corporate-secrets/${SECRETS_ENV}/pg_user_password.txt
     mssql_app_password:
         file: ../corporate-secrets/${SECRETS_ENV}/mssql_app_password.txt
-    redis_password:
-        file: ../corporate-secrets/${SECRETS_ENV}/redis_password.txt
+    redis_app_password:
+        file: ../corporate-secrets/${SECRETS_ENV}/redis_app_password.txt
     jwt_access_secret:
         file: ../corporate-secrets/${SECRETS_ENV}/jwt_access_secret.txt
     jwt_refresh_secret:
@@ -179,7 +179,8 @@ x-api-common: &api-common
         MSSQL_APP_USER: ${MSSQL_APP_USER}${SUFFIX}
         MSSQL_APP_USER_PASSWORD_FILE: /run/secrets/mssql_app_password
         REDIS_HOST: "${REDIS_HOST}01${SUFFIX}"
-        REDIS_PASSWORD_FILE: /run/secrets/redis_password
+        REDIS_USER: ${REDIS_APP_USER}${SUFFIX}
+        REDIS_PASSWORD_FILE: /run/secrets/redis_app_password
         MONGO_HOST: "${MONGO_HOST}01${SUFFIX}"
         MONGO_DATABASE: ${MPONGO_DB_NAME}
         MONGO_USER: ${MONGO_USER}${SUFFIX}
@@ -207,7 +208,7 @@ x-api-common: &api-common
     secrets:
         - pg_user_password
         - mssql_app_password
-        - redis_password
+        - redis_app_password
         - jwt_access_secret
         - jwt_refresh_secret
         - session_secret
@@ -295,6 +296,7 @@ services:
             # "listen 443" adentro del contenedor no tiene relacion con el
             # puerto publicado afuera-.
             API_SSL_PORT: ${API_SSL_PORT}
+            FRONTAPI_SUBNET: ${FRONTAPI_SUBNET}
         # Bindeado a ALLOCATED_IP, no a 0.0.0.0 -mismo criterio que
         # corporate-infra/compose.test.yml, ver comentario ahi.
         ports:

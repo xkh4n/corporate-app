@@ -66,11 +66,15 @@ export const env = {
   redis: {
     host: optionalEnv("REDIS_HOST", "localhost"),
     port: intEnv("REDIS_INTERNAL_PORT", 6379),
+    // Usuario ACL propio de la API (REDIS_APP_USER+SUFFIX en corporate-infra,
+    // sin @admin/@dangerous). Vacio = usuario "default" (el administrador):
+    // solo para entornos sin ese usuario creado.
+    user: optionalEnv("REDIS_USER", ""),
     passwordFileVar: "REDIS_PASSWORD_FILE",
     // Indice de base logica dentro de la misma instancia (SELECT n), no un
     // host/puerto distinto. Default 0 (el que ya usan sesiones/refresh
-    // tokens reales); los tests de integracion usan REDIS_DB=1 para que
-    // flushDb() en test/setupIntegration.ts nunca toque sesiones de dev.
+    // tokens reales); los tests de integracion usan REDIS_DB=1 para no
+    // mezclar sus claves con las sesiones de dev.
     db: intEnv("REDIS_DB", 0),
   },
 
