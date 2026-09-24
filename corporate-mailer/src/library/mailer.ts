@@ -27,10 +27,19 @@ export interface SendMailInput {
 // del unico proveedor SMTP configurado (hallazgo de auditoria de seguridad
 // 2026-09-17). Los limites son conservadores a proposito: este servicio
 // corre con 256M/0.5 cpu en produccion (compose.prod.yml).
+// TLS obligatorio: 465 = TLS implicito; cualquier otro puerto (587) usa
+// STARTTLS con requireTLS -sin requireTLS, nodemailer hace STARTTLS solo si el
+// servidor lo anuncia, asi que alguien en el camino que borre el "STARTTLS"
+// del EHLO degradaba la conexion a texto plano y la contraseña SMTP viajaba
+// en claro en el AUTH-. rejectUnauthorized (default de Node) + servername
+// validan el certificado contra el host configurado.
+const implicitTls = env.smtp.port === 465;
 const transporter = nodemailer.createTransport({
   host: env.smtp.host,
   port: env.smtp.port,
-  secure: false, // STARTTLS en el puerto 587, no TLS implicito (465)
+  secure: implicitTls,
+  requireTLS: !implicitTls,
+  tls: { minVersion: "TLSv1.2", servername: env.smtp.host, rejectUnauthorized: true },
   auth: {
     user: env.smtp.user,
     pass: readSecretFromEnv(env.smtp.passwordFileVar),
