@@ -242,6 +242,32 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "asset-write-offs", action: "read", description: "Consultar las bajas contables de activos" },
   { resource: "asset-write-offs", action: "create", description: "Preparar bajas contables (borrador, fotos y certificado notarial)" },
   { resource: "asset-write-offs", action: "approve", description: "Confirmar bajas contables de activos (definitivas)" },
+
+  // Service Desk ITIL v4 (plan 009). Sin grantToUser a proposito: el admin
+  // decide que roles abren tickets, cuales atienden y quienes aprueban.
+  { resource: "service-tickets", action: "create", description: "Abrir tickets propios y seguirlos (portal Generar Ticket)" },
+  { resource: "service-tickets", action: "read", description: "Ver la cola de tickets del Service Desk" },
+  { resource: "service-tickets", action: "update", description: "Atender tickets: asignar, cambiar estado, comentar, activos" },
+  { resource: "service-tickets", action: "approve", description: "Aprobar solicitudes de servicio (miembro del grupo aprobador)" },
+  {
+    resource: "service-tickets",
+    action: "all_view",
+    description: "Ver y trabajar los tickets de todos los grupos de soporte (Jefe de Soporte TI)",
+  },
+  { resource: "service-problems", action: "read", description: "Consultar problemas" },
+  { resource: "service-problems", action: "create", description: "Registrar problemas" },
+  { resource: "service-problems", action: "update", description: "Investigar y resolver problemas, errores conocidos" },
+  { resource: "service-changes", action: "read", description: "Consultar cambios y su calendario" },
+  { resource: "service-changes", action: "create", description: "Registrar solicitudes de cambio (RFC)" },
+  { resource: "service-changes", action: "update", description: "Planificar, implementar y cerrar cambios" },
+  { resource: "service-changes", action: "approve", description: "Aprobar cambios (miembro del CAB)" },
+  { resource: "kb-articles", action: "read", description: "Consultar la base de conocimiento" },
+  { resource: "kb-articles", action: "create", description: "Redactar articulos de conocimiento" },
+  { resource: "kb-articles", action: "update", description: "Editar articulos y enviarlos a revision" },
+  { resource: "kb-articles", action: "approve", description: "Publicar y retirar articulos de conocimiento" },
+  { resource: "service-desk-settings", action: "read", description: "Ver la configuracion del Service Desk" },
+  { resource: "service-desk-settings", action: "update", description: "Configurar grupos, catalogo, SLA y calendario del Service Desk" },
+  { resource: "service-desk-reports", action: "read", description: "Ver indicadores del Service Desk" },
 ];
 
 export interface ScreenAccessCatalogEntry {
@@ -481,6 +507,27 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
     resource: "accounting-write-off",
     description: "Pantalla: Baja Contable",
     includes: ["asset-write-offs:read", "asset-write-offs:create", "asset-write-offs:approve", "asset-accounting:read"],
+  },
+
+  // Service Desk (plan 009). generate-ticket y support-services se crearon
+  // primero desde Nueva Pantalla en Development: la siembra les agrega este
+  // minimo y conserva lo que se les haya dado desde la UI. Las pestanas de
+  // problemas, cambios, conocimiento e indicadores se ven segun sus propios
+  // permisos, que el admin agrega al rol que corresponda.
+  {
+    resource: "generate-ticket",
+    description: "Pantalla: Generar Ticket",
+    includes: ["service-tickets:create", "kb-articles:read"],
+  },
+  {
+    resource: "support-services",
+    description: "Pantalla: Gestión de Tickets",
+    includes: ["service-tickets:read", "service-tickets:update", "kb-articles:read"],
+  },
+  {
+    resource: "support-settings",
+    description: "Pantalla: Configuración Service Desk",
+    includes: ["service-desk-settings:read", "service-desk-settings:update"],
   },
 ];
 

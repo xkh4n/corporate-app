@@ -18,7 +18,7 @@ import {
   setAssetStatus,
   updateAssetLocation,
 } from "./asset.service";
-import { createAssetMovement, listCurrentHoldersByAssetIds } from "./assetMovement.service";
+import { createAssetMovement, findOpenSupportTicketNumber, listCurrentHoldersByAssetIds } from "./assetMovement.service";
 import { applyDeclaredStatusToNewAsset, lockAssetSerial } from "./assetIntake.service";
 import { getAssetStatusByCodeOrThrow } from "./assetStatus.service";
 import { getCostCenterByIdOrThrow } from "./costCenter.service";
@@ -374,6 +374,13 @@ async function linkExistingAsset(
     holderIsSame: holderUserId !== null && holderUserId === systemHolder,
   });
   if (!plan.ok) throw new BadRequestError(`${asset.tag}: ${plan.reason}`);
+  // Un activo en soporte por un ticket vuelve desde el ticket: la toma no le cambia el estado (run-3 final, L4).
+  if (systemStatus === "SUPPORT" && plan.steps.length > 0) {
+    const ticketNumber = await findOpenSupportTicketNumber(asset.id, transaction);
+    if (ticketNumber) {
+      throw new ConflictError(`${asset.tag}: esta en soporte por el ticket ${ticketNumber}; devuelvalo desde el ticket antes de declararlo`);
+    }
+  }
 
   const notes = `Actualizado por toma de inventario ${count.number}`;
   for (const step of plan.steps) {

@@ -42,6 +42,15 @@ import {
 } from "./assetAccounting.routes";
 import { assetWriteOffRouter } from "./assetWriteOff.routes";
 import { notificationRouter } from "./notification.routes";
+import {
+  kbArticleRouter,
+  serviceChangeRouter,
+  serviceDeskReportRouter,
+  serviceDeskSettingsRouter,
+  servicePortalRouter,
+  serviceProblemRouter,
+  serviceTicketRouter,
+} from "./serviceDesk.routes";
 import { previsionalInstitutionRouter } from "./previsionalInstitution.routes";
 import { previsionalProfileRouter } from "./previsionalProfile.routes";
 import { previredSettingsRouter } from "./previredSettings.routes";
@@ -112,6 +121,15 @@ apiRouter.use("/asset-accounting", assetAccountingRouter);
 apiRouter.use("/asset-depreciation-runs", assetDepreciationRunRouter);
 apiRouter.use("/asset-accounting-policy", assetAccountingPolicyRouter);
 apiRouter.use("/asset-write-offs", assetWriteOffRouter);
+
+// Service Desk ITIL v4 (plan 009)
+apiRouter.use("/service-portal", servicePortalRouter);
+apiRouter.use("/service-tickets", serviceTicketRouter);
+apiRouter.use("/service-problems", serviceProblemRouter);
+apiRouter.use("/service-changes", serviceChangeRouter);
+apiRouter.use("/kb-articles", kbArticleRouter);
+apiRouter.use("/service-desk-reports", serviceDeskReportRouter);
+apiRouter.use("/service-desk-settings", serviceDeskSettingsRouter);
 
 // Resumen derivado de pendientes del usuario logeado (badge + push en
 // tiempo real, ver library/realtime/).

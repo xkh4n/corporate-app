@@ -376,6 +376,16 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     permissionKey: "purchase-order-attachment:access",
     sortOrder: 60,
   },
+  // Service Desk (plan 009): mismos label/icono/link/orden que el usuario
+  // creo desde Nueva Pantalla en Development (la siembra adopta esas filas por label).
+  {
+    label: "Generar Ticket",
+    icon: "IoTicketOutline",
+    link: "/generate-ticket",
+    parentLabel: "Solicitudes",
+    permissionKey: "generate-ticket:access",
+    sortOrder: 10,
+  },
   // Contabilidad > Gestion de Activos (plan 007). Mismos labels que el
   // usuario ya creo desde "Nueva Pantalla" en Development (la siembra hace
   // upsert por label y adopta esas filas); "Capitalizacion" va sin tilde,
@@ -429,6 +439,26 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     parentLabel: "Gestión de Activos",
     permissionKey: "accounting-policy:access",
     sortOrder: 60,
+  },
+
+  // Serv. Productivos > Soporte (plan 009). "Soporte" y "Gestión de Tickets"
+  // se crearon desde Nueva Pantalla en Development con estos mismos datos.
+  { label: "Soporte", icon: "IoHammer", parentLabel: "Serv. Productivos", sortOrder: 10 },
+  {
+    label: "Gestión de Tickets",
+    icon: "IoFootstepsOutline",
+    link: "/support-services",
+    parentLabel: "Soporte",
+    permissionKey: "support-services:access",
+    sortOrder: 10,
+  },
+  {
+    label: "Configuración Service Desk",
+    icon: "IoSettingsOutline",
+    link: "/support-services/settings",
+    parentLabel: "Soporte",
+    permissionKey: "support-settings:access",
+    sortOrder: 20,
   },
 ];
 
