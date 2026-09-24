@@ -125,6 +125,9 @@ fi
 # ver esos archivos). Evita que dev/test/prod terminen compartiendo el mismo
 # rango de "default-address-pools" del daemon -ese pool es global, no
 # distingue por proyecto Compose-.
+# OJO: <base>.13.0/24 (frontapi-net) se repite como FRONTAPI_SUBNET en el .env de
+# cada ambiente (corporate-secrets/<Ambiente>/.env): nginx-api confia en el
+# X-Forwarded-For solo desde esa subred. Si cambia la base, actualizar ambos.
 case "$ambiente" in
     dev)  net_base="172.16" ;;
     test) net_base="10.10" ;;

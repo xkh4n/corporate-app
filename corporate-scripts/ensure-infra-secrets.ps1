@@ -113,7 +113,9 @@ $infraSecrets = @(
     @{ File = 'mssql_password.txt'; Length = 32 },
     # Redis: usuario root/ACL por defecto (NO confundir con
     # redis_exporter_password, que genera ensure-monitoring-secrets.ps1).
-    @{ File = 'redis_password.txt'; Length = 32 }
+    @{ File = 'redis_password.txt'; Length = 32 },
+    # Redis: usuario ACL de corporate-api (REDIS_APP_USER), sin @admin/@dangerous.
+    @{ File = 'redis_app_password.txt'; Length = 32 }
 )
 
 Write-Host "Verificando secretos de infra para el ambiente [$Environment]..." -ForegroundColor Cyan
