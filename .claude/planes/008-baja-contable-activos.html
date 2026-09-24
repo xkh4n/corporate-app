@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>008 — Baja contable de activos</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:900px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.5rem; font-size:1.25rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  h3 { margin-top:1.6rem; font-size:1.05rem; }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }
+  th, td { border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 008</span>
+  <h1>Baja contable de activos, con fotos y certificado notarial</h1>
+  <div class="meta">corporate-app · corporate-api + corporate-front · Estado: aprobado, implementado (sin probar en navegador) · 2026-09-23 · continúa el plan 007</div>
+</header>
+
+<h2>Contexto</h2>
+<p>Al ciclo contable del plan 007 le falta su cierre, la <strong>baja contable</strong>. Contabilidad necesita dar de baja un activo o un listado, con respaldo:</p>
+<ul>
+  <li><strong>varias fotos</strong>, al menos una por activo;</li>
+  <li><strong>un solo certificado notarial</strong> (PDF) para toda la baja.</li>
+</ul>
+<p><strong>Qué existe hoy:</strong></p>
+<ul>
+  <li>La baja operativa (movimiento <code>DECOMMISSIONED</code>) deja el activo «De baja» y lleva su saldo del Kardex a cero con <code>recordWriteOff</code>.</li>
+  <li>Esa baja no cambia <code>asset_accounting.stage</code>.</li>
+  <li>Solo se sube un archivo por request (<code>uploadSingle</code>). Los PDF se limpian con qpdf.</li>
+</ul>
+
+<h2>Decisiones confirmadas</h2>
+<ul>
+  <li><strong>Baja operativa previa:</strong> es obligatoria. Solo entran activos en estado <code>DECOMMISSIONED</code>.</li>
+  <li><strong>Activos elegibles:</strong> <strong>cualquier activo clasificado</strong>, es decir, con fila en <code>asset_accounting</code>.</li>
+  <li><strong>Respaldo:</strong> <strong>al menos una foto por activo</strong> y <strong>un certificado</strong> por lote.</li>
+  <li><strong>Definitiva:</strong> una baja confirmada no se anula.</li>
+</ul>
+
+<h2>Flujo: borrador → confirmada</h2>
+<p>Se trabaja en un borrador, igual que en las devoluciones. Cada archivo se sube en su propia request, para no cargar N fotos en memoria de una vez.</p>
+<ol>
+  <li><strong>Crear el borrador</strong> con los activos elegibles.</li>
+  <li><strong>Subir el certificado:</strong> uno solo; si se sube otro, reemplaza al anterior.</li>
+  <li><strong>Subir las fotos</strong>, cada una asociada a un activo del borrador.</li>
+  <li><strong>Completar los datos:</strong> fecha de baja y motivo; notaría y número de certificado son opcionales.</li>
+  <li><strong>Confirmar:</strong> se validan las fotos, el certificado y que los activos sigan siendo elegibles. La baja queda definitiva.</li>
+  <li><strong>Descartar:</strong> solo un borrador. Se borran sus archivos.</li>
+</ol>
+
+<h2>Modelo de datos (Postgres, <code>migrateAssetWriteOffs()</code>)</h2>
+<ul>
+  <li><strong><code>asset_write_offs</code>:</strong>
+    <ul>
+      <li>estado <code>DRAFT</code>|<code>CONFIRMED</code>;</li>
+      <li>fecha, motivo, notaría y número de certificado;</li>
+      <li>archivo del certificado;</li>
+      <li>cantidad de activos y valor libro total;</li>
+      <li>auditoría de creación y de confirmación.</li>
+    </ul>
+  </li>
+  <li><strong><code>asset_write_off_lines</code>:</strong> activo, etapa anterior y valor libro al confirmar.</li>
+  <li><strong><code>asset_write_off_photos</code>:</strong> una fila por foto, ligada a su línea, con archivo, tipo MIME y tamaño.</li>
+  <li><strong><code>asset_accounting</code>:</strong>
+    <ul>
+      <li>etapa nueva <code>WRITTEN_OFF</code>; el CHECK pasa a tener nombre;</li>
+      <li>columna nueva <code>write_off_id</code>.</li>
+    </ul>
+  </li>
+</ul>
+<p><strong>Kardex:</strong> la baja contable no escribe asientos, porque la operativa ya dejó el saldo en cero. Cada línea guarda el valor libro contable del momento, que es la pérdida por baja.</p>
+
+<h2>Reglas</h2>
+<ul>
+  <li><strong>Elegible:</strong> el activo está <code>DECOMMISSIONED</code>, clasificado y no <code>WRITTEN_OFF</code>.</li>
+  <li><strong>Activo en dos borradores:</strong> gana el primero que se confirma; el segundo recibe 409.</li>
+  <li><strong>Edición:</strong> solo mientras es borrador. Quitar un activo del borrador borra sus fotos.</li>
+  <li><strong>Confirmación:</strong> una transacción que:
+    <ul>
+      <li>toma <code>FOR UPDATE</code> en orden;</li>
+      <li>revalida los activos, las fotos y el certificado;</li>
+      <li>calcula el valor libro;</li>
+      <li>deja los activos en <code>WRITTEN_OFF</code> y fija los totales.</li>
+    </ul>
+  </li>
+  <li><strong>Fecha:</strong> la fecha de baja no puede ser futura (hora de Chile).</li>
+  <li><strong>Resto del ciclo:</strong> <code>WRITTEN_OFF</code> queda fuera del cierre, la reclasificación, el costo y la capitalización.</li>
+</ul>
+
+<h2>Archivos</h2>
+<ul>
+  <li><strong>Fotos:</strong>
+    <ul>
+      <li>tipo de subida nuevo <code>image</code>: solo JPEG y PNG;</li>
+      <li>verificación de magic bytes;</li>
+      <li>máximo 5 MB.</li>
+    </ul>
+  </li>
+  <li><strong>Certificado:</strong> solo PDF, limpiado con qpdf, máximo 5 MB.</li>
+  <li><strong>Chequeo previo:</strong> se verifica el borrador y la línea antes de gastar qpdf o memoria.</li>
+  <li><strong>Almacenamiento:</strong> en <code>uploads/bajas/&lt;id&gt;/</code>, dentro del volumen <code>api_uploads</code>. Los nombres de archivo los genera el servidor.</li>
+  <li><strong>Descargas:</strong>
+    <ul>
+      <li>el certificado, como adjunto;</li>
+      <li>las fotos, inline con <code>nosniff</code>;</li>
+      <li>ambos con <code>no-store</code> y verificando que la ruta quede dentro de la carpeta.</li>
+    </ul>
+  </li>
+</ul>
+
+<h2>API y permisos</h2>
+<p><strong>Rutas en <code>/asset-write-offs</code>:</strong></p>
+<ul>
+  <li>consulta: <code>/eligible</code>, listado y detalle;</li>
+  <li>borrador: crear, editar y descartar;</li>
+  <li>certificado: subir y descargar;</li>
+  <li>fotos: subir, ver y quitar;</li>
+  <li>confirmar.</li>
+</ul>
+<table>
+  <tr><th>Permiso</th><th>Para qué</th></tr>
+  <tr><td><code>asset-write-offs:read</code></td><td>Consultar</td></tr>
+  <tr><td><code>asset-write-offs:create</code></td><td>Manejar borradores y archivos</td></tr>
+  <tr><td><code>asset-write-offs:approve</code></td><td>Confirmar la baja definitiva</td></tr>
+</table>
+
+<h2>Front</h2>
+<table>
+  <tr><th>Pantalla</th><th>Ruta</th><th>Permiso de pantalla</th></tr>
+  <tr><td>Baja Contable (Contabilidad › Gestión de Activos)</td><td><code>/accounting/write-off</code></td><td><code>accounting-write-off:access</code></td></tr>
+</table>
+<ul>
+  <li><strong>«Borradores / Nueva baja»:</strong>
+    <ul>
+      <li>elegir los activos elegibles;</li>
+      <li>subir las fotos de cada activo, con miniaturas;</li>
+      <li>subir el certificado y completar los datos;</li>
+      <li>confirmar en un modal.</li>
+    </ul>
+  </li>
+  <li><strong>«Historial»:</strong> las bajas confirmadas, en solo lectura.</li>
+  <li><strong>Menú:</strong> la hoja va con orden 50; Política pasa a 60.</li>
+</ul>
+
+<h2>Límites conocidos</h2>
+<ul>
+  <li><strong>Sin clasificar:</strong> un activo que se dio de baja operativamente sin estar clasificado no puede darse de baja contablemente.</li>
+  <li><strong>EXIF:</strong> las fotos se guardan tal cual, con sus metadatos.</li>
+</ul>
+
+<h2>Verificación</h2>
+<ul>
+  <li><strong>Compilación y lint:</strong> <code>tsc</code> y ESLint.</li>
+  <li><strong>Integración:</strong>
+    <ul>
+      <li>qué activos son elegibles;</li>
+      <li>falta una foto o el certificado;</li>
+      <li>la confirmación y el valor libro;</li>
+      <li>un activo en dos borradores;</li>
+      <li>una baja confirmada no se puede tocar;</li>
+      <li>descartar borra los archivos;</li>
+      <li>el cierre ignora <code>WRITTEN_OFF</code>.</li>
+    </ul>
+  </li>
+  <li><strong>Rutas:</strong> archivos cruzados (una foto subida como certificado y viceversa) y permisos.</li>
+  <li><strong>Antes de los commits:</strong> suite completa contra Testing y revisión de seguridad.</li>
+</ul>
+
+<footer class="doc-footer">Plan 008 · corporate-app · guardado en <code>.claude/planes/</code></footer>
+</div>
+</body>
+</html>
