@@ -18,6 +18,128 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-24 (7) — Auditoría de seguridad run-3 del Service Desk y visibilidad por grupo
+
+### Hecho
+- **Auditoría ping-pong** (`cybersecurity-orchestrator` + `security-engineer`, informes en
+  `security-audit-skill/corporate-app/run-3/`): sin Critical ni High. El orquestador informó 3 Low; el engineer,
+  5 Medium y 5 Low. Los 5 Medium se confirmaron a mano en el código y se corrigieron:
+  - F1: la búsqueda `/kb-articles/search` mostraba artículos INTERNAL a cualquier usuario del portal.
+  - F2: se aprobaba una solicitud registrada por uno mismo a nombre de otro.
+  - F3: CAB de una persona elegida por quien pide la aprobación.
+  - F4: con permisos de problemas se resolvían incidentes sin trabajar tickets.
+  - F5: anular un ticket dejaba el activo huérfano en SUPPORT.
+- **Menores corregidos:** PDF saneados con qpdf y sin `.eml`/`.msg` (F7); «Tomar» atómico y sin quitarle el ticket a
+  otro agente (F9); validación de grupo y de solicitante activo al registrar un ticket como agente (L2, L3).
+- **Visibilidad por grupo** (decisión del usuario, `services/postgres/serviceDesk/ticketScope.ts`):
+  - Cada agente ve y trabaja solo los tickets de sus grupos de soporte activos.
+  - **Ver todo es un permiso:** `service-tickets:all_view` (acción nueva `all_view`). El admin se lo asigna al rol
+    del Jefe de Soporte TI; el admin también ve todo.
+  - Fuera de alcance responde 404. Aplica a la cola, el detalle, las acciones, los adjuntos, los activos del
+    ticket, el historial del activo, los relacionados y los vínculos desde problemas, cambios y KB.
+- **Re-verificación de `security-engineer`** (`run-3/engineer-reverify.md`): F1–F5, F7, F9, L2 y L3 confirmados
+  cerrados. Sus hallazgos nuevos se corrigieron:
+  - N1 (Medium): ver todo salía de estar en todos los grupos, algo que controla quien configura. Se reemplazó por el
+    permiso `all_view`. Además, un no-admin ya no cambia su propia membresía y editar un grupo no lo reactiva.
+  - N2: el detalle de problemas y cambios lista solo los incidentes o tickets del alcance de quien consulta. La
+    resolución en bloque no nombra incidentes de otros grupos.
+  - N3: el aprobador lee una solicitud solo mientras está pendiente y sin lo interno.
+  - N4: un activo en soporte por un ticket no admite otros movimientos (por ejemplo, darlo de baja) fuera del ticket.
+  - N5: quien sale de un grupo suelta sus tickets abiertos de ese grupo, que vuelven a la cola, y deja de verlos.
+
+### Decisiones
+- El permiso `all_view` no va en ninguna pantalla agrupadora: lo asigna el admin directamente al rol.
+- Las notas internas que dejan un error conocido o el cierre de un cambio en sus tickets se mantienen: vincular esos
+  tickets ya exige permiso de tickets y alcance.
+- F6, F8 y F10, que quedaron abiertos en la primera ronda, se corrigieron después a pedido del usuario:
+  - F6: auditoría de la configuración en `service_desk_audit_log` (solo inserción, forzada por trigger), con
+    pestaña «Auditoría».
+  - F8 y F10: límites por usuario en Redis para búsquedas de usuarios/activos, búsqueda de KB, alta de tickets y
+    comentarios.
+- **Revisión final ping-pong** (`run-3/engineer-final.md` y `orchestrator-final.md`): los dos dieron **GO**, sin
+  Critical, High ni Medium. Se corrigieron sus Low:
+  - L1: editar un cambio conserva los tickets vinculados que el agente no ve.
+  - L2: la respuesta de una aprobación no le entrega lo interno al aprobador.
+  - L4: la toma de inventario no cambia el estado de un activo en soporte por un ticket.
+  - L5: trigger que bloquea UPDATE, DELETE y TRUNCATE del log de auditoría.
+  - L6: el grupo aprobador queda fijado en la solicitud al crearla (`service_tickets.approval_group_id`).
+  - L3 era un falso positivo: la desvinculación ya exigía permiso y alcance.
+- Abiertos a propósito:
+  - residuo de F3: sin grupo CAB ni mínimo de aprobadores;
+  - la nota de error conocido llega a incidentes de otros grupos;
+  - sin auditoría de cambios RBAC;
+  - algunos correos de agentes sin límite.
+
+### Verificación
+- `tsc` limpio en la API y en el front, ESLint limpio. Suite completa de la API: 383 pasan y 13 se omiten.
+- Pruebas nuevas por hallazgo en `serviceDesk.service.integration.test.ts` y `serviceDesk.routes.integration.test.ts`.
+- La API de dev migró sin errores: sembró `service-tickets:all_view` y creó el log de auditoría con su trigger y
+  `approval_group_id`.
+- README raíz actualizado por `documentation-engineer` y revisado a mano: permisos base 19, y el aviso de pantallas
+  sin probar en navegador repuesto.
+
+### Pendiente
+- Asignar `service-tickets:all_view` al rol del Jefe de Soporte TI en dev.
+- Prueba en navegador; commits cuando el usuario lo pida.
+
+## 2026-09-24 (6) — Plan 009: Service Desk ITIL v4 implementado (9A–9E)
+
+### Hecho
+- **API** (`corporate-api`):
+  - Esquema en `migrateServiceDesk()` (+ problemas, cambios y conocimiento), con configuración inicial sembrada solo si la tabla está vacía (`databases/serviceDesk-defaults.ts`).
+  - Reglas puras en `library/serviceDesk/`: `businessTime.ts` y `ticketRules.ts`.
+  - Servicios en `services/postgres/serviceDesk/`: settings, ticket, ticketAsset, problem, change, kb, related, report, notifications, numbering y `slaSweeper.ts` (arranca en `index.ts`).
+  - Rutas en `routes/serviceDesk.routes.ts`: `/service-portal`, `/service-tickets`, `/service-problems`, `/service-changes`, `/kb-articles`, `/service-desk-reports`, `/service-desk-settings`.
+- **Activos:** movimientos internos `SUPPORT_TO_HOLDER` y `SUPPORT_TO_STOCK` (solo desde `SUPPORT`).
+- **Catálogo:** 18 permisos base y 3 pantallas (`generate-ticket`, `support-services`, `support-settings`). En `MENU_CATALOG` quedan «Soporte», «Generar Ticket», «Gestión de Tickets» y «Configuración Service Desk».
+- **Campana:** suma tickets asignados, aprobaciones de solicitudes y del CAB.
+- **Front** (`corporate-front/src/pages/serviceDesk/`):
+  - `GenerateTicket`: portal con nuevo ticket, mis tickets y centro de ayuda.
+  - `SupportServices`: cola, aprobaciones, problemas, cambios con calendario, conocimiento e indicadores, más el workspace del ticket.
+  - `ServiceDeskSettings`.
+  - Sección «Historial de servicio» en el Kardex del activo.
+  - `components/ui/Modal.tsx`, un modal accesible.
+
+### Decisiones
+- **Tiempo hábil:** con `Intl`, sin luxon.
+- **Permisos:** sin `grantToUser`; el admin provisiona el acceso.
+- **Historial de servicio del activo:** exige `service-tickets:read`.
+
+### Verificación
+- `tsc` limpio en la API; `tsc -p tsconfig.app.json` y ESLint limpios en el front.
+- **Unit:** 19 tests (tiempo hábil con los cambios de horario de Chile, máquina de estados, matriz y campos dinámicos).
+- **Integración contra Testing:** 15 tests de servicio y 5 HTTP (403 sin permiso, IDOR del portal, adjuntos internos, magic bytes).
+- **Suite completa:** 368 correctos y 13 omitidos. Hubo 1 fallo intermitente en `purchaseOrder.service`, un módulo que no se tocó; pasó al repetirlo.
+- **Dev:** la API migró y sembró bien. Los menús existentes se adoptaron por label (ids 1025–1027) y se agregó el 2074. Vite recompila sin errores.
+
+### Pendiente
+- Probar en el navegador en dev.
+- Asignar los permisos a los roles y cargar miembros en los grupos.
+- Revisión de seguridad ping-pong antes de promover a `master`.
+- Commits.
+
+---
+
+## 2026-09-24 (5) — Plan 009: Service Desk ITIL v4 (aprobado)
+
+### Contexto
+- En dev se crearon desde el front dos menu-items que solo existen en la BD de desarrollo:
+  - «Generar Ticket» (`/generate-ticket`, `generate-ticket:access`, bajo Solicitudes).
+  - «Gestión de Tickets» (`/support-services`, `support-services:access`, bajo Soporte › Serv. Productivos).
+- Plan en [`planes/009-service-desk-itil.html`](planes/009-service-desk-itil.html).
+
+### Decisiones
+- **Alcance:** todo el núcleo ITIL v4 (incidentes, solicitudes, problemas, cambios y conocimiento), entregado en fases 9A–9E con un PR por fase.
+- **Asignación:** por grupos de soporte con miembros.
+- **SLA:** horario hábil + feriados (`America/Santiago`), con pausa en «En espera».
+- **Activos:** acciones explícitas del agente (enviar a soporte, devolver al custodio o a bodega) con los movimientos nuevos `SUPPORT_TO_HOLDER` y `SUPPORT_TO_STOCK`.
+- **Menú:** los 2 menu-items de dev, más su padre «Soporte», pasan al seed principal (`MENU_CATALOG`) con labels idénticos.
+
+### Pendiente
+- Implementar las fases 9A–9E.
+
+---
+
 ## 2026-09-24 (4) — Promoción a master (PR #26, #27) y redespliegue de Testing y producción
 
 ### Hecho
