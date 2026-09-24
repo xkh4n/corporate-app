@@ -18,7 +18,7 @@ function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }
       className={`fixed left-0 top-16 bottom-0 z-30 w-64 shrink-0 border-r border-slate-200 bg-blue-950
         transition-transform lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}
     >
-      <nav className="space-y-0.5 overflow-y-auto px-3 py-4">
+      <nav className="h-full space-y-0.5 overflow-y-auto overscroll-contain px-3 py-4 [scrollbar-color:#475569_transparent] scrollbar-thin">
         <NavLink to="/" end onClick={onNavigate} className={linkClass}>
           Panel principal
         </NavLink>
