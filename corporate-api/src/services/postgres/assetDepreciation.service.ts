@@ -66,6 +66,9 @@ const RUN_COLUMNS = `
 
 // Depreciacion acumulada de un activo: solo cuentan los cierres CLOSED (un
 // cierre anulado ya se reverso en el Kardex).
+// Estados operativos de un activo que ya salio de servicio.
+const DERECOGNIZED_STATUS_CODES = ["DECOMMISSIONED", "DEVALUATED"];
+
 export const ACCUMULATED_SQL = `
   COALESCE((SELECT SUM(e.amount) FROM asset_depreciation_entries e
               JOIN asset_depreciation_runs r ON r.id = e.run_id AND r.status = 'CLOSED'
@@ -257,6 +260,33 @@ export async function voidRun(id: number, userId: number): Promise<DepreciationR
     const last = await getLastClosed(transaction);
     if (!last || last.id !== run.id) {
       throw new ConflictError(`Solo se puede anular el ultimo cierre (${last?.period ?? "ninguno"})`);
+    }
+
+    // Un activo dado de baja despues del cierre (operativa, con el Kardex ya en
+    // cero, o contable: WRITTEN_OFF) no se toca: la reversa le devolveria valor
+    // y lo reabriria a la depreciacion -y a una segunda baja- (auditoria de
+    // seguridad run-2, F2). Se bloquean los activos en orden, igual que la
+    // baja contable, para que ninguna baja se cuele entre el chequeo y la reversa.
+    const derecognized = await postgres.query<{ tag: string; statusCode: string; stage: string }>(
+      `SELECT a.tag, s.code AS "statusCode", aa.stage
+         FROM asset_depreciation_entries e
+         JOIN assets a ON a.id = e.asset_id
+         JOIN asset_statuses s ON s.id = a.status_id
+         JOIN asset_accounting aa ON aa.asset_id = e.asset_id
+        WHERE e.run_id = :id
+        ORDER BY a.id
+          FOR UPDATE OF a`,
+      { replacements: { id }, type: QueryTypes.SELECT, transaction },
+    );
+    const blocked = derecognized.filter(
+      (row) => DERECOGNIZED_STATUS_CODES.includes(row.statusCode) || row.stage === "WRITTEN_OFF",
+    );
+    if (blocked.length > 0) {
+      throw new ConflictError(
+        `No se puede anular el cierre ${run.period}: hay activos dados de baja despues de cerrarlo (${blocked
+          .map((row) => row.tag)
+          .join(", ")})`,
+      );
     }
 
     // Se anula el cierre ANTES de recalcular las etapas: el acumulado (que solo

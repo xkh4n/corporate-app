@@ -7,6 +7,7 @@ import { revokeAllRefreshTokens, invalidateUserSessions } from "../services/redi
 import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
 import { sendList, sendOk, sendNoContent } from "../library/response";
 import { ForbiddenError } from "../library/errors";
+import { permissionActor } from "../library/permissionActor";
 
 export const createUserSchema = z.object({
   personId: z.number().int().positive(),
@@ -69,6 +70,8 @@ export async function getAccess(req: Request, res: Response, next: NextFunction)
 export async function create(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof createUserSchema>;
+    // "Nuevo Ingreso" delega users:create: sin esto se podia crear una cuenta admin (auditoria run-2, F1).
+    await permissionService.assertActorCanAssignRole(permissionActor(req), body.roleId);
     const user = await userService.createUser(body);
     sendOk(res, user, "Usuario creado exitosamente", 201);
   } catch (err) {
@@ -80,6 +83,7 @@ export async function update(req: Request, res: Response, next: NextFunction): P
   try {
     const body = req.body as z.infer<typeof updateUserSchema>;
     const id = Number(req.params.id);
+    await assertCanManageAccount(req, id);
 
     // Hallazgo de auditoria de seguridad 2026-08-17: sin este check,
     // cualquier rol con "users:update" podia auto-asignarse el rol "admin"
@@ -92,6 +96,8 @@ export async function update(req: Request, res: Response, next: NextFunction): P
     if (body.roleId !== undefined && req.user?.userId === id) {
       throw new ForbiddenError("No podes cambiar tu propio rol. Pedile a otro administrador que lo haga.");
     }
+
+    if (body.roleId !== undefined) await permissionService.assertActorCanAssignRole(permissionActor(req), body.roleId);
 
     const user = await userService.updateUser(id, body);
 
@@ -111,6 +117,17 @@ export async function update(req: Request, res: Response, next: NextFunction): P
   }
 }
 
+// Editar, resetear la password o desactivar una cuenta: un no-admin solo sobre
+// cuentas cuyo rol podria asignar el mismo (nunca una admin). Sin esto, quien
+// tuviera users:update reseteaba la password de un admin y entraba como el
+// (auditoria de seguridad run-2, R1).
+async function assertCanManageAccount(req: Request, userId: number): Promise<void> {
+  const actor = permissionActor(req);
+  if (actor.isAdmin) return;
+  const target = await userService.getUserByIdOrThrow(userId);
+  await permissionService.assertActorCanAssignRole(actor, target.roleId);
+}
+
 export async function changePassword(
   req: Request,
   res: Response,
@@ -119,6 +136,7 @@ export async function changePassword(
   try {
     const { password } = req.body as z.infer<typeof changePasswordSchema>;
     const id = Number(req.params.id);
+    await assertCanManageAccount(req, id);
     // Reset administrativo: quien elige la password nueva es el admin, no el
     // dueño de la cuenta -se fuerza el cambio en el proximo login.
     await userService.changePassword(id, password, { mustChangePassword: true });
@@ -136,6 +154,7 @@ export async function changePassword(
 export async function deactivate(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const id = Number(req.params.id);
+    await assertCanManageAccount(req, id);
     await userService.deactivateUser(id);
     await revokeAllRefreshTokens(id);
     // Motivo "deactivated": authenticate.ts lo trata distinto a
