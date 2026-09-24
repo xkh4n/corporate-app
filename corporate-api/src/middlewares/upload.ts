@@ -65,6 +65,15 @@ const ALLOWED_MIME_TYPES = new Set(Object.keys(EXTENSION_BY_MIME_TYPE));
 // no aceptan ningun otro. Windows suele declarar application/vnd.ms-excel para un .csv y algunos clientes text/plain.
 const CSV_MIME_TYPES = new Set(["text/csv", "application/vnd.ms-excel", "text/plain"]);
 
+// Fotos (baja contable, plan 008): solo JPEG y PNG, con la misma verificacion de magic bytes que "document".
+const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png"]);
+
+const MIME_TYPES_BY_KIND: Record<UploadKind, Set<string>> = {
+  document: ALLOWED_MIME_TYPES,
+  csv: CSV_MIME_TYPES,
+  image: IMAGE_MIME_TYPES,
+};
+
 // Un CSV es texto: UTF-8 valido, sin bytes nulos y con la cabecera esperada (serial_number). Es una verificacion
 // barata para rechazar binarios disfrazados antes de parsear; la validacion de fondo la hace library/csvImport.ts.
 function looksLikeImportCsv(buffer: Buffer): boolean {
@@ -94,7 +103,7 @@ function getUploader(maxFileSizeBytes: number, kind: UploadKind): multer.Multer 
   const cacheKey = `${kind}:${maxFileSizeBytes}`;
   let uploader = uploaders.get(cacheKey);
   if (!uploader) {
-    const allowed = kind === "csv" ? CSV_MIME_TYPES : ALLOWED_MIME_TYPES;
+    const allowed = MIME_TYPES_BY_KIND[kind];
     uploader = multer({
       storage: multer.memoryStorage(),
       limits: { fileSize: maxFileSizeBytes, files: 1, fields: 10, parts: 12 },
@@ -122,8 +131,9 @@ const uploadGate = createConcurrencyGate({ maxTotal: 8, maxPerKey: 2 });
 // formato {codigo, message} que el resto de la API. El chequeo de magic bytes va
 // ACA (no en fileFilter): con memoryStorage, file.buffer todavia no existe cuando
 // fileFilter corre -llega recien cuando multer termina de leer el stream completo.
-// "document" (por defecto): PDF, imagenes y correos. "csv": solo CSV de carga masiva; una ruta acepta uno u otro.
-export type UploadKind = "document" | "csv";
+// "document" (por defecto): PDF, imagenes y correos. "csv": solo CSV de carga masiva. "image": solo JPEG/PNG.
+// Una ruta acepta un solo tipo.
+export type UploadKind = "document" | "csv" | "image";
 
 export interface UploadOptions {
   kind?: UploadKind;

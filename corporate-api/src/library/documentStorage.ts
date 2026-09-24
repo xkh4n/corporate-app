@@ -36,6 +36,21 @@ export function getAssetReturnsFolder(): string {
   return path.join(UPLOADS_ROOT, "devoluciones");
 }
 
+// Respaldo de cada baja contable (plan 008): certificado notarial y fotos de
+// los activos, en una carpeta por baja. Los nombres los genera el servidor.
+export function getAssetWriteOffFolder(writeOffId: number): string {
+  return path.join(UPLOADS_ROOT, "bajas", String(writeOffId));
+}
+
+// Borra la carpeta completa (descartar un borrador). Best-effort, como deleteIfExists.
+export function deleteFolderIfExists(folder: string): void {
+  try {
+    fs.rmSync(folder, { recursive: true, force: true });
+  } catch (err) {
+    void import("./logger.js").then(({ logger }) => logger.warn({ err, folder }, "No se pudo borrar la carpeta"));
+  }
+}
+
 // Escritura ATOMICA: se escribe a un temporal en la MISMA carpeta y se renombra. Las 3
 // replicas comparten el volumen, y una lectura concurrente (sendFile de otra replica)
 // nunca debe ver un archivo a medio escribir. rename es atomico dentro del mismo volumen.

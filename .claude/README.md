@@ -18,6 +18,122 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-24 — Auditoría de seguridad del delta desde el 17/09 (ping-pong) y mitigaciones
+
+### Contexto
+Desde la auditoría completa del 2026-09-17 (commit `9675f6b`) entraron 212 archivos, más el plan 008 sin commitear.
+`cybersecurity-orchestrator` y `security-engineer` auditaron el mismo alcance cada uno por su lado; los hallazgos
+en que no coincidieron se verificaron a mano. Informes en
+`C:\Users\Equipamiento\security-audit-skill\corporate-app\run-2\` (`REPORT.md` es el consolidado).
+
+### Hallazgos confirmados y mitigados
+El orquestador no reportó ningún hallazgo; `security-engineer` encontró tres, y los tres se confirmaron en el código.
+
+- **F1 (High) — escalada a admin desde «Nuevo Ingreso»:** `users:create` aceptaba cualquier `roleId`.
+  - Ahora un no-admin solo asigna roles cuyos permisos efectivos ya tiene, y nunca admin
+    (`assertActorCanAssignRole`).
+  - Aplica al crear y editar usuarios y cargos.
+- **F2 (Medium) — anular un cierre revivía activos dados de baja:** eso permitía una segunda baja contable.
+  - `voidRun` bloquea los activos del cierre y responde 409 si alguno ya está dado de baja o en `WRITTEN_OFF`.
+  - Costo, capitalización y parámetros rechazan los activos dados de baja.
+- **F3 (Medium) — `permissions:update` equivalía a admin:** ahora un no-admin solo otorga o incluye lo que ya tiene,
+  no toca su propio rol ni el de admin, y no edita las pantallas que su rol tiene.
+- **R1 (Medium, venía de antes; lo halló la re-verificación):** con `users:update` se podía resetear la password de
+  un admin. Editar, resetear o desactivar una cuenta ahora exige poder asignar su rol.
+- **R3 (nota):** `DEVALUATED` también queda fuera del ciclo contable.
+
+### Decisiones
+- **Regla general:** el usuario eligió "un no-admin solo otorga lo que ya tiene" (F3 recomendado, no el estricto).
+- **Baja contable:** la separación de funciones queda como nota.
+- **Consecuencia funcional:** RR.HH. no-admin solo puede crear cuentas con roles cuyos permisos ya tiene.
+
+### Verificación
+- **Re-verificación:** `security-engineer` revisó las mitigaciones y confirmó F1, F2 y F3 cerrados, sin regresión
+  para admin.
+- **Tests nuevos:** `permissionEscalation.routes.integration.test.ts` (5 ataques, ahora 403) y el caso F2 en el test
+  de la baja contable.
+- **Suite completa contra Testing:** 39 archivos, 330 tests OK.
+
+### Pendiente
+- **Commits y promoción a `master`,** que también llevan el plan 008.
+- **Notas abiertas:** separación de funciones en la baja, un activo dado de baja que pasa a SUPPORT, y el
+  intercambio de permisos entre dos gestores.
+
+---
+
+## 2026-09-23 (6) — Baja contable de activos con fotos y certificado notarial (plan 008)
+
+### Contexto
+Al ciclo contable del plan 007 le faltaba el cierre: la baja contable de 1 activo o de un listado, respaldada
+con fotos (al menos una por activo) y un solo certificado notarial.
+Plan: `.claude/planes/008-baja-contable-activos.html`.
+
+### Decisiones del usuario
+- **Baja operativa previa:** es obligatoria. Solo entran activos `DECOMMISSIONED`, cuyo Kardex ya quedó en cero.
+- **Activos que entran:** cualquier activo clasificado, con cualquier clasificación y etapa.
+- **Respaldo:** al menos 1 foto por activo y 1 certificado por lote.
+- **Anulación:** no hay. Una baja confirmada es definitiva.
+
+### Hecho
+- **Modelo (`migrateAssetWriteOffs`):**
+  - tablas `asset_write_offs` (`DRAFT`|`CONFIRMED`, con un CHECK que exige fecha, motivo, certificado y auditoría
+    al confirmar), `asset_write_off_lines` y `asset_write_off_photos`, esta última con FK compuesta a la línea y
+    borrado en cascada;
+  - etapa nueva `WRITTEN_OFF`: el CHECK de `asset_accounting.stage` pasó a tener nombre
+    (`asset_accounting_stage_allowed`);
+  - columna `write_off_id` en `asset_accounting`.
+- **Servicio (`assetWriteOff.service.ts`):**
+  - elegibles, y borrador con creación, edición de datos y activos, y descarte (borra la carpeta);
+  - certificado único, que se reemplaza al volver a subirlo;
+  - fotos por activo, hasta 10 por activo y 200 activos por baja;
+  - **confirmar**:
+    - bloquea con `FOR UPDATE` en orden y revalida elegibilidad, fotos y certificado;
+    - guarda por línea la etapa anterior y el valor libro, que es la pérdida por baja: capitalizado − depreciación
+      acumulada, el costo fijado, 0 si es gasto o el valor del activo;
+    - deja los activos en `WRITTEN_OFF`.
+  - **Kardex:** no se escribe, porque la baja operativa ya lo dejó en cero.
+- **Archivos:**
+  - tipo de subida nuevo `image` (solo JPEG y PNG, con verificación de magic bytes);
+  - el certificado se limpia con qpdf y solo se acepta PDF;
+  - hay un chequeo de estado antes de recibir cada archivo;
+  - todo se guarda en `uploads/bajas/<id>/` (volumen `api_uploads`), con nombres generados por el servidor;
+  - las fotos se sirven inline con `nosniff` y el certificado como adjunto, ambos con `no-store` y verificación
+    de la ruta.
+- **API `/asset-write-offs`:** `read`, `create` (borrador y archivos) y `approve` (confirmar), todos solo para
+  admin por defecto.
+- **Front:** pantalla «Baja Contable» (`/accounting/write-off`, `accounting-write-off:access`):
+  - pestañas Nueva baja, Borradores e Historial;
+  - panel con los datos, el certificado, las fotos por activo con miniaturas, y confirmar o descartar con un
+    aviso previo.
+- **Menú:** Baja Contable queda con orden 50 y Política pasa a 60.
+- **Resto del ciclo:** `WRITTEN_OFF` queda fuera. Valor libro 0 en «Clasificación» y en los listados.
+
+### Verificación
+- **Compilación y lint:** `tsc` de la API y el front, y ESLint del front.
+- **`assetWriteOff.service.integration.test.ts`** (4 tests):
+  - quién es elegible;
+  - qué exige la confirmación;
+  - `WRITTEN_OFF` con el valor libro correcto (666.67 tras un cierre);
+  - dos borradores con el mismo activo, confirmados en paralelo: uno solo gana;
+  - fecha futura;
+  - quitar un activo y descartar el borrador borran los archivos.
+- **`assetWriteOff.routes.integration.test.ts`:**
+  - 401/403 en cada operación;
+  - validación del body;
+  - archivos cruzados (un PDF como foto, un PNG falso, un PNG como certificado);
+  - encabezados de la foto.
+  - El flujo HTTP completo con qpdf se salta en este host, que no tiene qpdf.
+- **Suite completa contra Testing:** 38 archivos, 324 tests OK. Front: 68 OK.
+
+### Pendiente
+- **Revisión de seguridad** antes de commitear.
+- **Prueba en navegador.**
+- **Límite conocido:** un activo dado de baja operativamente sin clasificar no puede darse de baja
+  contablemente, porque la clasificación excluye `DECOMMISSIONED`.
+- **Fotos:** se guardan con su EXIF.
+
+---
+
 ## 2026-09-23 (5) — La siembra garantiza el mínimo de cada pantalla
 
 ### Contexto
