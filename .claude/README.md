@@ -18,6 +18,28 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-24 (4) — Promoción a master (PR #26, #27) y redespliegue de Testing y producción
+
+### Hecho
+- Seis commits en `develop`: menú, combobox, tablas, SMTP, IP real + ACL de Redis, y docs.
+- Revisión de seguridad del delta: PASS, con la marca del gate en `86b6aa3`.
+- PR #26 `develop → testing`, con CI verde.
+- PR #27 `release/master → master`: `promote-to-master` excluyó los `compose.dev/test.yml` de api e infra. `master` quedó en `4ae6016`.
+- Se recreó Testing (`bdd test`) y producción (`bdd`, `backend`, `mailer` y `frontend prod`).
+
+### Verificación
+- **Testing:**
+  - Redis tiene el usuario `pristest`.
+  - Integración de la API contra Testing: 219 tests correctos y 4 omitidos (25 archivos).
+  - ACL LOG vacío.
+- **Producción:**
+  - Redis con `roybattyprod`: 9 conexiones de la API con ese usuario y ACL LOG vacío.
+  - nginx-api con `set_real_ip_from 10.200.13.0/24`.
+  - El mailer compilado trae `requireTLS`.
+  - El bundle del front trae el estilo de tablas (`#069`, `e1eef4`), el scroll del menú y el combobox ("Escriba para buscar").
+
+---
+
 ## 2026-09-24 (3) — Correcciones de seguridad detectadas en el plan 000 (despliegue actual)
 
 ### Hecho
