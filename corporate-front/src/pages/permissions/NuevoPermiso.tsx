@@ -21,6 +21,7 @@ const ACTION_OPTIONS: { value: PermissionAction; label: string }[] = [
     { value: "approve", label: "Aprobar (approve)" },
     { value: "activate", label: "Habilitar (activate)" },
     { value: "access", label: "Acceso a pantalla (access)" },
+    { value: "all_view", label: "Ver todo (all_view)" },
 ];
 
 // Mismo formato que valida el backend (createPermissionSchema en

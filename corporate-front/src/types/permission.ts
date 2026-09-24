@@ -1,7 +1,7 @@
 // Espejo de corporate-api/src/models/postgres/permission.model.ts (PermissionAttributes).
 // "access": permiso de pantalla (agrupador, plan 006) que incluye los
 // permisos base de su vista.
-export type PermissionAction = "create" | "read" | "update" | "delete" | "approve" | "activate" | "access";
+export type PermissionAction = "create" | "read" | "update" | "delete" | "approve" | "activate" | "access" | "all_view";
 
 export const ACCESS_ACTION: PermissionAction = "access";
 

@@ -24,6 +24,9 @@ import PrintAssetLabels from "../pages/activos/PrintAssetLabels";
 import AssetValuation from "../pages/activos/AssetValuation";
 import ImportAssets from "../pages/activos/ImportAssets";
 import AssetReturns from "../pages/devoluciones/AssetReturns";
+import GenerateTicket from "../pages/serviceDesk/GenerateTicket";
+import SupportServices from "../pages/serviceDesk/SupportServices";
+import ServiceDeskSettings from "../pages/serviceDesk/ServiceDeskSettings";
 import InventoryCounts from "../pages/inventario/InventoryCounts";
 import CreateProducts from "../pages/adquisiciones/productos/CreateProducts";
 import ListProducts from "../pages/adquisiciones/productos/ListProducts";
@@ -101,6 +104,10 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/accounting/depreciation": () => <Depreciacion />,
   "/accounting/write-off": () => <BajaContable />,
   "/accounting/policy": () => <PoliticaContable />,
+  // Service Desk ITIL v4 (plan 009)
+  "/generate-ticket": () => <GenerateTicket />,
+  "/support-services": () => <SupportServices />,
+  "/support-services/settings": () => <ServiceDeskSettings />,
   "/roles/create": () => <NuevoRole />,
   "/permissions/create": () => <NuevoPermiso />,
   "/permissions/read": () => <VerPermisos />,
