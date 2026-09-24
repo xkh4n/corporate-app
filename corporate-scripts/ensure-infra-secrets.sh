@@ -95,6 +95,7 @@ infra_secret_files=(
     db_mongo_logs.txt
     mssql_password.txt
     redis_password.txt
+    redis_app_password.txt
 )
 
 echo "Verificando secretos de infra para el ambiente [$environment]..."

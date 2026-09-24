@@ -8,6 +8,9 @@ set -eu
 : "${API_INTERNAL_PORT:?falta API_INTERNAL_PORT}"
 : "${SUFFIX:?falta SUFFIX}"
 : "${API_SSL_PORT:?falta API_SSL_PORT}"
+# Subred de frontapi-net (ver set_real_ip_from en la plantilla): debe
+# coincidir con la que crea run.ps1/run.sh (<base>.13.0/24 por ambiente).
+: "${FRONTAPI_SUBNET:?falta FRONTAPI_SUBNET}"
 
 # tls.crt/tls.key deben existir ANTES de arrancar (montados desde
 # corporate-secrets/Development/certs/api/, ver corporate-scripts/
@@ -19,7 +22,7 @@ if [ ! -s /etc/nginx/certs/tls.crt ] || [ ! -s /etc/nginx/certs/tls.key ]; then
     exit 1
 fi
 
-VARS='${API_HOST} ${API_INTERNAL_PORT} ${SUFFIX} ${API_SSL_PORT}'
+VARS='${API_HOST} ${API_INTERNAL_PORT} ${SUFFIX} ${API_SSL_PORT} ${FRONTAPI_SUBNET}'
 
 envsubst "$VARS" < /etc/nginx/templates/nginx.conf.template > /etc/nginx/nginx.conf
 
