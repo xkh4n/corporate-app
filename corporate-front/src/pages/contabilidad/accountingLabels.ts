@@ -15,6 +15,7 @@ export const STAGE_LABEL: Record<AccountingStage, string> = {
   CAPITALIZED: "Capitalizado",
   DEPRECIATING: "En depreciación",
   FULLY_DEPRECIATED: "Totalmente depreciado",
+  WRITTEN_OFF: "Dado de baja",
 };
 
 export const METHOD_LABEL: Record<DepreciationMethod, string> = {
