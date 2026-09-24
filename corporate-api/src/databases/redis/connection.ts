@@ -12,6 +12,7 @@ const password = readSecretFromEnv(env.redis.passwordFileVar);
 // refresh tokens).
 export const redis = createClient({
   socket: { host: env.redis.host, port: env.redis.port },
+  username: env.redis.user || undefined,
   password,
   database: env.redis.db,
 });

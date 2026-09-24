@@ -20,6 +20,44 @@ body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }
 
+/* Estilo global de las tablas de datos: encabezado azul, texto azul oscuro y
+   filas alternadas. Va fuera de @layer a proposito: el CSS sin capa le gana a
+   las utilidades de Tailwind, asi reemplaza el bg-slate-50 / text-slate-600
+   que traen las tablas de cada pantalla sin tener que editarlas una por una.
+   Las filas con un fondo propio (bg-*: seleccionada, borrador, etc.) conservan
+   su resaltado. */
+table thead {
+  background: linear-gradient(to bottom, #006699 5%, #00557f 100%);
+}
+
+table thead th {
+  color: #fff;
+  font-weight: 700;
+  border-left: 1px solid #0070a8;
+}
+
+table tbody td {
+  color: #00496b;
+  border-left: 1px solid #e1eef4;
+}
+
+table thead th:first-child,
+table tbody td:first-child {
+  border-left: none;
+}
+
+table tbody tr:nth-child(even):not([class*="bg-"]) {
+  background-color: #e1eef4;
+}
+
+table tbody tr:not([class*="bg-"]):hover {
+  background-color: #cfe4ef;
+}
+
+div:has(> table) {
+  border-color: #006699;
+}
+
 /* Used by ImagePreviewThumbnail (components/ui) for its hover preview and
    tap-to-fullscreen modal enter transitions. */
 @keyframes ui-preview-in {

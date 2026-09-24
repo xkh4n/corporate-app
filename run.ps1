@@ -112,6 +112,9 @@ if ($Ambiente -ne 'dev' -and $Ambiente -ne 'prod' -and $Ambiente -ne 'test') {
 # ver esos archivos). Evita que dev/test/prod terminen compartiendo el mismo
 # rango de "default-address-pools" del daemon -ese pool es global, no
 # distingue por proyecto Compose-.
+# OJO: <base>.13.0/24 (frontapi-net) se repite como FRONTAPI_SUBNET en el .env de
+# cada ambiente (corporate-secrets/<Ambiente>/.env): nginx-api confia en el
+# X-Forwarded-For solo desde esa subred. Si cambia la base, actualizar ambos.
 $netBase = @{ dev = '172.16'; test = '10.10'; prod = '10.200' }[$Ambiente]
 
 switch ($Servicio) {
