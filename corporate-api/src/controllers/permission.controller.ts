@@ -17,7 +17,7 @@ export const createPermissionSchema = z.object({
     .min(2)
     .max(50)
     .regex(/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/, "resource debe ser kebab-case en minusculas (ej. 'asset-returns')"),
-  action: z.enum(["create", "read", "update", "delete", "approve", "activate", "access"]),
+  action: z.enum(["create", "read", "update", "delete", "approve", "activate", "access", "all_view"]),
   description: z.string().trim().min(3).max(255),
   // Solo para action "access" (permiso de pantalla): los permisos base que
   // incluye. El servicio rechaza (400) incluirlos en otra accion, incluir

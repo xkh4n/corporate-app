@@ -3,6 +3,15 @@ import { postgres } from "./connection";
 import { env } from "../../library/env";
 import { logger } from "../../library/logger";
 import { isDuplicateObjectError, isUniqueConstraintError } from "../../library/errors";
+import { DEFAULT_PRIORITY_MATRIX } from "../../library/serviceDesk/ticketRules";
+import {
+  DEFAULT_CALENDAR,
+  DEFAULT_CATALOG_ITEMS,
+  DEFAULT_CATEGORIES,
+  DEFAULT_GROUPS,
+  DEFAULT_HOLIDAYS,
+  DEFAULT_SLA_POLICIES,
+} from "../serviceDesk-defaults";
 
 // Tiempos maximos de espera por un lock, en ms. Los ALTER TABLE piden un lock fuerte aunque el cambio sea un
 // no-op (ADD COLUMN IF NOT EXISTS): con una consulta larga de otra replica en curso, esperar sin limite deja la
@@ -116,6 +125,7 @@ async function applyPostgresMigrations(): Promise<void> {
   await migrateAssetReturns();
   await migrateAssetAccounting();
   await migrateAssetWriteOffs();
+  await migrateServiceDesk();
   await migrateIntegrityAndIndexes();
 
   logger.info("Migracion de Postgres aplicada");
@@ -177,7 +187,7 @@ async function migratePermissions(): Promise<void> {
   // ese choque especifico.
   await runDdl(`
     ALTER TABLE permissions ADD CONSTRAINT permissions_action_allowed
-      CHECK (action IN ('create','read','update','delete','approve','activate','access'));
+      CHECK (action IN ('create','read','update','delete','approve','activate','access','all_view'));
   `);
 
   await runDdl(`
@@ -361,7 +371,18 @@ async function migrateAssets(): Promise<void> {
   // Se reescribe SOLO si la definicion vigente no incluye todos los tipos (cada arranque de cada replica
   // hacia DROP + ADD y ese ALTER toma ACCESS EXCLUSIVE y revalida la tabla, que crece). El DROP y el ADD van
   // en UNA sentencia: no hay ventana sin CHECK entre ambos.
-  const movementTypes = ['ASSIGNED', 'REASSIGNED', 'SUPPORT', 'DECOMMISSIONED', 'RETURNED', 'DEVALUATED', 'MOVE_TO_RETURNED'];
+  // SUPPORT_TO_HOLDER / SUPPORT_TO_STOCK (plan 009): el activo vuelve de soporte a su tenedor o a bodega.
+  const movementTypes = [
+    'ASSIGNED',
+    'REASSIGNED',
+    'SUPPORT',
+    'DECOMMISSIONED',
+    'RETURNED',
+    'DEVALUATED',
+    'MOVE_TO_RETURNED',
+    'SUPPORT_TO_HOLDER',
+    'SUPPORT_TO_STOCK',
+  ];
   const currentMovementCheck = await postgres.query<{ definition: string }>(
     `SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
       WHERE conrelid = 'asset_movements'::regclass AND conname = 'asset_movements_movement_type_allowed'`,
@@ -691,6 +712,611 @@ async function migrateAssetWriteOffs(): Promise<void> {
   await runDdl(`
     ALTER TABLE asset_accounting ADD COLUMN IF NOT EXISTS write_off_id INTEGER REFERENCES asset_write_offs(id);
   `);
+}
+
+// Service Desk ITIL v4 (plan 009): configuracion (grupos, categorias,
+// catalogo, calendario habil, matriz de prioridad, SLA) e incidentes/
+// solicitudes con su linea de tiempo insert-only. Los *_user_id / *_by son
+// usuarios de MSSQL, sin FK real (mismo criterio que el resto del proyecto).
+async function migrateServiceDesk(): Promise<void> {
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS support_groups (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(80) NOT NULL UNIQUE,
+      description VARCHAR(255),
+      email VARCHAR(160),
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS support_group_members (
+      group_id INTEGER NOT NULL REFERENCES support_groups(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL,
+      is_lead BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (group_id, user_id)
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_support_group_members_user ON support_group_members(user_id);`);
+
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_categories (
+      id SERIAL PRIMARY KEY,
+      parent_id INTEGER REFERENCES service_categories(id),
+      name VARCHAR(80) NOT NULL,
+      default_group_id INTEGER REFERENCES support_groups(id),
+      applies_to VARCHAR(20)[] NOT NULL DEFAULT ARRAY['INCIDENT','SERVICE_REQUEST']::VARCHAR(20)[],
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await runDdl(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_service_categories_name
+      ON service_categories (COALESCE(parent_id, 0), lower(name));
+  `);
+  await assertIndexExists("uq_service_categories_name");
+
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_catalog_items (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(120) NOT NULL UNIQUE,
+      description VARCHAR(500),
+      category_id INTEGER REFERENCES service_categories(id),
+      default_group_id INTEGER REFERENCES support_groups(id),
+      approval_group_id INTEGER REFERENCES support_groups(id),
+      fields JSONB NOT NULL DEFAULT '[]'::jsonb,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS business_calendars (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(80) NOT NULL UNIQUE,
+      timezone VARCHAR(60) NOT NULL,
+      is_default BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  // Un solo calendario por defecto (el que usa el SLA si la politica no fija otro).
+  await runDdl(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_business_calendars_default ON business_calendars (is_default) WHERE is_default;
+  `);
+  await assertIndexExists("uq_business_calendars_default");
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS business_hours (
+      id SERIAL PRIMARY KEY,
+      calendar_id INTEGER NOT NULL REFERENCES business_calendars(id) ON DELETE CASCADE,
+      weekday SMALLINT NOT NULL CHECK (weekday BETWEEN 1 AND 7),
+      start_time TIME NOT NULL,
+      end_time TIME NOT NULL,
+      CHECK (end_time > start_time)
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_business_hours_calendar ON business_hours(calendar_id);`);
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS business_holidays (
+      calendar_id INTEGER NOT NULL REFERENCES business_calendars(id) ON DELETE CASCADE,
+      holiday_date DATE NOT NULL,
+      name VARCHAR(120) NOT NULL,
+      PRIMARY KEY (calendar_id, holiday_date)
+    );
+  `);
+
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS priority_matrix (
+      impact SMALLINT NOT NULL CHECK (impact BETWEEN 1 AND 3),
+      urgency SMALLINT NOT NULL CHECK (urgency BETWEEN 1 AND 3),
+      priority VARCHAR(2) NOT NULL CHECK (priority IN ('P1','P2','P3','P4')),
+      PRIMARY KEY (impact, urgency)
+    );
+  `);
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS sla_policies (
+      id SERIAL PRIMARY KEY,
+      ticket_type VARCHAR(20) NOT NULL CHECK (ticket_type IN ('INCIDENT','SERVICE_REQUEST')),
+      priority VARCHAR(2) NOT NULL CHECK (priority IN ('P1','P2','P3','P4')),
+      response_minutes INTEGER NOT NULL CHECK (response_minutes > 0),
+      resolution_minutes INTEGER NOT NULL CHECK (resolution_minutes > 0),
+      calendar_id INTEGER REFERENCES business_calendars(id),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (ticket_type, priority)
+    );
+  `);
+
+  // Folio legible por prefijo y anio (INC-2026-000001). Mismo incremento
+  // atomico que inventory_count_counters: upsert con RETURNING.
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_desk_counters (
+      prefix VARCHAR(5) NOT NULL,
+      year INTEGER NOT NULL,
+      next_seq INTEGER NOT NULL,
+      PRIMARY KEY (prefix, year)
+    );
+  `);
+
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_tickets (
+      id SERIAL PRIMARY KEY,
+      number VARCHAR(20) NOT NULL UNIQUE,
+      type VARCHAR(20) NOT NULL CHECK (type IN ('INCIDENT','SERVICE_REQUEST')),
+      status VARCHAR(20) NOT NULL CHECK (status IN
+        ('PENDING_APPROVAL','NEW','ASSIGNED','IN_PROGRESS','ON_HOLD','RESOLVED','CLOSED','CANCELLED')),
+      on_hold_reason VARCHAR(20),
+      title VARCHAR(160) NOT NULL,
+      description TEXT NOT NULL,
+      category_id INTEGER REFERENCES service_categories(id),
+      catalog_item_id INTEGER REFERENCES service_catalog_items(id),
+      variables JSONB NOT NULL DEFAULT '{}'::jsonb,
+      impact SMALLINT NOT NULL CHECK (impact BETWEEN 1 AND 3),
+      urgency SMALLINT NOT NULL CHECK (urgency BETWEEN 1 AND 3),
+      priority VARCHAR(2) NOT NULL CHECK (priority IN ('P1','P2','P3','P4')),
+      channel VARCHAR(10) NOT NULL CHECK (channel IN ('PORTAL','PHONE','EMAIL','WALK_IN','AGENT')),
+      is_major BOOLEAN NOT NULL DEFAULT false,
+      requester_user_id INTEGER NOT NULL,
+      opened_by INTEGER NOT NULL,
+      assigned_group_id INTEGER REFERENCES support_groups(id),
+      assignee_user_id INTEGER,
+      parent_ticket_id INTEGER REFERENCES service_tickets(id),
+      resolution_code VARCHAR(20),
+      resolution_notes TEXT,
+      calendar_id INTEGER REFERENCES business_calendars(id),
+      sla_start_at TIMESTAMPTZ,
+      response_minutes INTEGER,
+      resolution_minutes INTEGER,
+      response_due_at TIMESTAMPTZ,
+      resolution_due_at TIMESTAMPTZ,
+      resolution_warn_at TIMESTAMPTZ,
+      sla_paused_minutes INTEGER NOT NULL DEFAULT 0,
+      on_hold_since TIMESTAMPTZ,
+      first_response_at TIMESTAMPTZ,
+      response_breached BOOLEAN NOT NULL DEFAULT false,
+      resolution_breached BOOLEAN NOT NULL DEFAULT false,
+      warned_at TIMESTAMPTZ,
+      resolved_at TIMESTAMPTZ,
+      resolved_by INTEGER,
+      auto_close_at TIMESTAMPTZ,
+      closed_at TIMESTAMPTZ,
+      closed_by INTEGER,
+      reopen_count INTEGER NOT NULL DEFAULT 0,
+      csat_score SMALLINT CHECK (csat_score BETWEEN 1 AND 5),
+      csat_comment VARCHAR(500),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CHECK (status <> 'ON_HOLD' OR (on_hold_reason IS NOT NULL AND on_hold_since IS NOT NULL)),
+      CHECK (status NOT IN ('RESOLVED','CLOSED') OR (resolution_code IS NOT NULL AND resolved_at IS NOT NULL))
+    );
+  `);
+  // Grupo aprobador fijado al crear la solicitud (run-3 final, L6). Las pendientes de antes toman el del item.
+  await runDdl(`ALTER TABLE service_tickets ADD COLUMN IF NOT EXISTS approval_group_id INTEGER REFERENCES support_groups(id);`);
+  await runDdl(`
+    UPDATE service_tickets t SET approval_group_id = ci.approval_group_id
+      FROM service_catalog_items ci
+     WHERE ci.id = t.catalog_item_id AND t.status = 'PENDING_APPROVAL' AND t.approval_group_id IS NULL;
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_tickets_status ON service_tickets(status);`);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_tickets_group ON service_tickets(assigned_group_id, status);`);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_tickets_assignee ON service_tickets(assignee_user_id, status);`);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_tickets_requester ON service_tickets(requester_user_id, id DESC);`);
+  // Barrido de SLA (slaSweeper): solo los tickets con reloj corriendo.
+  await runDdl(`
+    CREATE INDEX IF NOT EXISTS ix_service_tickets_sla ON service_tickets(resolution_due_at)
+      WHERE status IN ('NEW','ASSIGNED','IN_PROGRESS');
+  `);
+  await runDdl(`
+    CREATE INDEX IF NOT EXISTS ix_service_tickets_auto_close ON service_tickets(auto_close_at) WHERE status = 'RESOLVED';
+  `);
+
+  // Linea de tiempo y auditoria: solo INSERT. is_public = visible para el solicitante.
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_ticket_events (
+      id BIGSERIAL PRIMARY KEY,
+      ticket_id INTEGER NOT NULL REFERENCES service_tickets(id),
+      event_type VARCHAR(30) NOT NULL,
+      actor_user_id INTEGER,
+      is_public BOOLEAN NOT NULL DEFAULT false,
+      body TEXT,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_ticket_events_ticket ON service_ticket_events(ticket_id, id);`);
+
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_ticket_attachments (
+      id SERIAL PRIMARY KEY,
+      ticket_id INTEGER NOT NULL REFERENCES service_tickets(id),
+      is_public BOOLEAN NOT NULL DEFAULT true,
+      original_name VARCHAR(160) NOT NULL,
+      stored_name VARCHAR(80) NOT NULL,
+      mime_type VARCHAR(60) NOT NULL,
+      size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
+      uploaded_by INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_ticket_attachments_ticket ON service_ticket_attachments(ticket_id);`);
+
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_ticket_approvals (
+      id SERIAL PRIMARY KEY,
+      ticket_id INTEGER NOT NULL REFERENCES service_tickets(id),
+      approver_user_id INTEGER NOT NULL,
+      decision VARCHAR(10) NOT NULL CHECK (decision IN ('APPROVED','REJECTED')),
+      comment VARCHAR(500),
+      decided_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (ticket_id, approver_user_id)
+    );
+  `);
+
+  // Activos involucrados. holder_user_id / status_before: foto al vincular,
+  // para devolver el activo a quien lo tenia al salir de soporte.
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_ticket_assets (
+      ticket_id INTEGER NOT NULL REFERENCES service_tickets(id),
+      asset_id INTEGER NOT NULL REFERENCES assets(id),
+      holder_user_id INTEGER,
+      status_before VARCHAR(30),
+      support_movement_id INTEGER REFERENCES asset_movements(id),
+      return_movement_id INTEGER REFERENCES asset_movements(id),
+      linked_by INTEGER NOT NULL,
+      linked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (ticket_id, asset_id)
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_ticket_assets_asset ON service_ticket_assets(asset_id);`);
+  // Un activo solo puede estar "en soporte" por UN ticket a la vez.
+  await runDdl(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_service_ticket_assets_in_support ON service_ticket_assets(asset_id)
+      WHERE support_movement_id IS NOT NULL AND return_movement_id IS NULL;
+  `);
+  await assertIndexExists("uq_service_ticket_assets_in_support");
+
+  await migrateServiceProblems();
+  await migrateServiceChanges();
+  await migrateKnowledgeBase();
+
+  // Auditoria de la configuracion (run-3, F6): solo INSERT, igual que las lineas de tiempo.
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_desk_audit_log (
+      id BIGSERIAL PRIMARY KEY,
+      entity VARCHAR(40) NOT NULL,
+      entity_id INTEGER,
+      action VARCHAR(10) NOT NULL CHECK (action IN ('CREATE','UPDATE','DELETE','REPLACE')),
+      actor_user_id INTEGER NOT NULL,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_desk_audit_log_entity ON service_desk_audit_log(entity, id);`);
+  // Insert-only forzado en la base (run-3 final, L5), no solo por convencion.
+  await runDdl(`
+    CREATE OR REPLACE FUNCTION service_desk_audit_log_immutable() RETURNS trigger AS $fn$
+    BEGIN
+      RAISE EXCEPTION 'service_desk_audit_log es solo de insercion';
+    END;
+    $fn$ LANGUAGE plpgsql;
+  `);
+  await runDdl(`DROP TRIGGER IF EXISTS trg_service_desk_audit_log_immutable ON service_desk_audit_log;`);
+  await runDdl(`
+    CREATE TRIGGER trg_service_desk_audit_log_immutable
+      BEFORE UPDATE OR DELETE OR TRUNCATE ON service_desk_audit_log
+      FOR EACH STATEMENT EXECUTE FUNCTION service_desk_audit_log_immutable();
+  `);
+
+  await seedServiceDeskDefaults();
+}
+
+// Gestion de problemas (plan 009, fase 9C): causa raiz de incidentes
+// recurrentes. Un incidente apunta a su problema (service_tickets.problem_id).
+async function migrateServiceProblems(): Promise<void> {
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_problems (
+      id SERIAL PRIMARY KEY,
+      number VARCHAR(20) NOT NULL UNIQUE,
+      status VARCHAR(20) NOT NULL CHECK (status IN
+        ('NEW','UNDER_INVESTIGATION','KNOWN_ERROR','RESOLVED','CLOSED','CANCELLED')),
+      title VARCHAR(160) NOT NULL,
+      description TEXT NOT NULL,
+      category_id INTEGER REFERENCES service_categories(id),
+      impact SMALLINT NOT NULL CHECK (impact BETWEEN 1 AND 3),
+      urgency SMALLINT NOT NULL CHECK (urgency BETWEEN 1 AND 3),
+      priority VARCHAR(2) NOT NULL CHECK (priority IN ('P1','P2','P3','P4')),
+      assigned_group_id INTEGER REFERENCES support_groups(id),
+      assignee_user_id INTEGER,
+      root_cause TEXT,
+      workaround TEXT,
+      permanent_fix TEXT,
+      -- Sin FK: kb_articles referencia a su vez a service_problems (source_problem_id).
+      kb_article_id INTEGER,
+      created_by INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      known_error_at TIMESTAMPTZ,
+      resolved_at TIMESTAMPTZ,
+      resolved_by INTEGER,
+      closed_at TIMESTAMPTZ,
+      closed_by INTEGER,
+      CHECK (status <> 'KNOWN_ERROR' OR workaround IS NOT NULL),
+      CHECK (status NOT IN ('RESOLVED','CLOSED') OR (root_cause IS NOT NULL AND permanent_fix IS NOT NULL))
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_problems_status ON service_problems(status);`);
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_problem_assets (
+      problem_id INTEGER NOT NULL REFERENCES service_problems(id),
+      asset_id INTEGER NOT NULL REFERENCES assets(id),
+      linked_by INTEGER NOT NULL,
+      linked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (problem_id, asset_id)
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_problem_assets_asset ON service_problem_assets(asset_id);`);
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_problem_events (
+      id BIGSERIAL PRIMARY KEY,
+      problem_id INTEGER NOT NULL REFERENCES service_problems(id),
+      event_type VARCHAR(30) NOT NULL,
+      actor_user_id INTEGER,
+      body TEXT,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_problem_events_problem ON service_problem_events(problem_id, id);`);
+  await runDdl(`ALTER TABLE service_tickets ADD COLUMN IF NOT EXISTS problem_id INTEGER REFERENCES service_problems(id);`);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_tickets_problem ON service_tickets(problem_id) WHERE problem_id IS NOT NULL;`);
+}
+
+// Habilitacion de cambios (plan 009, fase 9D): RFC estandar (plantilla
+// preaprobada), normal (CAB: todos aprueban) o de emergencia (ECAB: uno).
+async function migrateServiceChanges(): Promise<void> {
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS standard_change_templates (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(120) NOT NULL UNIQUE,
+      description VARCHAR(500),
+      category_id INTEGER REFERENCES service_categories(id),
+      implementation_plan TEXT NOT NULL,
+      backout_plan TEXT NOT NULL,
+      test_plan TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_changes (
+      id SERIAL PRIMARY KEY,
+      number VARCHAR(20) NOT NULL UNIQUE,
+      type VARCHAR(10) NOT NULL CHECK (type IN ('STANDARD','NORMAL','EMERGENCY')),
+      status VARCHAR(20) NOT NULL CHECK (status IN
+        ('DRAFT','ASSESSMENT','CAB_APPROVAL','SCHEDULED','IMPLEMENTING','REVIEW','CLOSED','REJECTED','CANCELLED')),
+      title VARCHAR(160) NOT NULL,
+      description TEXT NOT NULL,
+      justification TEXT,
+      category_id INTEGER REFERENCES service_categories(id),
+      risk VARCHAR(10) NOT NULL DEFAULT 'MEDIUM' CHECK (risk IN ('LOW','MEDIUM','HIGH')),
+      impact SMALLINT NOT NULL DEFAULT 2 CHECK (impact BETWEEN 1 AND 3),
+      implementation_plan TEXT,
+      backout_plan TEXT,
+      test_plan TEXT,
+      planned_start TIMESTAMPTZ,
+      planned_end TIMESTAMPTZ,
+      actual_start TIMESTAMPTZ,
+      actual_end TIMESTAMPTZ,
+      outcome VARCHAR(20) CHECK (outcome IN ('SUCCESSFUL','FAILED','BACKED_OUT')),
+      pir_notes TEXT,
+      requested_by INTEGER NOT NULL,
+      assigned_group_id INTEGER REFERENCES support_groups(id),
+      assignee_user_id INTEGER,
+      problem_id INTEGER REFERENCES service_problems(id),
+      template_id INTEGER REFERENCES standard_change_templates(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      closed_at TIMESTAMPTZ,
+      closed_by INTEGER,
+      CHECK (planned_end IS NULL OR planned_start IS NULL OR planned_end > planned_start),
+      CHECK (status <> 'CLOSED' OR outcome IS NOT NULL)
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_changes_status ON service_changes(status);`);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_changes_window ON service_changes(planned_start, planned_end);`);
+  // Una fila por aprobador pedido; decision NULL = pendiente.
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_change_approvals (
+      id SERIAL PRIMARY KEY,
+      change_id INTEGER NOT NULL REFERENCES service_changes(id),
+      approver_user_id INTEGER NOT NULL,
+      decision VARCHAR(10) CHECK (decision IN ('APPROVED','REJECTED')),
+      comment VARCHAR(500),
+      requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      decided_at TIMESTAMPTZ,
+      UNIQUE (change_id, approver_user_id)
+    );
+  `);
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_change_assets (
+      change_id INTEGER NOT NULL REFERENCES service_changes(id),
+      asset_id INTEGER NOT NULL REFERENCES assets(id),
+      linked_by INTEGER NOT NULL,
+      linked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (change_id, asset_id)
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_change_assets_asset ON service_change_assets(asset_id);`);
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_change_tickets (
+      change_id INTEGER NOT NULL REFERENCES service_changes(id),
+      ticket_id INTEGER NOT NULL REFERENCES service_tickets(id),
+      linked_by INTEGER NOT NULL,
+      linked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (change_id, ticket_id)
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_change_tickets_ticket ON service_change_tickets(ticket_id);`);
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_change_events (
+      id BIGSERIAL PRIMARY KEY,
+      change_id INTEGER NOT NULL REFERENCES service_changes(id),
+      event_type VARCHAR(30) NOT NULL,
+      actor_user_id INTEGER,
+      body TEXT,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_change_events_change ON service_change_events(change_id, id);`);
+}
+
+// Gestion del conocimiento (plan 009, fase 9E). El cuerpo es texto plano (sin
+// HTML: se muestra escapado). search_vector: busqueda en espanol.
+async function migrateKnowledgeBase(): Promise<void> {
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS kb_articles (
+      id SERIAL PRIMARY KEY,
+      number VARCHAR(20) NOT NULL UNIQUE,
+      title VARCHAR(160) NOT NULL,
+      body TEXT NOT NULL,
+      category_id INTEGER REFERENCES service_categories(id),
+      audience VARCHAR(10) NOT NULL CHECK (audience IN ('PUBLIC','INTERNAL')),
+      status VARCHAR(10) NOT NULL CHECK (status IN ('DRAFT','IN_REVIEW','PUBLISHED','RETIRED')),
+      version INTEGER NOT NULL DEFAULT 0,
+      author_id INTEGER NOT NULL,
+      published_by INTEGER,
+      published_at TIMESTAMPTZ,
+      source_problem_id INTEGER REFERENCES service_problems(id),
+      helpful_yes INTEGER NOT NULL DEFAULT 0,
+      helpful_no INTEGER NOT NULL DEFAULT 0,
+      views INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      search_vector tsvector GENERATED ALWAYS AS (
+        setweight(to_tsvector('spanish'::regconfig, coalesce(title, '')), 'A') ||
+        setweight(to_tsvector('spanish'::regconfig, coalesce(body, '')), 'B')
+      ) STORED
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_kb_articles_search ON kb_articles USING GIN (search_vector);`);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_kb_articles_status ON kb_articles(status, audience);`);
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS kb_article_versions (
+      article_id INTEGER NOT NULL REFERENCES kb_articles(id),
+      version INTEGER NOT NULL,
+      title VARCHAR(160) NOT NULL,
+      body TEXT NOT NULL,
+      published_by INTEGER NOT NULL,
+      published_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (article_id, version)
+    );
+  `);
+  // Un voto por usuario y articulo (los contadores del articulo se derivan de aca).
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS kb_article_feedback (
+      article_id INTEGER NOT NULL REFERENCES kb_articles(id),
+      user_id INTEGER NOT NULL,
+      helpful BOOLEAN NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (article_id, user_id)
+    );
+  `);
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS service_ticket_kb (
+      ticket_id INTEGER NOT NULL REFERENCES service_tickets(id),
+      article_id INTEGER NOT NULL REFERENCES kb_articles(id),
+      used_to_resolve BOOLEAN NOT NULL DEFAULT false,
+      linked_by INTEGER NOT NULL,
+      linked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (ticket_id, article_id)
+    );
+  `);
+}
+
+// Configuracion inicial: solo si la tabla esta vacia, para no pisar lo que se
+// edite desde "Configuración Service Desk". Corre bajo el advisory lock de la
+// migracion (una sola replica a la vez).
+async function seedServiceDeskDefaults(): Promise<void> {
+  const isEmpty = async (table: string): Promise<boolean> => {
+    const rows = await postgres.query(`SELECT 1 FROM ${table} LIMIT 1`, { type: QueryTypes.SELECT });
+    return rows.length === 0;
+  };
+
+  if (await isEmpty("priority_matrix")) {
+    for (const row of DEFAULT_PRIORITY_MATRIX) {
+      await postgres.query(
+        `INSERT INTO priority_matrix (impact, urgency, priority) VALUES (:impact, :urgency, :priority) ON CONFLICT DO NOTHING`,
+        { replacements: row },
+      );
+    }
+  }
+
+  if (await isEmpty("business_calendars")) {
+    await postgres.transaction(async (transaction) => {
+      const [calendar] = await postgres.query<{ id: number }>(
+        `INSERT INTO business_calendars (name, timezone, is_default) VALUES (:name, :timezone, true) RETURNING id`,
+        { replacements: { name: DEFAULT_CALENDAR.name, timezone: DEFAULT_CALENDAR.timezone }, type: QueryTypes.SELECT, transaction },
+      );
+      for (const hour of DEFAULT_CALENDAR.hours) {
+        await postgres.query(
+          `INSERT INTO business_hours (calendar_id, weekday, start_time, end_time) VALUES (:calendarId, :weekday, :start, :end)`,
+          { replacements: { calendarId: calendar!.id, ...hour }, transaction },
+        );
+      }
+      for (const holiday of DEFAULT_HOLIDAYS) {
+        await postgres.query(
+          `INSERT INTO business_holidays (calendar_id, holiday_date, name) VALUES (:calendarId, :date, :name)`,
+          { replacements: { calendarId: calendar!.id, ...holiday }, transaction },
+        );
+      }
+    });
+  }
+
+  if (await isEmpty("sla_policies")) {
+    for (const policy of DEFAULT_SLA_POLICIES) {
+      await postgres.query(
+        `INSERT INTO sla_policies (ticket_type, priority, response_minutes, resolution_minutes)
+         VALUES (:ticketType, :priority, :responseMinutes, :resolutionMinutes) ON CONFLICT DO NOTHING`,
+        { replacements: policy },
+      );
+    }
+  }
+
+  if (await isEmpty("support_groups")) {
+    for (const group of DEFAULT_GROUPS) {
+      await postgres.query(`INSERT INTO support_groups (name, description) VALUES (:name, :description) ON CONFLICT DO NOTHING`, {
+        replacements: group,
+      });
+    }
+  }
+
+  if (await isEmpty("service_categories")) {
+    for (const category of DEFAULT_CATEGORIES) {
+      await postgres.query(
+        `INSERT INTO service_categories (name, default_group_id, applies_to)
+         VALUES (:name, (SELECT id FROM support_groups WHERE name = :group), ARRAY[:appliesTo]::VARCHAR(20)[])
+         ON CONFLICT DO NOTHING`,
+        { replacements: category },
+      );
+    }
+  }
+
+  if (await isEmpty("service_catalog_items")) {
+    for (const item of DEFAULT_CATALOG_ITEMS) {
+      await postgres.query(
+        `INSERT INTO service_catalog_items (name, description, category_id, default_group_id, fields)
+         SELECT :name, :description, c.id, c.default_group_id, CAST(:fields AS JSONB)
+           FROM service_categories c WHERE c.parent_id IS NULL AND c.name = :category
+         ON CONFLICT DO NOTHING`,
+        { replacements: { ...item, fields: JSON.stringify(item.fields) } },
+      );
+    }
+  }
 }
 
 // Toma de inventario fisica (levantamiento por un auditor). Ver

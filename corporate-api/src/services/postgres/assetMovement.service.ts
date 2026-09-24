@@ -33,12 +33,16 @@ const STATUS_CODE_BY_MOVEMENT_TYPE = {
   RETURNED: "RETURNED",
   MOVE_TO_RETURNED: "MOVE_TO_RETURNED",
   DEVALUATED: "DEVALUATED",
+  // Salida de soporte desde un ticket del Service Desk (plan 009).
+  SUPPORT_TO_HOLDER: "ASSIGNED",
+  SUPPORT_TO_STOCK: "AVAILABLE",
 } as const;
 
 // Movimientos que dejan el activo en manos de un usuario: exigen usuario y
 // definen el tenedor vigente (listCurrentHoldersByAssetIds). DEVALUATED es una
 // baja reactivada en uso (valor 0), por eso tambien tiene tenedor.
-export const MOVEMENT_TYPES_REQUIRING_USERS = new Set(["ASSIGNED", "REASSIGNED", "DEVALUATED"]);
+// SUPPORT_TO_HOLDER devuelve el activo, reparado, a quien lo tenia.
+export const MOVEMENT_TYPES_REQUIRING_USERS = new Set(["ASSIGNED", "REASSIGNED", "DEVALUATED", "SUPPORT_TO_HOLDER"]);
 
 // Incluye los usuarios asignados en cada movimiento (asset_movement_users,
 // escritos en createAssetMovement mas abajo) -antes quedaban invisibles via
@@ -64,6 +68,16 @@ export async function listMovementsByAsset(
 // externalTransaction opcional: la toma de inventario crea el activo y su
 // movimiento en UNA sola transaccion (inventoryCount.service.ts). Sin ella,
 // el movimiento abre la suya como siempre.
+// Ticket del Service Desk que tiene el activo en soporte (enviado y sin devolver), o null.
+export async function findOpenSupportTicketNumber(assetId: number, transaction?: Transaction): Promise<string | null> {
+  const [link] = await postgres.query<{ number: string }>(
+    `SELECT t.number FROM service_ticket_assets l JOIN service_tickets t ON t.id = l.ticket_id
+      WHERE l.asset_id = :assetId AND l.support_movement_id IS NOT NULL AND l.return_movement_id IS NULL LIMIT 1`,
+    { replacements: { assetId }, type: QueryTypes.SELECT, transaction },
+  );
+  return link?.number ?? null;
+}
+
 export async function createAssetMovement(
   input: CreateAssetMovementInput,
   externalTransaction?: Transaction,
@@ -129,6 +143,28 @@ export async function createAssetMovement(
       throw new ConflictError(
         `El activo ${asset.tag} no esta en transito de devolucion, no se puede recibir (estado actual: ${asset.status?.code ?? "desconocido"})`,
       );
+    }
+    // Service Desk (plan 009): solo un activo en soporte puede volver a su
+    // tenedor o a bodega. Ambos son internos (serviceDesk/ticketAsset.service.ts).
+    if (
+      (input.movementType === "SUPPORT_TO_HOLDER" || input.movementType === "SUPPORT_TO_STOCK") &&
+      asset.status?.code !== "SUPPORT"
+    ) {
+      throw new ConflictError(
+        `El activo ${asset.tag} no esta en soporte (estado actual: ${asset.status?.code ?? "desconocido"})`,
+      );
+    }
+    // Un activo en soporte por un ticket solo vuelve desde ese ticket: darlo de
+    // baja u otro movimiento aca dejaria el ticket sin poder cerrarse (run-3, N4).
+    if (
+      asset.status?.code === "SUPPORT" &&
+      input.movementType !== "SUPPORT_TO_HOLDER" &&
+      input.movementType !== "SUPPORT_TO_STOCK"
+    ) {
+      const ticketNumber = await findOpenSupportTicketNumber(input.assetId, transaction);
+      if (ticketNumber) {
+        throw new ConflictError(`El activo ${asset.tag} esta en soporte por el ticket ${ticketNumber}: devuelvalo desde el ticket`);
+      }
     }
     if (input.movementType === "DEVALUATED" && !["DECOMMISSIONED", "DEVALUATED"].includes(asset.status?.code ?? "")) {
       throw new ConflictError(
