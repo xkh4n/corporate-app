@@ -115,6 +115,7 @@ async function applyPostgresMigrations(): Promise<void> {
   await migrateInventoryCounts();
   await migrateAssetReturns();
   await migrateAssetAccounting();
+  await migrateAssetWriteOffs();
   await migrateIntegrityAndIndexes();
 
   logger.info("Migracion de Postgres aplicada");
@@ -620,6 +621,76 @@ async function migrateAssetAccounting(): Promise<void> {
     );
   `);
   await runDdl(`CREATE INDEX IF NOT EXISTS ix_asset_depreciation_entries_asset_id ON asset_depreciation_entries(asset_id);`);
+}
+
+// Baja contable (plan 008): cierra el ciclo contable de activos que ya estan
+// dados de baja operativamente (DECOMMISSIONED, Kardex en cero). Se arma como
+// borrador (fotos por activo + un certificado notarial) y al confirmar es
+// definitiva: los activos pasan a la etapa WRITTEN_OFF.
+async function migrateAssetWriteOffs(): Promise<void> {
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS asset_write_offs (
+      id SERIAL PRIMARY KEY,
+      status VARCHAR(10) NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','CONFIRMED')),
+      write_off_date DATE,
+      reason VARCHAR(255),
+      notary VARCHAR(120),
+      certificate_number VARCHAR(60),
+      certificate_filename VARCHAR(80),
+      asset_count INTEGER NOT NULL DEFAULT 0,
+      total_book_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+      created_by INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      confirmed_by INTEGER,
+      confirmed_at TIMESTAMPTZ,
+      CHECK (status <> 'CONFIRMED'
+        OR (write_off_date IS NOT NULL AND reason IS NOT NULL AND certificate_filename IS NOT NULL
+            AND confirmed_by IS NOT NULL AND confirmed_at IS NOT NULL))
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_asset_write_offs_status ON asset_write_offs(status);`);
+
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS asset_write_off_lines (
+      write_off_id INTEGER NOT NULL REFERENCES asset_write_offs(id) ON DELETE CASCADE,
+      asset_id INTEGER NOT NULL REFERENCES assets(id),
+      stage_before VARCHAR(20),
+      book_value NUMERIC(18,2),
+      PRIMARY KEY (write_off_id, asset_id)
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_asset_write_off_lines_asset_id ON asset_write_off_lines(asset_id);`);
+
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS asset_write_off_photos (
+      id SERIAL PRIMARY KEY,
+      write_off_id INTEGER NOT NULL,
+      asset_id INTEGER NOT NULL,
+      filename VARCHAR(80) NOT NULL,
+      mime_type VARCHAR(30) NOT NULL CHECK (mime_type IN ('image/jpeg','image/png')),
+      size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
+      created_by INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      FOREIGN KEY (write_off_id, asset_id)
+        REFERENCES asset_write_off_lines(write_off_id, asset_id) ON DELETE CASCADE
+    );
+  `);
+  await runDdl(`
+    CREATE INDEX IF NOT EXISTS ix_asset_write_off_photos_line ON asset_write_off_photos(write_off_id, asset_id);
+  `);
+
+  // Etapa WRITTEN_OFF: el CHECK inline de stage (nombre puesto por Postgres)
+  // pasa a uno con nombre, mismo patron que permissions_action_allowed.
+  await runDdl(`ALTER TABLE asset_accounting DROP CONSTRAINT IF EXISTS asset_accounting_stage_check;`);
+  await runDdl(`ALTER TABLE asset_accounting DROP CONSTRAINT IF EXISTS asset_accounting_stage_allowed;`);
+  await runDdl(`
+    ALTER TABLE asset_accounting ADD CONSTRAINT asset_accounting_stage_allowed
+      CHECK (stage IN ('CLASSIFIED','COSTED','CAPITALIZED','DEPRECIATING','FULLY_DEPRECIATED','WRITTEN_OFF'));
+  `);
+  await runDdl(`
+    ALTER TABLE asset_accounting ADD COLUMN IF NOT EXISTS write_off_id INTEGER REFERENCES asset_write_offs(id);
+  `);
 }
 
 // Toma de inventario fisica (levantamiento por un auditor). Ver
