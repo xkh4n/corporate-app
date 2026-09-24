@@ -3,6 +3,7 @@ import { z } from "zod";
 import * as permissionService from "../services/postgres/permission.service";
 import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
 import { sendList, sendNoContent, sendOk } from "../library/response";
+import { permissionActor } from "../library/permissionActor";
 
 // resource en kebab-case minuscula, mismo formato que el resto del catalogo
 // (ej. "purchase-requests", "menu-items") -es la mitad de la clave
@@ -41,6 +42,7 @@ export async function list(req: Request, res: Response, next: NextFunction): Pro
 export async function create(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof createPermissionSchema>;
+    await permissionService.assertActorCanGrant(permissionActor(req), body.includedPermissionIds ?? []);
     const permission = await permissionService.createPermission(body);
     sendOk(res, permission, "Permiso creado exitosamente", 201);
   } catch (err) {
@@ -60,6 +62,9 @@ export async function getIncludes(req: Request, res: Response, next: NextFunctio
 export async function addInclude(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { permissionId } = req.body as z.infer<typeof addPermissionIncludeSchema>;
+    const actor = permissionActor(req);
+    await permissionService.assertActorCanEditBundle(actor, Number(req.params.id));
+    await permissionService.assertActorCanGrant(actor, [permissionId]);
     const includes = await permissionService.addPermissionInclude(Number(req.params.id), permissionId);
     sendOk(res, includes, "Permiso incluido exitosamente", 201);
   } catch (err) {
@@ -69,6 +74,7 @@ export async function addInclude(req: Request, res: Response, next: NextFunction
 
 export async function removeInclude(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
+    await permissionService.assertActorCanEditBundle(permissionActor(req), Number(req.params.id));
     await permissionService.removePermissionInclude(Number(req.params.id), Number(req.params.includedId));
     sendNoContent(res);
   } catch (err) {

@@ -40,6 +40,7 @@ import {
   assetAccountingRouter,
   assetDepreciationRunRouter,
 } from "./assetAccounting.routes";
+import { assetWriteOffRouter } from "./assetWriteOff.routes";
 import { notificationRouter } from "./notification.routes";
 import { previsionalInstitutionRouter } from "./previsionalInstitution.routes";
 import { previsionalProfileRouter } from "./previsionalProfile.routes";
@@ -110,6 +111,7 @@ apiRouter.use("/asset-imports", assetImportRouter);
 apiRouter.use("/asset-accounting", assetAccountingRouter);
 apiRouter.use("/asset-depreciation-runs", assetDepreciationRunRouter);
 apiRouter.use("/asset-accounting-policy", assetAccountingPolicyRouter);
+apiRouter.use("/asset-write-offs", assetWriteOffRouter);
 
 // Resumen derivado de pendientes del usuario logeado (badge + push en
 // tiempo real, ver library/realtime/).

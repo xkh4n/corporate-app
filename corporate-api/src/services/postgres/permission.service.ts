@@ -6,7 +6,8 @@ import { PermissionIncludeModel } from "../../models/postgres/permissionInclude.
 import { RoleModel } from "../../models/postgres/role.model";
 import { getRoleByIdOrThrow } from "./role.service";
 import { isCatalogScreenInclude } from "../../databases/permission-catalog";
-import { BadRequestError, ConflictError, NotFoundError, isUniqueConstraintError } from "../../library/errors";
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, isUniqueConstraintError } from "../../library/errors";
+import type { PermissionActor } from "../../library/permissionActor";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
@@ -430,4 +431,72 @@ export async function getRoleIdsWithPermission(resource: string, action: Permiss
   if (adminRole) roleIds.add(adminRole.id);
 
   return [...roleIds];
+}
+
+// ---------------------------------------------------------------------------
+// Quien otorga (auditoria de seguridad run-2, 2026-09-24, F1/F3). Sin esto,
+// cualquier rol con permissions:update (pantallas "Modificar Permisos" /
+// "Permisos de Pantalla") o users:create ("Nuevo Ingreso") podia darse a si
+// mismo, o a una cuenta que el mismo crea, cualquier permiso o el rol admin.
+// Regla: un no-admin solo otorga lo que ya tiene, y no toca su propio rol ni
+// las pantallas que su rol tiene. Admin no se restringe.
+// ---------------------------------------------------------------------------
+async function effectiveIdsForRole(roleId: number): Promise<Set<number>> {
+  return new Set((await getEffectivePermissionsForRole(roleId)).map((permission) => permission.id));
+}
+
+// Lo que realmente concede otorgar estos permisos: ellos mismos y, si alguno es
+// una pantalla (access), todo lo que incluye.
+async function expandGrantedIds(permissionIds: number[]): Promise<Set<number>> {
+  const expanded = new Set(permissionIds);
+  if (permissionIds.length === 0) return expanded;
+  const links = await PermissionIncludeModel.findAll({ where: { permissionId: permissionIds } });
+  for (const link of links) expanded.add(link.includedPermissionId);
+  return expanded;
+}
+
+async function assertHoldsAll(actor: PermissionActor, permissionIds: Iterable<number>, message: string): Promise<void> {
+  const held = await effectiveIdsForRole(actor.roleId);
+  const missing = [...permissionIds].filter((id) => !held.has(id));
+  if (missing.length > 0) {
+    const names = await PermissionModel.findAll({ where: { id: missing }, attributes: ["resource", "action"] });
+    throw new ForbiddenError(`${message}: ${names.map((p) => `${p.resource}:${p.action}`).join(", ")}`);
+  }
+}
+
+// Otorgar permisos (a un rol, o incluirlos en una pantalla).
+export async function assertActorCanGrant(actor: PermissionActor, permissionIds: number[]): Promise<void> {
+  if (actor.isAdmin || permissionIds.length === 0) return;
+  await assertHoldsAll(actor, await expandGrantedIds(permissionIds), "Solo puede otorgar permisos que usted tiene");
+}
+
+// Cambiar los permisos de un rol: nunca el propio ni el de admin.
+export async function assertActorCanManageRole(actor: PermissionActor, roleId: number): Promise<void> {
+  if (actor.isAdmin) return;
+  if (roleId === actor.roleId) throw new ForbiddenError("No puede modificar los permisos de su propio rol");
+  const role = await getRoleByIdOrThrow(roleId);
+  if (role.name === "admin") throw new ForbiddenError("Los permisos del rol admin solo los modifica un administrador");
+}
+
+// Cambiar lo que incluye una pantalla: no una que su propio rol tiene (se
+// estaria ampliando a si mismo).
+export async function assertActorCanEditBundle(actor: PermissionActor, bundleId: number): Promise<void> {
+  if (actor.isAdmin) return;
+  const assigned = await getAssignedPermissionsForRole(actor.roleId);
+  if (assigned.some((permission) => permission.id === bundleId)) {
+    throw new ForbiddenError("No puede modificar una pantalla que su propio rol tiene asignada");
+  }
+}
+
+// Asignar un rol (a un usuario o a un cargo): nunca admin, y solo un rol cuyos
+// permisos efectivos ya tiene quien lo asigna.
+export async function assertActorCanAssignRole(actor: PermissionActor, roleId: number): Promise<void> {
+  if (actor.isAdmin) return;
+  const role = await getRoleByIdOrThrow(roleId);
+  if (role.name === "admin") throw new ForbiddenError("Solo un administrador puede asignar el rol admin");
+  await assertHoldsAll(
+    actor,
+    await effectiveIdsForRole(roleId),
+    `No puede asignar el rol '${role.name}': incluye permisos que usted no tiene`,
+  );
 }

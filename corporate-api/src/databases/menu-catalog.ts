@@ -415,12 +415,20 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     sortOrder: 40,
   },
   {
+    label: "Baja Contable",
+    icon: "IoTrashBinOutline",
+    link: "/accounting/write-off",
+    parentLabel: "Gestión de Activos",
+    permissionKey: "accounting-write-off:access",
+    sortOrder: 50,
+  },
+  {
     label: "Política Contable de Activos",
     icon: "IoOptionsOutline",
     link: "/accounting/policy",
     parentLabel: "Gestión de Activos",
     permissionKey: "accounting-policy:access",
-    sortOrder: 50,
+    sortOrder: 60,
   },
 ];
 

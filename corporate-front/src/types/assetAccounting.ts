@@ -1,7 +1,13 @@
 // Espejo de corporate-api/src/services/postgres/assetAccounting.service.ts,
 // assetDepreciation.service.ts y assetAccountingPolicy.service.ts (plan 007).
 export type Classification = "FIXED_ASSET" | "EXPENSE" | "INVENTORY";
-export type AccountingStage = "CLASSIFIED" | "COSTED" | "CAPITALIZED" | "DEPRECIATING" | "FULLY_DEPRECIATED";
+export type AccountingStage =
+  | "CLASSIFIED"
+  | "COSTED"
+  | "CAPITALIZED"
+  | "DEPRECIATING"
+  | "FULLY_DEPRECIATED"
+  | "WRITTEN_OFF";
 export type DepreciationMethod = "LINEAR" | "ACCELERATED";
 
 export interface PendingAccountingAsset {

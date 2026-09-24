@@ -47,6 +47,16 @@ export function currentPeriod(now: Date = new Date()): string {
   return `${year}-${month}`;
 }
 
+// Fecha de hoy (AAAA-MM-DD) en hora de Chile, mismo criterio que currentPeriod.
+export function currentDate(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Santiago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
 export function isValidPeriod(period: string): boolean {
   return PERIOD_PATTERN.test(period);
 }

@@ -26,10 +26,18 @@ import { getProductsByIds } from "../mongo/product.service";
 // depreciacion la escribe el cierre mensual (assetDepreciation.service.ts).
 
 export type Classification = "FIXED_ASSET" | "EXPENSE" | "INVENTORY";
-export type AccountingStage = "CLASSIFIED" | "COSTED" | "CAPITALIZED" | "DEPRECIATING" | "FULLY_DEPRECIATED";
+export type AccountingStage =
+  | "CLASSIFIED"
+  | "COSTED"
+  | "CAPITALIZED"
+  | "DEPRECIATING"
+  | "FULLY_DEPRECIATED"
+  // Baja contable confirmada (plan 008, assetWriteOff.service.ts): etapa final, valor libro 0.
+  | "WRITTEN_OFF";
 
-// Un activo dado de baja no entra al ciclo contable.
-const EXCLUDED_STATUS_CODES = ["DECOMMISSIONED"];
+// Un activo dado de baja (o devaluado despues de la baja: valor 0, Kardex en
+// cero) no entra al ciclo contable. Mismo criterio que el cierre de depreciacion.
+const EXCLUDED_STATUS_CODES = ["DECOMMISSIONED", "DEVALUATED"];
 // Etapas en que todavia se puede reclasificar o tocar el costo.
 const EDITABLE_STAGES: AccountingStage[] = ["CLASSIFIED", "COSTED"];
 
@@ -97,7 +105,7 @@ const RECORD_SELECT = `
     LEFT JOIN asset_accounting_classes c ON c.id = aa.class_id
 `;
 
-async function withProductNames<T extends { productId: string | null }>(
+export async function withProductNames<T extends { productId: string | null }>(
   rows: T[],
 ): Promise<(Omit<T, "productId"> & { productName: string | null })[]> {
   const ids = [...new Set(rows.map((row) => row.productId).filter((id): id is string => !!id))];
@@ -107,6 +115,7 @@ async function withProductNames<T extends { productId: string | null }>(
 }
 
 function withBookValue(record: Omit<AccountingRecord, "bookValue">): AccountingRecord {
+  if (record.stage === "WRITTEN_OFF") return { ...record, bookValue: "0.00" };
   const bookValue =
     record.capitalizedCost !== null && ["CAPITALIZED", "DEPRECIATING", "FULLY_DEPRECIATED"].includes(record.stage)
       ? (Math.round((Number(record.capitalizedCost) - Number(record.accumulatedDepreciation)) * 100) / 100).toFixed(2)
@@ -183,8 +192,15 @@ export async function getRecordOrThrow(assetId: number, transaction?: Transactio
   return record;
 }
 
+// Costo, capitalizacion y parametros: nunca sobre un activo dado de baja (su
+// Kardex ya quedo en cero; capitalizarlo le devolveria valor). Auditoria de
+// seguridad run-2, F2.
 async function lockRecord(assetId: number, transaction: Transaction): Promise<AccountingRecord> {
   await lockAssetRow(assetId, transaction);
+  const asset = await getAssetByIdOrThrow(assetId, transaction);
+  if (EXCLUDED_STATUS_CODES.includes(asset.status?.code ?? "")) {
+    throw new ConflictError(`El activo ${asset.tag} esta dado de baja: su registro contable no se modifica`);
+  }
   return getRecordOrThrow(assetId, transaction);
 }
 

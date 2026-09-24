@@ -238,6 +238,10 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "asset-depreciation", action: "delete", description: "Anular el ultimo cierre de depreciacion (reversa en el Kardex)" },
   { resource: "asset-accounting-policy", action: "read", description: "Consultar la politica contable de activos (umbral y clases)" },
   { resource: "asset-accounting-policy", action: "update", description: "Definir la politica contable de activos (umbral y clases)" },
+  // Baja contable (plan 008): confirmar es definitivo, por eso "approve" va aparte.
+  { resource: "asset-write-offs", action: "read", description: "Consultar las bajas contables de activos" },
+  { resource: "asset-write-offs", action: "create", description: "Preparar bajas contables (borrador, fotos y certificado notarial)" },
+  { resource: "asset-write-offs", action: "approve", description: "Confirmar bajas contables de activos (definitivas)" },
 ];
 
 export interface ScreenAccessCatalogEntry {
@@ -472,6 +476,11 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
     resource: "accounting-policy",
     description: "Pantalla: Política Contable de Activos",
     includes: ["asset-accounting-policy:read", "asset-accounting-policy:update"],
+  },
+  {
+    resource: "accounting-write-off",
+    description: "Pantalla: Baja Contable",
+    includes: ["asset-write-offs:read", "asset-write-offs:create", "asset-write-offs:approve", "asset-accounting:read"],
   },
 ];
 

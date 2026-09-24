@@ -39,6 +39,7 @@ import DeterminarCosto from "../pages/contabilidad/DeterminarCosto";
 import Capitalizacion from "../pages/contabilidad/Capitalizacion";
 import Depreciacion from "../pages/contabilidad/Depreciacion";
 import PoliticaContable from "../pages/contabilidad/PoliticaContable";
+import BajaContable from "../pages/contabilidad/BajaContable";
 import {
   AsignarPermissionToRole,
   DeshabilitarRoles,
@@ -98,6 +99,7 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/accounting/cost": () => <DeterminarCosto />,
   "/accounting-capitalization": () => <Capitalizacion />,
   "/accounting/depreciation": () => <Depreciacion />,
+  "/accounting/write-off": () => <BajaContable />,
   "/accounting/policy": () => <PoliticaContable />,
   "/roles/create": () => <NuevoRole />,
   "/permissions/create": () => <NuevoPermiso />,

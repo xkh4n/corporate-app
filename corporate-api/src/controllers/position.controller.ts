@@ -3,6 +3,8 @@ import { z } from "zod";
 import * as positionService from "../services/mongo/position.service";
 import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
 import { sendList, sendOk } from "../library/response";
+import { permissionActor } from "../library/permissionActor";
+import { assertActorCanAssignRole } from "../services/postgres/permission.service";
 
 export const createPositionSchema = z.object({
   title: z.string().min(1).max(150),
@@ -39,6 +41,8 @@ export async function getById(req: Request, res: Response, next: NextFunction): 
 export async function create(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof createPositionSchema>;
+    // El rol del cargo es el que recibe quien ingresa con ese cargo (auditoria run-2, F1).
+    await assertActorCanAssignRole(permissionActor(req), body.roleId);
     const position = await positionService.createPosition(body);
     sendOk(res, position, "Cargo creado exitosamente", 201);
   } catch (err) {
@@ -49,6 +53,7 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 export async function update(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof updatePositionSchema>;
+    if (body.roleId !== undefined) await assertActorCanAssignRole(permissionActor(req), body.roleId);
     const position = await positionService.updatePosition(req.params.id as string, body);
     sendOk(res, position, "Cargo actualizado exitosamente");
   } catch (err) {
