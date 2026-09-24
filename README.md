@@ -16,10 +16,10 @@ observabilidad (métricas + logs) desde el día uno.
 | Módulo | Estado |
 |---|---|
 | `corporate-infra` (bases de datos) | ✅ Construido, hardenizado y validado con instalación limpia real |
-| `corporate-api` (backend) | ✅ Construido: auth, RBAC, ERP core, flujo de compras, activos (Kardex, ZPL, handover, toma de inventario, valorización, devoluciones, carga masiva por CSV), tiempo real, remuneraciones y previsión |
+| `corporate-api` (backend) | ✅ Construido: auth, RBAC, ERP core, flujo de compras, activos (Kardex, ZPL, handover, toma de inventario, valorización, devoluciones, carga masiva por CSV), Service Desk ITIL v4 (incidentes, solicitudes, problemas, cambios, conocimiento), tiempo real, remuneraciones y previsión |
 | `corporate-mailer` (servicio de correo) | ✅ Construido: adjuntos de OC, notificaciones, SMTP |
 | `corporate-monitoring` (observabilidad) | ✅ Construido: métricas, logs, dashboards, todo detrás de TLS |
-| `corporate-front` (frontend) | ✅ Construido: React 19/TypeScript/Tailwind v4, menú dinámico desde BD, activos (incl. toma de inventario, valorización, devoluciones y carga masiva), adquisiciones, solicitudes, personas, remuneraciones, previsión, permissions (las pantallas de inventario, devoluciones y carga masiva aún sin probar en un navegador real) |
+| `corporate-front` (frontend) | ✅ Construido: React 19/TypeScript/Tailwind v4, menú dinámico desde BD, activos (incl. toma de inventario, valorización, devoluciones y carga masiva), adquisiciones, solicitudes, personas, remuneraciones, previsión, permissions, Service Desk (portal de solicitudes, gestión de tickets, problemas, cambios, conocimiento y configuración) (las pantallas de inventario, devoluciones, carga masiva y Service Desk aún sin probar en un navegador real) |
 | Ambientes `prod`/`test` | ✅ Compose/Dockerfiles existen; `dev` es el único validado en clean-install real |
 
 ## Arquitectura general
@@ -295,6 +295,19 @@ src/
   en Redis, de modo que **si una réplica se cae la carga la retoma otra desde donde iba, sin duplicar**. Se descarga un CSV con
   el resultado por fila. Máximo 5.000 filas y 2 MB, una carga en curso por usuario. Permiso `asset-imports`
   (`read` + `create`, se asignan juntos), sin acceso por defecto; cada carga solo la ve su dueño o un administrador.
+- **Service Desk ITIL v4**: gestión integral de incidentes, solicitudes, problemas, cambios y conocimiento, con asignación por
+  grupos de soporte, SLA en horario hábil (con feriados de `America/Santiago`) y pausa en estado «En espera», base de
+  conocimiento pública (portal «Generar Ticket»), matriz de prioridad (urgencia + impacto), cambios con CAB y aprobaciones,
+  tickets relacionados, historial de activos bajo soporte. **Pantallas:** portal de solicitudes («Generar Ticket»: nuevo ticket,
+  mis tickets, centro de ayuda); gestión de tickets («Gestión de Tickets»: cola, aprobaciones, problemas, cambios con calendario,
+  conocimiento e indicadores, workspace del ticket); configuración («Configuración Service Desk»: grupos de soporte con miembros,
+  categorías, catálogo de servicios, calendario de horario hábil, matriz de prioridad, políticas SLA, plantillas de cambio,
+  auditoría). **Activos:** agente envía un activo a soporte o lo devuelve al custodio/bodega con movimientos internos (`SUPPORT`,
+  `SUPPORT_TO_HOLDER`, `SUPPORT_TO_STOCK`); historial de servicio en el Kardex. **Visibilidad:** cada agente ve y trabaja solo los
+  tickets de sus grupos activos; `service-tickets:all_view` (Jefe de Soporte TI) o admin ven todos; aprobador lee solicitudes solo
+  mientras están pendientes. **Permisos:** 19 base (`service-tickets` con acciones `create`, `read`, `update`, `approve`, `all_view`;
+  `service-problems`, `service-changes`, `kb-articles`, `service-desk-settings`, `service-desk-reports`), sin acceso por defecto
+  (el admin provisiona por rol). **Rate limits** por usuario: creación de tickets, comentarios, búsqueda de KB y de usuarios/activos. Los cambios de configuración quedan en una auditoría de solo lectura.
 - **Notificaciones en tiempo real**: eventos de cambio de estado (`socket.io` + `@socket.io/redis-adapter`,
   escalado entre 3 réplicas) sin polling.
 - **Envío de correos**: `corporate-mailer` gestiona adjuntos (PDF, facturas), notificaciones

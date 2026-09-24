@@ -14,6 +14,7 @@ import { seedProducts } from "./src/services/mongo/product.service";
 import { seedProductCategories } from "./src/services/mongo/productCategory.service";
 import { initSocketServer } from "./src/library/realtime/socketServer";
 import { startImportSweeper, stopImportWorkers } from "./src/services/redis/assetImportJob.service";
+import { startServiceDeskSlaSweeper, stopServiceDeskSlaSweeper } from "./src/services/postgres/serviceDesk/slaSweeper";
 import "./src/databases/registerModels";
 
 async function bootstrap(): Promise<void> {
@@ -46,6 +47,8 @@ async function bootstrap(): Promise<void> {
   // Cargas masivas de activos (plan 005): retoma las que quedaron en curso sin worker (una replica que murio o se
   // reinicio) y, al recibir la senal de cierre, deja terminar la fila en curso antes de salir.
   startImportSweeper();
+  // Service Desk (plan 009): avisos e incumplimientos de SLA y cierre automatico de resueltos.
+  startServiceDeskSlaSweeper();
   registerShutdownHandlers(server);
 }
 
@@ -62,6 +65,7 @@ function registerShutdownHandlers(server: http.Server): void {
     logger.info({ signal }, "Cerrando corporate-api");
     // Deja de aceptar conexiones nuevas mientras termina la fila de carga en curso (las abiertas se cortan al salir).
     server.close();
+    stopServiceDeskSlaSweeper();
     stopImportWorkers()
       .catch((err) => logger.error({ err }, "Error al detener las cargas masivas"))
       .finally(() => process.exit(128 + (SIGNAL_NUMBERS[signal] ?? 15)));

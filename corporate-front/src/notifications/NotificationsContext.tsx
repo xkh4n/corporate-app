@@ -10,6 +10,9 @@ const EMPTY_SUMMARY: PendingSummary = {
   pendingRequestApprovals: 0,
   pendingQuoteApprovals: 0,
   pendingPurchaseOrders: 0,
+  assignedOpenTickets: 0,
+  pendingTicketApprovals: 0,
+  pendingChangeApprovals: 0,
   total: 0,
 };
 
@@ -17,6 +20,15 @@ const REASON_MESSAGES: Record<NotificationPushPayload["reason"], (requestNumber:
   "purchase-request-pending-approval": (n) => `Nueva solicitud ${n} pendiente de tu aprobación`,
   "quote-pending-approval": (n) => `Cotización de la solicitud ${n} lista para autorizar`,
   "purchase-order-pending": (n) => `Cotización de ${n} aprobada: ya podés adjuntar la orden de compra`,
+  // Service Desk (plan 009): requestNumber lleva el folio (INC-/REQ-/PRB-/CHG-).
+  "ticket-assigned": (n) => `Nuevo ticket en su cola: ${n}`,
+  "ticket-updated": (n) => `${n} tiene novedades`,
+  "ticket-approval-pending": (n) => `La solicitud ${n} espera su aprobación`,
+  "sla-warning": (n) => `${n}: el SLA está en riesgo`,
+  "sla-breached": (n) => `${n}: SLA vencido`,
+  "problem-assigned": (n) => `Se le asignó el problema ${n}`,
+  "change-approval-pending": (n) => `El cambio ${n} espera su aprobación (CAB)`,
+  "kb-review-pending": (n) => `El artículo ${n} espera revisión`,
 };
 
 // Contexto hermano de AuthContext, no mezclado con el: AuthContext lo

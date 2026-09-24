@@ -42,6 +42,11 @@ export function getAssetWriteOffFolder(writeOffId: number): string {
   return path.join(UPLOADS_ROOT, "bajas", String(writeOffId));
 }
 
+// Adjuntos de un ticket del Service Desk (plan 009). Nombres generados por el servidor.
+export function getServiceTicketFolder(ticketId: number): string {
+  return path.join(UPLOADS_ROOT, "tickets", String(ticketId));
+}
+
 // Borra la carpeta completa (descartar un borrador). Best-effort, como deleteIfExists.
 export function deleteFolderIfExists(folder: string): void {
   try {

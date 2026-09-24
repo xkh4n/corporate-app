@@ -3,7 +3,16 @@ import { postgres } from "../../databases/postgres/connection";
 import { AssetModel } from "./asset.model";
 import type { AssetMovementUserModel } from "./assetMovementUser.model";
 
-export type AssetMovementType = "ASSIGNED" | "REASSIGNED" | "SUPPORT" | "DECOMMISSIONED" | "RETURNED" | "DEVALUATED" | "MOVE_TO_RETURNED";
+export type AssetMovementType =
+  | "ASSIGNED"
+  | "REASSIGNED"
+  | "SUPPORT"
+  | "DECOMMISSIONED"
+  | "RETURNED"
+  | "DEVALUATED"
+  | "MOVE_TO_RETURNED"
+  | "SUPPORT_TO_HOLDER"
+  | "SUPPORT_TO_STOCK";
 
 export class AssetMovementModel extends Model<
   InferAttributes<AssetMovementModel>,
