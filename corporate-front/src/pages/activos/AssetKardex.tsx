@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AssetServiceHistory } from "../serviceDesk/AssetServiceHistory";
 import { useNavigate } from "react-router-dom";
 import { RequirePermissions } from "../../components/RequirePermissions";
 import { Spinner, Input, Button, EmptyState } from "../../components/ui";
@@ -214,6 +215,8 @@ export default function AssetKardex() {
                       </table>
                     </div>
                   )}
+                  {/* Service Desk (plan 009): tickets, problemas y cambios del activo. */}
+                  <AssetServiceHistory assetId={selectedAsset.id} />
                 </div>
               )}
             </>

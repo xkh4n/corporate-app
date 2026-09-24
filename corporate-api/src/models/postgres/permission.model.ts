@@ -5,7 +5,7 @@ import { postgres } from "../../databases/postgres/connection";
 // separado de "update" para poder otorgarlo a usuarios puntuales.
 // "access": permiso de pantalla (agrupador), incluye los permisos base que su
 // vista necesita -ver PermissionIncludeModel y plan 006.
-export type PermissionAction = "create" | "read" | "update" | "delete" | "approve" | "activate" | "access";
+export type PermissionAction = "create" | "read" | "update" | "delete" | "approve" | "activate" | "access" | "all_view";
 
 // Catalogo de permisos (resource+action): la base se siembra desde
 // databases/permission-catalog.ts y se pueden sumar mas en caliente via

@@ -1,5 +1,5 @@
 // Espejo de corporate-api/src/models/postgres/permission.model.ts.
-export type PermissionAction = "create" | "read" | "update" | "delete" | "approve" | "activate" | "access";
+export type PermissionAction = "create" | "read" | "update" | "delete" | "approve" | "activate" | "access" | "all_view";
 
 // "resource:action", tal como los aplana GET /auth/me (auth.controller.ts).
 export type PermissionKey = `${string}:${PermissionAction}`;

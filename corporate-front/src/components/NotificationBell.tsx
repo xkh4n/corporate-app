@@ -10,7 +10,7 @@ interface Row {
   to: string;
 }
 
-// Dropdown de 3 filas (una por tipo de pendiente derivado, ver
+// Dropdown de 6 filas (una por tipo de pendiente derivado, ver
 // notification.service.ts en corporate-api), cada una oculta si su conteo
 // es 0. El conteo se actualiza solo via NotificationsProvider (push por
 // socket + refetch), este componente es puramente de presentacion.
@@ -22,6 +22,10 @@ export function NotificationBell() {
     { key: "requests", label: "Solicitudes por aprobar", count: summary.pendingRequestApprovals, to: "/tickets/validate" },
     { key: "quotes", label: "Cotizaciones por autorizar", count: summary.pendingQuoteApprovals, to: "/quotes/approve" },
     { key: "orders", label: "Órdenes de compra por adjuntar", count: summary.pendingPurchaseOrders, to: "/purchase-orders/attach" },
+    // Service Desk (plan 009)
+    { key: "tickets", label: "Tickets asignados en curso", count: summary.assignedOpenTickets, to: "/support-services?tab=queue" },
+    { key: "ticket-approvals", label: "Solicitudes de servicio por aprobar", count: summary.pendingTicketApprovals, to: "/support-services?tab=approvals" },
+    { key: "change-approvals", label: "Cambios por aprobar (CAB)", count: summary.pendingChangeApprovals, to: "/support-services?tab=changes" },
   ].filter((row) => row.count > 0);
 
   return (

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>009 — Service Desk ITIL v4</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:900px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.5rem; font-size:1.25rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  h3 { margin-top:1.6rem; font-size:1.05rem; }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }
+  th, td { border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 009</span>
+  <h1>Service Desk ITIL v4: incidentes, solicitudes, problemas, cambios y conocimiento, con trazabilidad de activos</h1>
+  <div class="meta">corporate-app · corporate-api + corporate-front · Estado: aprobado, implementado 9A–9E (sin probar en navegador) · 2026-09-24</div>
+</header>
+
+<h2>Contexto</h2>
+<p>En dev se crearon desde el front dos menu-items que por ahora solo existen como filas en la BD de desarrollo:</p>
+<table>
+  <tr><th>Menú</th><th>Link</th><th>Permiso</th><th>Padre</th></tr>
+  <tr><td>Generar Ticket</td><td><code>/generate-ticket</code></td><td><code>generate-ticket:access</code></td><td>Solicitudes</td></tr>
+  <tr><td>Gestión de Tickets</td><td><code>/support-services</code></td><td><code>support-services:access</code></td><td>Soporte (bajo Serv. Productivos)</td></tr>
+</table>
+<p>El objetivo es un Service Desk al estilo de ServiceNow ITSM, HaloITSM o SolarWinds Service Desk, con las prácticas del núcleo de ITIL v4: <strong>Gestión de Incidentes, Solicitudes de Servicio, Gestión de Problemas, Habilitación de Cambios y Gestión del Conocimiento</strong>. Suma SLA y <strong>trazabilidad de los activos</strong>. La «gestión relacionada» enlaza ticket ↔ activo ↔ problema ↔ cambio ↔ artículo KB.</p>
+<p><strong>Qué existe hoy y se reutiliza:</strong></p>
+<ul>
+  <li><strong>Patrón de módulo:</strong> route → controller (zod <code>.strict()</code>) → service con SQL crudo en <code>postgres.transaction</code> y <code>FOR UPDATE</code>. La referencia es <code>assetWriteOff.*</code> del plan 008.</li>
+  <li><strong>Esquema idempotente:</strong> <code>migrate.ts</code> (<code>runDdl</code>, advisory lock, CHECK <code>&lt;x&gt;_allowed</code>).</li>
+  <li><strong>Permisos y menú por catálogo:</strong> <code>permission-catalog.ts</code> y <code>menu-catalog.ts</code>.</li>
+  <li><strong>Activos:</strong> <code>createAssetMovement</code>, <code>lockAssetRow</code> y <code>listCurrentHoldersByAssetIds</code>. El movimiento <code>SUPPORT</code> ya existe, pero no hay movimiento para salir de él.</li>
+  <li><strong>Avisos:</strong> <code>notifyUser</code> (Socket.IO) + campana, y <code>sendMailViaMailer</code> (texto plano).</li>
+  <li><strong>Adjuntos:</strong> <code>uploadSingle</code> + <code>documentStorage</code>.</li>
+  <li><strong>Tareas periódicas:</strong> el patrón sweeper con lease de Redis de la carga masiva de activos. No hay cron.</li>
+</ul>
+
+<h2>Decisiones confirmadas</h2>
+<ul>
+  <li><strong>Alcance:</strong> todo el núcleo ITIL en un solo plan. Se entrega en fases 9A–9E, con un PR a <code>develop</code> por fase.</li>
+  <li><strong>Asignación:</strong> por <strong>grupos de soporte</strong> con miembros (N1 → N2 → especialistas), y luego a un agente del grupo.</li>
+  <li><strong>SLA:</strong> en <strong>horario hábil + feriados</strong>, con calendario configurable en <code>America/Santiago</code>. El reloj se pausa en «En espera».</li>
+  <li><strong>Activos:</strong> el ticket vincula el activo. El agente decide explícitamente «Enviar a soporte», «Devolver al custodio» o «Devolver a bodega», y cada acción queda en <code>asset_movements</code>.</li>
+  <li><strong>Menú en el seed principal:</strong> los 2 menu-items de dev, más su padre «Soporte», pasan a <code>MENU_CATALOG</code> con labels idénticos. Así el upsert por label adopta las filas existentes y test/prod los reciben.</li>
+</ul>
+
+<h2>Modelo de datos (Postgres, <code>migrateServiceDesk()</code>)</h2>
+<p>Va en Postgres porque ahí viven los activos, permisos y menú (FK reales a <code>assets</code>). Los usuarios se guardan como <code>user_id</code> sin FK (viven en MSSQL) y se validan con <code>getUserByIdOrThrow</code>.</p>
+<h3>Configuración</h3>
+<ul>
+  <li><code>support_groups</code> y <code>support_group_members</code> (con <code>is_lead</code>).</li>
+  <li><code>service_categories</code>: jerárquicas, con grupo por defecto y <code>applies_to</code>.</li>
+  <li><code>service_catalog_items</code>: campos dinámicos en JSONB y grupo aprobador opcional.</li>
+  <li><code>business_calendars</code>, <code>business_hours</code> y <code>business_holidays</code>.</li>
+  <li><code>priority_matrix</code>: impacto × urgencia → P1..P4.</li>
+  <li><code>sla_policies</code>: una por tipo + prioridad.</li>
+  <li><code>service_desk_counters</code>: numeración <code>INC-/REQ-/PRB-/CHG-/KB-AAAA-NNNNNN</code>.</li>
+</ul>
+<h3>Tickets</h3>
+<ul>
+  <li><code>service_tickets</code>: incidentes y solicitudes en una sola tabla, distinguidos por <code>type</code>. Guarda prioridad, grupo, agente, problema, fechas SLA, pausa, incumplimientos, reaperturas y CSAT.</li>
+  <li><strong>Estados:</strong> <code>NEW → ASSIGNED → IN_PROGRESS ⇄ ON_HOLD → RESOLVED → CLOSED</code>, más <code>CANCELLED</code>. Las solicitudes con aprobación empiezan en <code>PENDING_APPROVAL</code>.</li>
+  <li><code>service_ticket_events</code>: <strong>insert-only</strong>. Es a la vez la línea de tiempo y la auditoría; separa los comentarios públicos de las notas internas.</li>
+  <li>Tablas de relación: <code>service_ticket_attachments</code>, <code>service_ticket_approvals</code>, <code>service_ticket_assets</code> (guarda el tenedor y el estado previos) y <code>service_ticket_kb</code>.</li>
+</ul>
+<h3>Problemas, cambios y conocimiento</h3>
+<ul>
+  <li><code>service_problems</code>: causa raíz, workaround, error conocido y solución definitiva. Se relaciona con los incidentes y los activos, y tiene sus propios eventos.</li>
+  <li><code>service_changes</code>: tipo STANDARD/NORMAL/EMERGENCY, riesgo, planes de implementación, reversa y prueba, ventana, resultado y PIR. Se apoya en <code>standard_change_templates</code>, <code>service_change_approvals</code> (CAB), sus activos, tickets y eventos.</li>
+  <li><code>kb_articles</code>: el cuerpo es <strong>texto plano, sin HTML</strong>. Tiene audiencia PUBLIC/INTERNAL, estados y búsqueda <code>tsvector('spanish')</code>. Las versiones van en <code>kb_article_versions</code>.</li>
+  <li><strong>Activos:</strong> se agregan dos movimientos internos, <code>SUPPORT_TO_HOLDER</code> (→ ASSIGNED, al mismo tenedor) y <code>SUPPORT_TO_STOCK</code> (→ AVAILABLE). Ambos solo son válidos desde <code>SUPPORT</code>.</li>
+</ul>
+
+<h2>Reglas</h2>
+<ul>
+  <li><strong>Máquinas de estado puras</strong> con tests unitarios. Cada transición bloquea el registro con <code>FOR UPDATE</code> y escribe su evento en la misma transacción.</li>
+  <li><strong>Prioridad:</strong> sale de la matriz. El solicitante elige urgencia y alcance; el agente puede ajustarlos, y el SLA se recalcula.</li>
+  <li><strong>SLA:</strong> <code>businessTime.ts</code> (luxon) calcula en minutos hábiles con feriados. Al pausar se guarda lo que resta y al reanudar se recalcula el vencimiento.</li>
+  <li><strong>Sweeper SLA:</strong> corre cada 60 s con lease en Redis (una sola réplica a la vez). Avisa al 75 %, marca el incumplimiento una sola vez y autocierra lo RESOLVED tras 3 días hábiles.</li>
+  <li><strong>Portal:</strong> solo muestra tickets propios; uno ajeno responde 404. Nunca devuelve notas internas ni adjuntos internos.</li>
+  <li><strong>Activos:</strong> no se puede resolver un ticket mientras un activo que envió a soporte siga en SUPPORT. Si un activo acumula 3 o más incidentes en 90 días, se sugiere crear un problema.</li>
+  <li><strong>Cambios:</strong>
+    <ul>
+      <li>STANDARD usa una plantilla y queda programado de inmediato.</li>
+      <li>NORMAL requiere que aprueben todos los miembros del CAB; un solo rechazo lo rechaza.</li>
+      <li>EMERGENCY requiere una sola aprobación (ECAB).</li>
+      <li>Se avisa si otro cambio toca el mismo activo en una ventana solapada.</li>
+    </ul>
+  </li>
+  <li><strong>KB:</strong> borrador → revisión → publicado, con versiones. El portal solo ve lo PUBLIC y publicado, y mide la deflexión con «¿Te sirvió?».</li>
+  <li><strong>Permisos:</strong> nada de esto otorga permisos. El alta de agentes es rol → cargo → colaborador, a cargo del admin.</li>
+</ul>
+
+<h2>API y permisos</h2>
+<ul>
+  <li><code>/service-portal</code>: los tickets propios, el catálogo, mis activos y la búsqueda en KB.</li>
+  <li><code>/service-tickets</code>: la cola de trabajo, la asignación y el escalamiento, los estados, los comentarios y notas, los adjuntos, las aprobaciones, los activos y los relacionados.</li>
+  <li><code>/service-problems</code>, <code>/service-changes</code>, <code>/kb-articles</code>, <code>/service-desk-settings/*</code> y <code>/service-desk-reports/summary</code>.</li>
+  <li><code>GET /assets/:id/service-history</code>.</li>
+</ul>
+<table>
+  <tr><th>Permiso</th><th>Para qué</th></tr>
+  <tr><td><code>service-tickets:create</code> (grantToUser)</td><td>Portal: crear y gestionar los propios</td></tr>
+  <tr><td><code>service-tickets:read</code> / <code>:update</code> / <code>:approve</code></td><td>Agente / aprobar solicitudes</td></tr>
+  <tr><td><code>service-problems:read/create/update</code></td><td>Problemas</td></tr>
+  <tr><td><code>service-changes:read/create/update/approve</code></td><td>Cambios / CAB</td></tr>
+  <tr><td><code>kb-articles:read</code> (grantToUser) <code>/create/update/approve</code></td><td>Conocimiento</td></tr>
+  <tr><td><code>service-desk-settings:read/update</code></td><td>Configuración</td></tr>
+  <tr><td><code>service-desk-reports:read</code></td><td>Indicadores</td></tr>
+</table>
+
+<h2>Front</h2>
+<table>
+  <tr><th>Pantalla</th><th>Ruta</th><th>Permiso de pantalla</th></tr>
+  <tr><td>Generar Ticket: portal con las pestañas Nuevo, Mis tickets y Ayuda</td><td><code>/generate-ticket</code></td><td><code>generate-ticket:access</code></td></tr>
+  <tr><td>Gestión de Tickets: pestañas Cola, Problemas, Cambios, Conocimiento e Indicadores, más el workspace de detalle con el panel «Relacionados»</td><td><code>/support-services</code></td><td><code>support-services:access</code></td></tr>
+  <tr><td>Configuración Service Desk</td><td><code>/support-services/settings</code></td><td><code>support-settings:access</code></td></tr>
+  <tr><td>Kardex del activo: nueva sección «Historial de servicio»</td><td><code>/assets/kardex</code></td><td>la existente</td></tr>
+</table>
+<p>Menú en <code>MENU_CATALOG</code>:</p>
+<ul>
+  <li>«Soporte» (bajo Serv. Productivos, <code>IoHammer</code>).</li>
+  <li>«Gestión de Tickets» (<code>IoFootstepsOutline</code>).</li>
+  <li>«Generar Ticket» (bajo Solicitudes, <code>IoTicketOutline</code>).</li>
+  <li>«Configuración Service Desk» (nuevo).</li>
+</ul>
+<p>También se agrega un <code>Modal</code> accesible a <code>components/ui</code>. No se suman librerías al front.</p>
+
+<h2>Fases</h2>
+<ol>
+  <li><strong>9A:</strong>
+    <ul>
+      <li>Fundaciones, incidentes y solicitudes.</li>
+      <li>SLA con su sweeper.</li>
+      <li>Portal, cola y workspace.</li>
+      <li>Notificaciones y correo.</li>
+      <li>Configuración.</li>
+      <li>Seeds: calendario, feriados, matriz, SLA, grupos, categorías y catálogo base.</li>
+    </ul>
+  </li>
+  <li><strong>9B:</strong> activos (vínculo, enviar/devolver, historial y recurrencia).</li>
+  <li><strong>9C:</strong> problemas.</li>
+  <li><strong>9D:</strong> cambios (CAB/ECAB, calendario, conflictos, PIR).</li>
+  <li><strong>9E:</strong> conocimiento, indicadores y CSAT.</li>
+</ol>
+
+<h2>Ajustes hechos al implementar</h2>
+<ul>
+  <li><strong>Sin luxon:</strong> el tiempo hábil usa <code>Intl</code> de Node (ICU completo), y el cambio de horario de Chile está cubierto por tests unitarios. Así no hay dependencia nueva ni hace falta <code>down -v</code> en dev.</li>
+  <li><strong>Sin <code>grantToUser</code>:</strong> ningún permiso del Service Desk se otorga por defecto, ni siquiera abrir tickets. El admin decide qué roles usan el portal (regla rol → cargo → colaborador).</li>
+  <li><strong>Historial de servicio del activo:</strong> exige <code>service-tickets:read</code>, no <code>assets:read</code>. Ese permiso lo tiene cualquier usuario y el historial muestra asuntos de tickets ajenos (hallazgo de la revisión propia).</li>
+  <li><strong>Plantillas de cambio en Configuración:</strong> se listan por <code>/service-desk-settings/change-templates</code>, para que esa pantalla no dependa de <code>service-changes:read</code>.</li>
+  <li><strong>Cierre automático:</strong> 3 jornadas de 9 h hábiles (1.620 minutos) desde la resolución.</li>
+  <li><strong>Problemas:</strong> se agregó el estado <code>CANCELLED</code>. «Resolver incidentes vinculados» omite los que no tienen agente y los informa.</li>
+</ul>
+
+<h2>Límites conocidos</h2>
+<ul>
+  <li>Sin tickets creados por correo entrante y sin chat.</li>
+  <li>Sin CMDB de relaciones entre CIs: el CI es el activo.</li>
+  <li>Sin OLA ni contratos de proveedor.</li>
+  <li>Sin portal para usuarios externos.</li>
+</ul>
+
+<h2>Verificación</h2>
+<ul>
+  <li><strong>Unit:</strong> tiempo hábil (incluido el cambio de horario de Chile), matriz de prioridad, máquinas de estado y campos dinámicos.</li>
+  <li><strong>Integración:</strong>
+    <ul>
+      <li>Flujo INC completo con pausa y reapertura.</li>
+      <li>Solicitud con aprobación.</li>
+      <li>IDOR del portal.</li>
+      <li>Asignar a alguien que no es miembro del grupo.</li>
+      <li>Sweeper concurrente.</li>
+      <li>Enviar y devolver un activo, incluso en concurrencia.</li>
+      <li>Resolución en bloque de un problema.</li>
+      <li>Rechazo en el CAB.</li>
+      <li>KB interno invisible desde el portal.</li>
+    </ul>
+  </li>
+  <li><strong>Compilación:</strong> <code>tsc -p tsconfig.app.json --noEmit</code> en el front; <code>tsc</code> + vitest en la API.</li>
+  <li><strong>Navegador en dev:</strong> el solicitante y el agente en sesiones separadas, con campana y correo.</li>
+  <li><strong>Seguridad:</strong> revisión ping-pong antes de promover a <code>master</code>.</li>
+</ul>
+
+<footer class="doc-footer">Plan 009 · corporate-app · guardado en .claude/planes/</footer>
+</div>
+</body>
+</html>

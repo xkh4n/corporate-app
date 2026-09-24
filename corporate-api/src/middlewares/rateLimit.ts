@@ -123,6 +123,41 @@ export const importReadRateLimiter = createLazyUserLimiter({
   message: "Demasiadas consultas de cargas, intenta mas tarde",
 });
 
+// Service Desk (auditoria de seguridad run-3, F8 y F10).
+// Busqueda de usuarios (nombre/RUT) y de activos con su tenedor: sin freno se podian recorrer para enumerar
+// personas y quien tiene que equipo, igual que en la toma de inventario.
+export const serviceDeskLookupRateLimiter = createLazyUserLimiter({
+  prefix: "rl:sdlookup:",
+  windowMs: 60 * 1000,
+  limit: 60,
+  message: "Demasiadas busquedas de usuarios o activos, intenta mas tarde",
+});
+
+// Busqueda de conocimiento (portal y agentes): el front espera a que se deje de escribir.
+export const kbSearchRateLimiter = createLazyUserLimiter({
+  prefix: "rl:kbsearch:",
+  windowMs: 60 * 1000,
+  limit: 120,
+  message: "Demasiadas busquedas en la base de conocimiento, intenta mas tarde",
+});
+
+// Alta de tickets: cada una avisa por correo al solicitante y al grupo; sin freno el mailer corporativo
+// servia para inundar buzones con texto libre.
+export const ticketCreateRateLimiter = createLazyUserLimiter({
+  prefix: "rl:sdticket:",
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  message: "Demasiados tickets en poco tiempo, intenta mas tarde",
+});
+
+// Comentarios: el publico de un agente sale por correo al solicitante y el del solicitante avisa al grupo.
+export const ticketCommentRateLimiter = createLazyUserLimiter({
+  prefix: "rl:sdcomment:",
+  windowMs: 15 * 60 * 1000,
+  limit: 90,
+  message: "Demasiados comentarios en poco tiempo, intenta mas tarde",
+});
+
 export function loginRateLimiter(req: Request, res: Response, next: NextFunction): void {
   getLimiter()(req, res, next);
 }

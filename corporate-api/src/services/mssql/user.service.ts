@@ -52,6 +52,35 @@ export async function getUserByPersonId(personId: number): Promise<UserModel | n
   return UserModel.findOne({ where: { personId }, include: [{ model: PersonModel, as: "person" }] });
 }
 
+export interface UserDirectoryEntry {
+  userId: number;
+  fullName: string;
+  email: string | null;
+  isActive: boolean;
+}
+
+// Nombre y correo de varios usuarios de una vez (Service Desk, plan 009):
+// las pantallas muestran nombres y los avisos van por correo. Solo lo
+// necesario para eso, sin el resto de los datos personales.
+export async function getUserDirectory(userIds: number[]): Promise<Map<number, UserDirectoryEntry>> {
+  const unique = [...new Set(userIds.filter((id) => Number.isInteger(id)))];
+  const result = new Map<number, UserDirectoryEntry>();
+  if (unique.length === 0) return result;
+  const users = await UserModel.findAll({
+    where: { id: { [Op.in]: unique } },
+    include: [{ model: PersonModel, as: "person" }],
+  });
+  for (const user of users) {
+    result.set(user.id, {
+      userId: user.id,
+      fullName: user.person ? `${user.person.firstName} ${user.person.lastName}`.trim() : user.username,
+      email: user.person?.email ?? null,
+      isActive: user.isActive,
+    });
+  }
+  return result;
+}
+
 const SEARCH_FIELDS = ["username"];
 
 export async function listUsers(params: PaginationParams): Promise<{ items: SafeUser[]; total: number }> {

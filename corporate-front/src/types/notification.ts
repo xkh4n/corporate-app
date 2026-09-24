@@ -3,6 +3,10 @@ export interface PendingSummary {
   pendingRequestApprovals: number;
   pendingQuoteApprovals: number;
   pendingPurchaseOrders: number;
+  // Service Desk (plan 009)
+  assignedOpenTickets: number;
+  pendingTicketApprovals: number;
+  pendingChangeApprovals: number;
   total: number;
 }
 
@@ -12,7 +16,15 @@ export interface PendingSummary {
 export type NotificationReason =
   | "purchase-request-pending-approval"
   | "quote-pending-approval"
-  | "purchase-order-pending";
+  | "purchase-order-pending"
+  | "ticket-assigned"
+  | "ticket-updated"
+  | "ticket-approval-pending"
+  | "sla-warning"
+  | "sla-breached"
+  | "problem-assigned"
+  | "change-approval-pending"
+  | "kb-review-pending";
 
 export interface NotificationPushPayload {
   reason: NotificationReason;

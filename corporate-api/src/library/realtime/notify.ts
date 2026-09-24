@@ -4,7 +4,16 @@ import { getIo } from "./socketServer";
 export type NotificationReason =
   | "purchase-request-pending-approval"
   | "quote-pending-approval"
-  | "purchase-order-pending";
+  | "purchase-order-pending"
+  // Service Desk (plan 009). requestId/requestNumber llevan el id y el folio del registro.
+  | "ticket-assigned"
+  | "ticket-updated"
+  | "ticket-approval-pending"
+  | "sla-warning"
+  | "sla-breached"
+  | "problem-assigned"
+  | "change-approval-pending"
+  | "kb-review-pending";
 
 export interface NotificationPayload {
   reason: NotificationReason;
@@ -66,4 +75,17 @@ export function notifyPendingPurchaseOrder(requesterUserId: number, request: Not
     requestNumber: request.requestNumber,
     at: new Date().toISOString(),
   });
+}
+
+// Service Desk (plan 009): mismo push de "invalidar y refrescar" para cada
+// usuario involucrado (sin repetir), con el folio del ticket/problema/cambio.
+export function notifyServiceDesk(
+  userIds: (number | null | undefined)[],
+  reason: NotificationReason,
+  record: { id: number; number: string },
+): void {
+  const at = new Date().toISOString();
+  for (const userId of new Set(userIds.filter((id): id is number => typeof id === "number"))) {
+    notifyUser(userId, { reason, requestId: record.id, requestNumber: record.number, at });
+  }
 }
