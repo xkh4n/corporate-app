@@ -18,6 +18,22 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-24 (8) — Promoción del Service Desk a master (PR #28, #29)
+
+### Hecho
+- Commits en `develop`: `470d4e5` (API), `66bac8d` (front) y `eb11f63` (docs). Gate de seguridad marcado sobre
+  `eb11f63` (run-3, GO de ambos agentes).
+- PR #28 `develop → testing`, con CI verde.
+- PR #29 `release/master → master`: `promote-to-master` excluyó los 4 archivos de prueba del Service Desk y el
+  chequeo de rutas prohibidas pasó. `master` quedó en `faa86a8`.
+
+### Pendiente
+- Redesplegar Testing y producción: la migración crea las tablas del Service Desk, el permiso `all_view` y el log de
+  auditoría.
+- En cada ambiente, el admin asigna los permisos `service-*` y `kb-articles:*` a los roles, `service-tickets:all_view`
+  al Jefe de Soporte TI, y carga los miembros de los grupos.
+- Probar en navegador.
+
 ## 2026-09-24 (7) — Auditoría de seguridad run-3 del Service Desk y visibilidad por grupo
 
 ### Hecho
