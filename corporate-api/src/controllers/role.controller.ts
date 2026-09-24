@@ -6,6 +6,7 @@ import { listUserIdsByRoleId } from "../services/mssql/user.service";
 import { invalidateUserSessions, revokeAllRefreshTokens } from "../services/redis/session.service";
 import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
 import { sendList, sendOk, sendNoContent } from "../library/response";
+import { permissionActor } from "../library/permissionActor";
 
 export const createRoleSchema = z.object({
   name: z.string().min(2).max(50),
@@ -116,7 +117,13 @@ export async function getPermissions(req: Request, res: Response, next: NextFunc
 export async function setPermissions(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { permissionIds } = req.body as z.infer<typeof setRolePermissionsSchema>;
-    const permissions = await permissionService.setRolePermissions(Number(req.params.id), permissionIds);
+    const roleId = Number(req.params.id);
+    const actor = permissionActor(req);
+    await permissionService.assertActorCanManageRole(actor, roleId);
+    // Solo se validan los que se AGREGAN: los que el rol ya tenia no amplian nada.
+    const current = new Set((await permissionService.getAssignedPermissionsForRole(roleId)).map((p) => p.id));
+    await permissionService.assertActorCanGrant(actor, permissionIds.filter((id) => !current.has(id)));
+    const permissions = await permissionService.setRolePermissions(roleId, permissionIds);
     sendOk(res, permissions, "Permisos del rol actualizados exitosamente");
   } catch (err) {
     next(err);
@@ -128,6 +135,9 @@ export async function setPermissions(req: Request, res: Response, next: NextFunc
 export async function addPermission(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { permissionId } = req.body as z.infer<typeof addRolePermissionSchema>;
+    const actor = permissionActor(req);
+    await permissionService.assertActorCanManageRole(actor, Number(req.params.id));
+    await permissionService.assertActorCanGrant(actor, [permissionId]);
     const permissions = await permissionService.addRolePermission(Number(req.params.id), permissionId);
     sendOk(res, permissions, "Permiso agregado al rol exitosamente", 201);
   } catch (err) {
@@ -138,6 +148,7 @@ export async function addPermission(req: Request, res: Response, next: NextFunct
 // Quita un solo permiso sin perder los demas.
 export async function removePermission(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
+    await permissionService.assertActorCanManageRole(permissionActor(req), Number(req.params.id));
     await permissionService.removeRolePermission(Number(req.params.id), Number(req.params.permissionId));
     sendNoContent(res);
   } catch (err) {

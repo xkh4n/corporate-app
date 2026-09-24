@@ -11,7 +11,7 @@ import { sendList, sendNoContent, sendOk } from "../library/response";
 const MAX_AMOUNT = 999_999_999_999;
 const PERIOD = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Formato esperado: AAAA-MM");
 const METHOD = z.enum(["LINEAR", "ACCELERATED"]);
-const STAGES = ["CLASSIFIED", "COSTED", "CAPITALIZED", "DEPRECIATING", "FULLY_DEPRECIATED"] as const;
+const STAGES = ["CLASSIFIED", "COSTED", "CAPITALIZED", "DEPRECIATING", "FULLY_DEPRECIATED", "WRITTEN_OFF"] as const;
 const CLASSIFICATIONS = ["FIXED_ASSET", "EXPENSE", "INVENTORY"] as const;
 
 export const classifySchema = z.object({
