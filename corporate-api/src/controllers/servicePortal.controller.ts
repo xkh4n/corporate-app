@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
-import { BadRequestError } from "../library/errors";
+import { BadRequestError, NotFoundError } from "../library/errors";
 import { buildPaginationMeta, parsePaginationParams } from "../library/pagination";
 import { sendList, sendOk } from "../library/response";
 import { TICKET_TYPES } from "../library/serviceDesk/ticketRules";
@@ -8,7 +8,8 @@ import * as ticketService from "../services/postgres/serviceDesk/ticket.service"
 import * as ticketAssetService from "../services/postgres/serviceDesk/ticketAsset.service";
 import * as kbService from "../services/postgres/serviceDesk/kb.service";
 import { listCatalogItems, listCategories } from "../services/postgres/serviceDesk/settings.service";
-import { ID, LEVEL, parseId, queryString, requireUserId, sendStoredFile, TEXT } from "./serviceDesk.shared";
+import { findBeneficiaryByDocumentId } from "../services/mssql/person.service";
+import { actorOf as fullActorOf, ID, LEVEL, parseId, queryString, requireUserId, sendStoredFile, TEXT } from "./serviceDesk.shared";
 
 // Portal del solicitante (pantalla "Generar Ticket", plan 009). Todo se
 // acota a los tickets del usuario autenticado: uno ajeno responde 404.
@@ -25,8 +26,33 @@ export const createPortalTicketSchema = z
     impact: LEVEL,
     urgency: LEVEL,
     assetIds: z.array(ID).max(ticketAssetService.MAX_ASSETS_PER_TICKET).optional(),
+    // Solicitud de equipo (plan 010): la compra que se genera junto con el ticket.
+    // El solicitante no viaja: es siempre el usuario de la sesion.
+    purchaseRequest: z
+      .object({
+        beneficiaryPersonId: ID.nullable().optional(),
+        costCenterId: ID,
+        approverId: ID,
+        requesterEmail: z.string().trim().email().max(150).optional(),
+        requesterPhone: z.string().trim().max(30).optional(),
+        lines: z
+          .array(
+            z
+              .object({
+                productId: z.string().regex(/^[a-f0-9]{24}$/i, "Producto invalido"),
+                quantity: z.number().int().min(1).max(1000),
+              })
+              .strict(),
+          )
+          .min(1, "Agregue al menos un producto")
+          .max(50),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
+
+export const beneficiarySchema = z.object({ documentId: z.string().trim().min(3).max(20) }).strict();
 
 export const portalCommentSchema = z.object({ body: TEXT(8000) }).strict();
 export const cancelSchema = z.object({ comment: z.string().trim().max(500).optional() }).strict();
@@ -90,13 +116,26 @@ export async function list(req: Request, res: Response, next: NextFunction): Pro
 export async function create(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof createPortalTicketSchema>;
-    const created = await ticketService.createTicket(body, actorOf(req), "PORTAL");
+    // Con el rol: la solicitud de equipo vuelve a verificar los permisos de compra.
+    const created = await ticketService.createTicket(body, fullActorOf(req), "PORTAL");
     sendOk(
       res,
       await ticketService.getTicketDetail(created.id, { audience: "requester", requesterUserId: requireUserId(req) }),
       "Ticket registrado",
       201,
     );
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Confirma el beneficiario de una solicitud de equipo por su RUT: solo id y nombre.
+export async function beneficiary(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { documentId } = req.body as z.infer<typeof beneficiarySchema>;
+    const found = await findBeneficiaryByDocumentId(documentId);
+    if (!found) throw new NotFoundError("No hay una persona activa con ese RUT");
+    sendOk(res, found, "Beneficiario encontrado");
   } catch (err) {
     next(err);
   }

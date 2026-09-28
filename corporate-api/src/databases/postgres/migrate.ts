@@ -11,6 +11,7 @@ import {
   DEFAULT_GROUPS,
   DEFAULT_HOLIDAYS,
   DEFAULT_SLA_POLICIES,
+  EQUIPMENT_REQUEST_ITEM_NAME,
 } from "../serviceDesk-defaults";
 
 // Tiempos maximos de espera por un lock, en ms. Los ALTER TABLE piden un lock fuerte aunque el cambio sea un
@@ -830,7 +831,7 @@ async function migrateServiceDesk(): Promise<void> {
     );
   `);
 
-  // Folio legible por prefijo y anio (INC-2026-000001). Mismo incremento
+  // Correlativo del folio por prefijo y anio (ver numbering.ts). Mismo incremento
   // atomico que inventory_count_counters: upsert con RETURNING.
   await runDdl(`
     CREATE TABLE IF NOT EXISTS service_desk_counters (
@@ -900,6 +901,7 @@ async function migrateServiceDesk(): Promise<void> {
       FROM service_catalog_items ci
      WHERE ci.id = t.catalog_item_id AND t.status = 'PENDING_APPROVAL' AND t.approval_group_id IS NULL;
   `);
+  await migrateEquipmentRequests();
   await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_tickets_status ON service_tickets(status);`);
   await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_tickets_group ON service_tickets(assigned_group_id, status);`);
   await runDdl(`CREATE INDEX IF NOT EXISTS ix_service_tickets_assignee ON service_tickets(assignee_user_id, status);`);
@@ -1309,14 +1311,81 @@ async function seedServiceDeskDefaults(): Promise<void> {
   if (await isEmpty("service_catalog_items")) {
     for (const item of DEFAULT_CATALOG_ITEMS) {
       await postgres.query(
-        `INSERT INTO service_catalog_items (name, description, category_id, default_group_id, fields)
-         SELECT :name, :description, c.id, c.default_group_id, CAST(:fields AS JSONB)
+        `INSERT INTO service_catalog_items (name, description, category_id, default_group_id, fields, fulfillment)
+         SELECT :name, :description, c.id, c.default_group_id, CAST(:fields AS JSONB), :fulfillment
            FROM service_categories c WHERE c.parent_id IS NULL AND c.name = :category
          ON CONFLICT DO NOTHING`,
-        { replacements: { ...item, fields: JSON.stringify(item.fields) } },
+        { replacements: { ...item, fields: JSON.stringify(item.fields), fulfillment: item.fulfillment ?? null } },
       );
     }
   }
+
+  await migrateSupportGroupCodes();
+}
+
+// Codigo de 2 digitos de cada grupo (01, 02...) que va en el folio de los
+// tickets, problemas y cambios que el grupo recibe al crearse (numbering.ts).
+// 00 queda reservado para "sin grupo". Los grupos sin codigo (los de antes de
+// esta columna y los sembrados arriba, en orden de id: Mesa de Ayuda N1 = 01,
+// Soporte N2 = 02, Infraestructura = 03) toman el siguiente libre. Los codigos
+// no se reutilizan: los grupos se desactivan, no se borran.
+async function migrateSupportGroupCodes(): Promise<void> {
+  await runDdl(`ALTER TABLE support_groups ADD COLUMN IF NOT EXISTS code CHAR(2)
+    CONSTRAINT ck_support_groups_code CHECK (code ~ '^[0-9]{2}$' AND code <> '00');`);
+  await postgres.query(`
+    UPDATE support_groups g
+       SET code = lpad((base.max_code + pending.rn)::text, 2, '0')
+      FROM (SELECT id, row_number() OVER (ORDER BY id) AS rn FROM support_groups WHERE code IS NULL) pending,
+           (SELECT COALESCE(MAX(code::int), 0) AS max_code FROM support_groups) base
+     WHERE g.id = pending.id`);
+  await runDdl(`CREATE UNIQUE INDEX IF NOT EXISTS ux_support_groups_code ON support_groups(code);`);
+  await assertIndexExists("ux_support_groups_code");
+}
+
+// Solicitud de equipo desde el portal (plan 010): un item del catalogo con
+// fulfillment = 'PURCHASE_REQUEST' crea, junto con el ticket, la solicitud de
+// compra en MSSQL. purchase_request_id es cross-engine (sin FK, igual que
+// requester_user_id); purchase_request_number (SOL...) se muestra aunque MSSQL
+// no responda, y purchase_request_status es el ultimo estado de la compra ya
+// aplicado al ticket (la sincronizacion compara contra el).
+async function migrateEquipmentRequests(): Promise<void> {
+  // Una sola vez, en la misma transaccion que crea la columna: el item sembrado
+  // "Solicitud de equipo" pasa a generar la compra (sin grupo aprobador, la
+  // aprueba el aprobador de la compra; sin el campo "equipo", lo reemplazan las
+  // lineas de producto) y todo rol con la pantalla retirada "Nueva Solicitud"
+  // recibe "Generar Ticket". Despues el admin puede cambiar el item y no se pisa.
+  const fulfillmentDdl = `ALTER TABLE service_catalog_items ADD COLUMN IF NOT EXISTS fulfillment VARCHAR(30)
+    CONSTRAINT ck_service_catalog_items_fulfillment CHECK (fulfillment IN ('PURCHASE_REQUEST'))`;
+  if (!(await alreadyApplied(fulfillmentDdl))) {
+    await postgres.transaction(async (transaction) => {
+      await postgres.query(`SET LOCAL lock_timeout = ${DDL_LOCK_TIMEOUT_MS}`, { transaction });
+      await postgres.query(fulfillmentDdl, { transaction });
+      await postgres.query(
+        `UPDATE service_catalog_items
+            SET fulfillment = 'PURCHASE_REQUEST', approval_group_id = NULL, updated_at = now(),
+                fields = COALESCE((SELECT jsonb_agg(f) FROM jsonb_array_elements(fields) f WHERE f->>'key' <> 'equipo'), '[]'::jsonb)
+          WHERE name = :name`,
+        { replacements: { name: EQUIPMENT_REQUEST_ITEM_NAME }, transaction },
+      );
+      await postgres.query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT rp.role_id, g.id
+           FROM role_permissions rp
+           JOIN permissions p ON p.id = rp.permission_id AND p.resource = 'purchase-request-creation' AND p.action = 'access'
+           JOIN permissions g ON g.resource = 'generate-ticket' AND g.action = 'access'
+         ON CONFLICT DO NOTHING`,
+        { transaction },
+      );
+    });
+  }
+  await runDdl(`ALTER TABLE service_tickets ADD COLUMN IF NOT EXISTS purchase_request_id INTEGER;`);
+  await runDdl(`ALTER TABLE service_tickets ADD COLUMN IF NOT EXISTS purchase_request_number VARCHAR(20);`);
+  await runDdl(`ALTER TABLE service_tickets ADD COLUMN IF NOT EXISTS purchase_request_status VARCHAR(20);`);
+  await runDdl(`
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_service_tickets_purchase_request ON service_tickets(purchase_request_id)
+      WHERE purchase_request_id IS NOT NULL;
+  `);
+  await assertIndexExists("ux_service_tickets_purchase_request");
 }
 
 // Toma de inventario fisica (levantamiento por un auditor). Ver

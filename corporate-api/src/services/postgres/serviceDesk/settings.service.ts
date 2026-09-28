@@ -5,6 +5,7 @@ import { assertValidTimezone, parseHHMM, type BusinessCalendar } from "../../../
 import {
   matrixKey,
   type CatalogField,
+  type CatalogFulfillment,
   type Priority,
   type PriorityMatrix,
   type TicketType,
@@ -26,6 +27,8 @@ export interface GroupMember {
 
 export interface SupportGroup {
   id: number;
+  // 2 digitos que identifican al grupo en los folios (numbering.ts); se asigna solo y no cambia.
+  code: string;
   name: string;
   description: string | null;
   email: string | null;
@@ -35,7 +38,7 @@ export interface SupportGroup {
 
 export async function listGroups(options: { activeOnly?: boolean } = {}): Promise<SupportGroup[]> {
   const groups = await postgres.query<Omit<SupportGroup, "members">>(
-    `SELECT id, name, description, email, is_active AS "isActive" FROM support_groups
+    `SELECT id, code, name, description, email, is_active AS "isActive" FROM support_groups
       ${options.activeOnly ? "WHERE is_active" : ""} ORDER BY name`,
     { type: QueryTypes.SELECT },
   );
@@ -78,22 +81,39 @@ function rethrowDuplicate(err: unknown, message: string): never {
   throw err;
 }
 
+// El codigo es el siguiente libre (01..99). Serializado con un lock de la
+// transaccion: dos altas simultaneas no pueden tomar el mismo.
+export const MAX_GROUP_CODE = 99;
+
 export async function createGroup(input: GroupInput): Promise<SupportGroup> {
   try {
-    const [row] = await postgres.query<{ id: number }>(
-      `INSERT INTO support_groups (name, description, email, is_active)
-       VALUES (:name, :description, :email, :isActive) RETURNING id`,
-      {
-        replacements: {
-          name: input.name,
-          description: input.description ?? null,
-          email: input.email ?? null,
-          isActive: input.isActive ?? true,
+    const id = await postgres.transaction(async (transaction) => {
+      await postgres.query(`SELECT pg_advisory_xact_lock(hashtext('support_groups.code'))`, { type: QueryTypes.SELECT, transaction });
+      const [next] = await postgres.query<{ code: number }>(
+        `SELECT COALESCE(MAX(code::int), 0) + 1 AS code FROM support_groups`,
+        { type: QueryTypes.SELECT, transaction },
+      );
+      if (next!.code > MAX_GROUP_CODE) {
+        throw new ConflictError(`Se alcanzó el máximo de ${MAX_GROUP_CODE} grupos: desactive y reutilice uno existente`);
+      }
+      const [row] = await postgres.query<{ id: number }>(
+        `INSERT INTO support_groups (code, name, description, email, is_active)
+         VALUES (:code, :name, :description, :email, :isActive) RETURNING id`,
+        {
+          replacements: {
+            code: String(next!.code).padStart(2, "0"),
+            name: input.name,
+            description: input.description ?? null,
+            email: input.email ?? null,
+            isActive: input.isActive ?? true,
+          },
+          type: QueryTypes.SELECT,
+          transaction,
         },
-        type: QueryTypes.SELECT,
-      },
-    );
-    return getGroupOrThrow(row!.id);
+      );
+      return row!.id;
+    });
+    return getGroupOrThrow(id);
   } catch (err) {
     rethrowDuplicate(err, `Ya existe un grupo llamado ${input.name}`);
   }
@@ -342,12 +362,14 @@ export interface CatalogItem {
   categoryId: number | null;
   defaultGroupId: number | null;
   approvalGroupId: number | null;
+  // Documento que el pedido genera en otro modulo (plan 010): hoy solo la solicitud de compra.
+  fulfillment: CatalogFulfillment | null;
   fields: CatalogField[];
   isActive: boolean;
 }
 
 const CATALOG_COLUMNS = `id, name, description, category_id AS "categoryId", default_group_id AS "defaultGroupId",
-  approval_group_id AS "approvalGroupId", fields, is_active AS "isActive"`;
+  approval_group_id AS "approvalGroupId", fulfillment, fields, is_active AS "isActive"`;
 
 export async function listCatalogItems(options: { activeOnly?: boolean } = {}): Promise<CatalogItem[]> {
   return postgres.query<CatalogItem>(
@@ -371,17 +393,23 @@ export interface CatalogItemInput {
   categoryId?: number | null;
   defaultGroupId?: number | null;
   approvalGroupId?: number | null;
+  fulfillment?: CatalogFulfillment | null;
   fields: CatalogField[];
   isActive?: boolean;
 }
 
 function catalogReplacements(input: CatalogItemInput) {
+  // Una solicitud de equipo la aprueba el aprobador de la compra: dos aprobaciones seguidas no (plan 010).
+  if (input.fulfillment && input.approvalGroupId) {
+    throw new BadRequestError("Un servicio que genera una solicitud de compra no lleva grupo aprobador: la aprueba el aprobador de la compra");
+  }
   return {
     name: input.name,
     description: input.description ?? null,
     categoryId: input.categoryId ?? null,
     defaultGroupId: input.defaultGroupId ?? null,
     approvalGroupId: input.approvalGroupId ?? null,
+    fulfillment: input.fulfillment ?? null,
     fields: JSON.stringify(input.fields),
     isActive: input.isActive ?? true,
   };
@@ -390,8 +418,8 @@ function catalogReplacements(input: CatalogItemInput) {
 export async function createCatalogItem(input: CatalogItemInput): Promise<CatalogItem> {
   try {
     const [row] = await postgres.query<CatalogItem>(
-      `INSERT INTO service_catalog_items (name, description, category_id, default_group_id, approval_group_id, fields, is_active)
-       VALUES (:name, :description, :categoryId, :defaultGroupId, :approvalGroupId, CAST(:fields AS JSONB), :isActive)
+      `INSERT INTO service_catalog_items (name, description, category_id, default_group_id, approval_group_id, fulfillment, fields, is_active)
+       VALUES (:name, :description, :categoryId, :defaultGroupId, :approvalGroupId, :fulfillment, CAST(:fields AS JSONB), :isActive)
        RETURNING ${CATALOG_COLUMNS}`,
       { replacements: catalogReplacements(input), type: QueryTypes.SELECT },
     );
@@ -402,10 +430,16 @@ export async function createCatalogItem(input: CatalogItemInput): Promise<Catalo
 }
 
 export async function updateCatalogItem(id: number, input: CatalogItemInput): Promise<CatalogItem> {
+  // Sin fulfillment en el cuerpo se conserva el que tiene: editar el nombre no le quita la compra al item.
+  if (input.fulfillment === undefined) {
+    const current = await getCatalogItem(id);
+    if (!current) throw new NotFoundError(`El item de catalogo ${id} no existe`);
+    input = { ...input, fulfillment: current.fulfillment };
+  }
   try {
     const [row] = await postgres.query<CatalogItem>(
       `UPDATE service_catalog_items SET name = :name, description = :description, category_id = :categoryId,
-              default_group_id = :defaultGroupId, approval_group_id = :approvalGroupId,
+              default_group_id = :defaultGroupId, approval_group_id = :approvalGroupId, fulfillment = :fulfillment,
               fields = CAST(:fields AS JSONB), is_active = :isActive, updated_at = now()
         WHERE id = :id RETURNING ${CATALOG_COLUMNS}`,
       { replacements: { id, ...catalogReplacements(input) }, type: QueryTypes.SELECT },

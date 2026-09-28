@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PURCHASE_REQUEST_STATUSES } from "../purchaseRequestStatus";
 import {
   buildVariablesSchema,
   canAgentTransition,
@@ -6,6 +7,8 @@ import {
   catalogFieldsSchema,
   DEFAULT_PRIORITY_MATRIX,
   matrixKey,
+  PURCHASE_STATUS_LABELS,
+  purchaseSyncEffect,
   resolvePriority,
   type PriorityMatrix,
 } from "./ticketRules";
@@ -74,5 +77,22 @@ describe("campos dinamicos del catalogo", () => {
         { key: "a", label: "B", type: "text" },
       ]).success,
     ).toBe(false);
+  });
+});
+
+describe("solicitud de equipo: efecto de la compra en el ticket", () => {
+  it("OC en espera, recepcion completa resuelve, rechazo o anulacion anulan", () => {
+    expect(purchaseSyncEffect("OC_GENERATED")).toBe("HOLD");
+    expect(purchaseSyncEffect("DELIVERED")).toBe("RESOLVE");
+    expect(purchaseSyncEffect("CLOSED")).toBe("CLOSE");
+    expect(purchaseSyncEffect("REJECTED")).toBe("CANCEL");
+    expect(purchaseSyncEffect("CANCELLED")).toBe("CANCEL");
+    for (const status of ["APPROVED", "IN_QUOTATION", "APPROVE_QUOTE", "QUOTE_APPROVED", "PENDING_DELIVERY", "AVAILABLE"]) {
+      expect(purchaseSyncEffect(status)).toBe("EVENT");
+    }
+  });
+
+  it("todo estado de la compra tiene texto para el solicitante", () => {
+    for (const status of PURCHASE_REQUEST_STATUSES) expect(PURCHASE_STATUS_LABELS[status]).toBeTruthy();
   });
 });

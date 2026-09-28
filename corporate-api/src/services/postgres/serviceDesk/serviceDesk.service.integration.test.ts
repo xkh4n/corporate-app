@@ -195,7 +195,12 @@ describe("incidentes: alta, visibilidad y asignacion", () => {
   it("registra con folio, prioridad de la matriz, grupo de la categoria y SLA", async () => {
     const requester = await user();
     const ticket = await incident(requester.id);
-    expect(ticket.number).toMatch(/^INC-\d{4}-000001$/);
+    // Sin guiones y con el codigo del grupo que lo recibe (Soporte N2).
+    expect(ticket.number).toMatch(/^INC\d{4}\d{2}000001$/);
+    const [group] = await postgres.query<{ code: string }>(`SELECT code FROM support_groups WHERE name = 'Soporte N2'`, {
+      type: QueryTypes.SELECT,
+    });
+    expect(ticket.number.slice(7, 9)).toBe(group!.code);
     expect(ticket.status).toBe("NEW");
     // Impacto 3 (solo yo) x urgencia 2 = P4 en la matriz por defecto.
     expect(ticket.priority).toBe("P4");

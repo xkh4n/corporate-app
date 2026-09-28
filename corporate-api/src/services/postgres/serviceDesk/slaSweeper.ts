@@ -3,6 +3,7 @@ import { postgres } from "../../../databases/postgres/connection";
 import { redis } from "../../../databases/redis/connection";
 import { logger } from "../../../library/logger";
 import { emailUsersAbout, fireAndForget, notifyGroup, pushTo } from "./notifications";
+import { reconcilePurchaseLinkedTickets } from "./purchaseLink.service";
 import { autoCloseTicket } from "./ticket.service";
 
 // Barrido del SLA del Service Desk (plan 009). Cada minuto: marca el aviso al
@@ -99,6 +100,9 @@ export async function sweepServiceDeskSla(): Promise<void> {
       logger.error({ err, ticketId: id }, "Service Desk: no se pudo cerrar automaticamente el ticket");
     }
   }
+
+  // Solicitudes de equipo cuyo estado de compra no llego al ticket (plan 010).
+  await reconcilePurchaseLinkedTickets();
 }
 
 async function tick(): Promise<void> {

@@ -404,7 +404,7 @@ export async function createChange(input: ChangeInput, userId: number): Promise<
       throw new BadRequestError("Solo un cambio estandar usa plantilla");
     }
     const { plannedStart, plannedEnd } = await validateInput(data, transaction);
-    const number = await nextServiceDeskNumber("CHG", transaction);
+    const number = await nextServiceDeskNumber("CHG", transaction, data.assignedGroupId ?? null);
     const [row] = await postgres.query<{ id: number }>(
       `INSERT INTO service_changes (number, type, status, title, description, justification, category_id, risk, impact,
                                     implementation_plan, backout_plan, test_plan, planned_start, planned_end, requested_by,
