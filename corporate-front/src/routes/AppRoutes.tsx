@@ -9,7 +9,6 @@ import { DashboardPage } from "../pages/dashboard/DashboardPage";
 import { ModulePlaceholder } from "../pages/module-placeholder/ModulePlaceholder";
 import { ForbiddenPage } from "../pages/forbidden/ForbiddenPage";
 import CreateBusinessPartnerPage from "../pages/adquisiciones/proveedores/createBusinessPartner";
-import CreateRequest from "../pages/solicitudes/CreateRequest";
 import AproveRequest from "../pages/solicitudes/AproveRequest";
 import RequestQuotation from "../pages/solicitudes/RequestQuotation";
 import UploadQuotes from "../pages/solicitudes/UploadQuotes";
@@ -70,7 +69,6 @@ import { flattenMenuLinks } from "../lib/menu";
 const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/suppliers/create": () => <CreateBusinessPartnerPage />,
   "/employees/create": () => <CreatePersonPage />,
-  "/tickets/create": () => <CreateRequest />,
   "/products/create": () => <CreateProducts />,
   "/products/list": () => <ListProducts />,
   "/category/create": () => <CreateProductCategory />,
@@ -160,6 +158,10 @@ export function AppRoutes() {
           <Route element={<AppLayout />}>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/403" element={<ForbiddenPage />} />
+            {/* "Nueva Solicitud" se retiro (plan 010): la solicitud de compra nace en el portal junto con su
+                ticket. Los enlaces viejos llegan a Generar Ticket con la solicitud de equipo elegida; sin
+                acceso a esa pantalla, el catch-all de siempre (403). */}
+            <Route path="/tickets/create" element={<Navigate to="/generate-ticket?tab=new&service=equipment" replace />} />
 
             {moduleLinks.map((item) => {
               const Page = MODULE_PAGES[item.link];

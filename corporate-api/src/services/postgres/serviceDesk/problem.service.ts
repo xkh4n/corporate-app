@@ -205,7 +205,7 @@ export async function createProblem(
     await assertCategory(input.categoryId, transaction);
     await assertAssignment(input.assignedGroupId, input.assigneeUserId, transaction);
     const priority = resolvePriority(await loadPriorityMatrix(transaction), input.impact, input.urgency);
-    const number = await nextServiceDeskNumber("PRB", transaction);
+    const number = await nextServiceDeskNumber("PRB", transaction, input.assignedGroupId ?? null);
     const [row] = await postgres.query<{ id: number }>(
       `INSERT INTO service_problems (number, status, title, description, category_id, impact, urgency, priority,
                                      assigned_group_id, assignee_user_id, root_cause, workaround, created_by)

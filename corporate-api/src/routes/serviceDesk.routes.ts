@@ -44,6 +44,16 @@ servicePortalRouter.post(
   portal.create,
 );
 servicePortalRouter.get("/tickets/:id", authorize("service-tickets", "create"), portal.getById);
+// Solicitud de equipo (plan 010): confirma el beneficiario por RUT sin persons:read. Con freno, como las
+// demas busquedas de personas del Service Desk: se podria recorrer RUT -> nombre.
+servicePortalRouter.post(
+  "/beneficiary",
+  authorize("service-tickets", "create"),
+  authorize("purchase-requests", "create"),
+  serviceDeskLookupRateLimiter,
+  validateBody(portal.beneficiarySchema),
+  portal.beneficiary,
+);
 servicePortalRouter.post(
   "/tickets/:id/comments",
   authorize("service-tickets", "create"),

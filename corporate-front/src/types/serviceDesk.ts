@@ -109,7 +109,16 @@ export interface TicketDetail extends TicketSummary {
   attachments: TicketAttachment[];
   approvals: { approverUserId: number; approverName: string | null; decision: "APPROVED" | "REJECTED"; comment: string | null; decidedAt: string }[];
   assets: TicketAsset[];
+  // Solicitud de compra que genero el ticket (solicitud de equipo, plan 010).
+  purchaseRequest: LinkedPurchaseRequest | null;
   allowedTransitions: TicketStatus[];
+}
+
+export interface LinkedPurchaseRequest {
+  id: number;
+  number: string | null;
+  status: string | null;
+  statusLabel: string | null;
 }
 
 export interface TicketRelated {
@@ -139,6 +148,8 @@ export interface ServiceCategory {
   isActive: boolean;
 }
 
+export type CatalogFulfillment = "PURCHASE_REQUEST";
+
 export interface CatalogItem {
   id: number;
   name: string;
@@ -147,12 +158,16 @@ export interface CatalogItem {
   defaultGroupId?: number | null;
   approvalGroupId?: number | null;
   requiresApproval?: boolean;
+  // PURCHASE_REQUEST: el pedido genera la solicitud de compra junto con el ticket (plan 010).
+  fulfillment: CatalogFulfillment | null;
   fields: CatalogField[];
   isActive: boolean;
 }
 
 export interface SupportGroup {
   id: number;
+  // 2 digitos del grupo en los folios: REQ2026<code>000001. Lo asigna la API.
+  code: string;
   name: string;
   description: string | null;
   email: string | null;
@@ -189,6 +204,17 @@ export interface CreateTicketPayload {
   requesterUserId?: number;
   assignedGroupId?: number | null;
   isMajor?: boolean;
+  purchaseRequest?: EquipmentPurchasePayload;
+}
+
+// Datos de la compra de una solicitud de equipo. El solicitante es el usuario de la sesion.
+export interface EquipmentPurchasePayload {
+  beneficiaryPersonId?: number | null;
+  costCenterId: number;
+  approverId: number;
+  requesterEmail?: string;
+  requesterPhone?: string;
+  lines: { productId: string; quantity: number }[];
 }
 
 // ---- Problemas -------------------------------------------------------------

@@ -345,14 +345,6 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
 
   { label: "Solicitudes", icon: "IoMailSharp", sortOrder: 30 },
   {
-    label: "Nueva Solicitud",
-    icon: "IoMailOpenOutline",
-    link: "/tickets/create",
-    parentLabel: "Solicitudes",
-    permissionKey: "purchase-request-creation:access",
-    sortOrder: 10,
-  },
-  {
     label: "Autorizar Solicitud",
     icon: "IoMailUnreadOutline",
     link: "/tickets/validate",
@@ -468,4 +460,6 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
 // (isActive=false, mismo soft-delete que DELETE /menu-items/:id).
 // "Asignar Autorización" (Personas > Roles, /roles/update) se reemplazo por
 // Permisos > "Modificar Permisos" (/permissions/update) el 2026-09-23.
-export const RETIRED_MENU_LABELS: string[] = ["Asignar Autorización"];
+// "Nueva Solicitud" (/tickets/create) paso al portal: Generar Ticket > Necesito
+// algo > Solicitud de equipo crea la compra junto con su ticket (plan 010, 2026-09-25).
+export const RETIRED_MENU_LABELS: string[] = ["Asignar Autorización", "Nueva Solicitud"];

@@ -407,9 +407,11 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
   { resource: "category-update", description: "Pantalla: Actualizar Categorias", includes: ["product-categories:update"] },
 
   // Solicitudes de compra
+  // Retirada (plan 010): la solicitud se crea desde Generar Ticket. Se conserva
+  // para no romper los roles que la tienen; la migracion les dio Generar Ticket.
   {
     resource: "purchase-request-creation",
-    description: "Pantalla: Nueva Solicitud",
+    description: "Pantalla: Nueva Solicitud (retirada, usar Generar Ticket)",
     includes: ["purchase-requests:create", "purchase-request-lines:create"],
   },
   {
@@ -514,10 +516,21 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
   // minimo y conserva lo que se les haya dado desde la UI. Las pestanas de
   // problemas, cambios, conocimiento e indicadores se ven segun sus propios
   // permisos, que el admin agrega al rol que corresponda.
+  // La solicitud de equipo (plan 010) crea la solicitud de compra desde aqui:
+  // cualquiera que use el portal puede pedir equipo (decision del usuario). Los
+  // catalogos de producto y categoria arman el carrito; el beneficiario se
+  // confirma con /service-portal/beneficiary, sin persons:read.
   {
     resource: "generate-ticket",
     description: "Pantalla: Generar Ticket",
-    includes: ["service-tickets:create", "kb-articles:read"],
+    includes: [
+      "service-tickets:create",
+      "kb-articles:read",
+      "purchase-requests:create",
+      "purchase-request-lines:create",
+      "products:read",
+      "product-categories:read",
+    ],
   },
   {
     resource: "support-services",

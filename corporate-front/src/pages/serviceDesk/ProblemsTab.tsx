@@ -503,7 +503,7 @@ export function ProblemDetailView({
           <Section title={`Incidentes (${detail.incidents.length})`}>
             {canUpdate && !isFinal && (
               <div className="mb-3 flex gap-2">
-                <Input value={linkNumber} onChange={(e) => setLinkNumber(e.target.value)} placeholder="INC-2026-000123" aria-label="Número de incidente" />
+                <Input value={linkNumber} onChange={(e) => setLinkNumber(e.target.value)} placeholder="INC202602000123" aria-label="Número de incidente" />
                 <Button type="button" variant="secondary" loading={busy === "link"} onClick={() => void linkIncident()}>
                   Vincular
                 </Button>
