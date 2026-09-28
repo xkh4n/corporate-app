@@ -1,7 +1,7 @@
 import { Router } from "express";
 import * as productController from "../controllers/product.controller";
 import { authenticate } from "../middlewares/authenticate";
-import { authorize } from "../middlewares/authorize";
+import { authorize, authorizeAny } from "../middlewares/authorize";
 import { uploadSingle } from "../middlewares/upload";
 import { validateBody } from "../middlewares/validate";
 
@@ -19,11 +19,12 @@ productRouter.post(
   validateBody(productController.createProductSchema),
   productController.create,
 );
-// Subir/reemplazar la imagen se trata como "editar" el producto -no existe
-// (ni hace falta) una accion RBAC separada tipo "products:image".
+// Subir/reemplazar la imagen: "create" o "update". Nuevo Producto sube la
+// imagen justo despues de crear, y su agrupador no debe llevar products:update
+// (que ademas deja editar cualquier producto con PUT /:id).
 productRouter.post(
   "/:id/image",
-  authorize("products", "update"),
+  authorizeAny("products", ["create", "update"]),
   uploadSingle("file"),
   productController.uploadImage,
 );

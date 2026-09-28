@@ -18,6 +18,19 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (7) — Revisión de seguridad del delta b23e80d..c629028 (PR #32) y corrección F1
+
+### Hecho
+- **PR #32** `develop → testing` mergeado (`c629028`), con CI verde.
+- **Revisión de seguridad del delta** (agrupadores, folio IT, aviso en Asignar Activos, setup de integración):
+  - **F1, Baja/Media, corregido:** «Nuevo Producto» había recibido `products:update` para subir la imagen, pero eso deja editar cualquier producto con `PUT /products/:id`. Ahora `POST /products/:id/image` acepta `products:create` o `products:update`, y el agrupador vuelve a `products:create` + `product-categories:read`. El vínculo sembrado se borró a mano en Development y Testing.
+  - **F2, Baja, aceptado:** con `addresses:create`, «Crear Proveedor» también podría agregar una dirección a una persona por `personId`. Solo escribe y no expone datos.
+  - **F3, informativo:** con `asset-movements:read`, «Asignar Activos» ve movimientos y actas de otros. Aceptado; es necesario para el acta.
+  - **Sin hallazgos:** folio, toast (texto escapado por React) y `setupIntegration.ts` (solo pruebas).
+
+### Verificación
+- `tsc` limpio, 132 tests unitarios, tests de integración de permisos y menú (17) en verde. Development reiniciado; `product-creation` queda con `products:create` y `product-categories:read`.
+
 ## 2026-09-28 (6) — Asignar Activos explica por qué un activo no se puede asignar
 
 ### Hecho

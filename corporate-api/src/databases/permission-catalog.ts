@@ -402,12 +402,8 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
     description: "Pantalla: Enviar Orden de Compra",
     includes: ["purchase-requests:read", "purchase-orders:read", "quotes:create", "suppliers:read", "supplier-contacts:read"],
   },
-  // products:update: la imagen se sube despues de crear el producto (POST /products/:id/image).
-  {
-    resource: "product-creation",
-    description: "Pantalla: Nuevo Producto",
-    includes: ["products:create", "products:update", "product-categories:read"],
-  },
+  // La imagen se sube con products:create (POST /products/:id/image acepta create o update).
+  { resource: "product-creation", description: "Pantalla: Nuevo Producto", includes: ["products:create", "product-categories:read"] },
   { resource: "product-list", description: "Pantalla: Ver Productos", includes: ["products:read", "product-categories:read"] },
   {
     resource: "supplier-product-linking",
