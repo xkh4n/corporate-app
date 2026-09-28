@@ -191,6 +191,8 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
 
   { resource: "asset-movements",action: "read",description: "Consultar movimientos de activos",grantToUser: true,},
   { resource: "asset-movements",action: "create",description: "Registrar movimientos de activos (asignar/mover)",grantToUser: true,},
+  // Plan 012: dar de baja es aparte de asignar (deja el Kardex en cero). Sin grantToUser.
+  { resource: "asset-decommissions", action: "create", description: "Dar de baja activos (deja el Kardex en cero)" },
 
   // Kardex de valorizacion contable: admin-only por defecto (sin
   // grantToUser), encaja con el caso de uso de rol "contabilidad" separado
@@ -497,6 +499,11 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
     includes: ["assets:read", "asset-movements:read", "product-categories:read"],
   },
   {
+    resource: "asset-decommission",
+    description: "Pantalla: Dar de Baja Activos",
+    includes: ["assets:read", "asset-decommissions:create"],
+  },
+  {
     resource: "asset-handover-form",
     description: "Pantalla: Formulario Asignación",
     includes: ["assets:read", "asset-movements:read"],
@@ -508,7 +515,13 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
     includes: ["asset-kardex:read", "assets:read", "products:read"],
   },
   { resource: "inventory-taking", description: "Pantalla: Toma de Inventario", includes: ["inventory-counts:read"] },
-  { resource: "asset-valuation-view", description: "Pantalla: Valorización de Activos", includes: ["asset-valuation:read"] },
+  // Excepcion a la regla lectura/edicion, decidida por el usuario (2026-09-28): quien
+  // tiene la pantalla de valorizacion tambien ingresa el valor.
+  {
+    resource: "asset-valuation-view",
+    description: "Pantalla: Valorización de Activos",
+    includes: ["asset-valuation:read", "asset-valuation:update"],
+  },
   { resource: "asset-return-management", description: "Pantalla: Devoluciones de Activos", includes: ["asset-returns:read"] },
   { resource: "asset-bulk-import", description: "Pantalla: Carga Masiva de Activos", includes: ["asset-imports:read"] },
 
@@ -530,7 +543,7 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
   },
   {
     resource: "asset-valuation-edit",
-    description: "Pantalla: Valorización de Activos (edición)",
+    description: "Pantalla: Valorización de Activos (edición, incluida en la pantalla)",
     includes: ["asset-valuation:read", "asset-valuation:update"],
   },
   {

@@ -30,7 +30,9 @@ export const createAssetMovementSchema = z
     // solo lo crea la toma de inventario (baja reactivada, valor 0) y los otros
     // dos solo el flujo de devoluciones con guia (assetReturn.service.ts). No
     // deben poder dispararse desde la API generica.
-    movementType: z.enum(["ASSIGNED", "REASSIGNED", "SUPPORT", "DECOMMISSIONED"]),
+    // DECOMMISSIONED tampoco (plan 012): la baja pasa por POST /decommission, que
+    // exige su propio permiso, motivo y clasificacion contable.
+    movementType: z.enum(["ASSIGNED", "REASSIGNED", "SUPPORT"]),
     userIds: z.array(z.number().int().positive()).optional(),
     notes: z.string().max(255).optional(),
   })
@@ -56,6 +58,19 @@ export const reassignAssetSchema = z
   .merge(handoverFieldsSchema)
   .refine((data) => data.userId !== undefined || data.costCenterId !== undefined, {
     message: "Indique un nuevo usuario, un nuevo centro de costo o ambos",
+  });
+
+// Dar de baja (plan 012): motivo de la lista; el detalle es obligatorio con OTHER.
+export const decommissionAssetSchema = z
+  .object({
+    // multipart (plan 013: va con la foto): los campos llegan como texto.
+    assetId: z.coerce.number().int().positive(),
+    reason: z.enum(["OBSOLESCENCE", "IRREPARABLE_DAMAGE", "THEFT_LOSS", "OTHER"]),
+    detail: z.string().trim().max(200).optional(),
+  })
+  .refine((data) => data.reason !== "OTHER" || Boolean(data.detail), {
+    message: "Indique el detalle del motivo de la baja",
+    path: ["detail"],
   });
 
 const assignmentFiltersSchema = z.object({
@@ -151,6 +166,65 @@ export async function listAssignments(req: Request, res: Response, next: NextFun
     const params = parsePaginationParams({ ...req.query }, "tag", "asc");
     const { items, total } = await assetMovementService.listAssignments(params, filters.data);
     sendList(res, items, buildPaginationMeta(params, total), "Asignaciones obtenidas exitosamente");
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function decommissionCheck(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const assetId = Number(req.params.assetId);
+    if (!Number.isInteger(assetId) || assetId <= 0) throw new BadRequestError("assetId invalido");
+    const check = await assetMovementService.getDecommissionCheck(assetId);
+    sendOk(res, check, "Revision de baja obtenida exitosamente");
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function decommission(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = req.body as z.infer<typeof decommissionAssetSchema>;
+    if (!req.file) throw new BadRequestError("Adjunte la foto del activo (JPEG o PNG)");
+    const movement = await assetMovementService.decommissionAsset({
+      ...body,
+      photo: req.file,
+      createdBy: req.user?.userId,
+    });
+    sendOk(res, movement, "Activo dado de baja: queda pendiente de baja contable", 201);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Inline (se muestra en <img>), con el tipo guardado -ya verificado por magic bytes al subir- y
+// nosniff para que el navegador no lo reinterprete. Mismo criterio que las fotos de Baja Contable.
+export function sendInlinePhoto(
+  res: Response,
+  next: NextFunction,
+  file: { filePath: string; mimeType: string },
+): void {
+  res.sendFile(
+    file.filePath,
+    {
+      headers: {
+        "Content-Type": file.mimeType,
+        "Content-Disposition": "inline",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, no-store",
+      },
+    },
+    (err) => {
+      if (err) next(err);
+    },
+  );
+}
+
+export async function decommissionPhoto(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const assetId = Number(req.params.assetId);
+    if (!Number.isInteger(assetId) || assetId <= 0) throw new BadRequestError("Id de activo invalido");
+    sendInlinePhoto(res, next, await assetMovementService.getLatestDecommissionPhotoFile(assetId));
   } catch (err) {
     next(err);
   }

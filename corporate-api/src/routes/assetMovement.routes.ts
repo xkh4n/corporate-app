@@ -2,7 +2,10 @@ import { Router } from "express";
 import * as assetMovementController from "../controllers/assetMovement.controller";
 import { authenticate } from "../middlewares/authenticate";
 import { authorize } from "../middlewares/authorize";
+import { uploadSingle } from "../middlewares/upload";
 import { validateBody } from "../middlewares/validate";
+
+const MAX_PHOTO_SIZE_BYTES = 5 * 1024 * 1024;
 
 export const assetMovementRouter = Router();
 
@@ -36,6 +39,25 @@ assetMovementRouter.get(
   assetMovementController.listAssignments,
 );
 assetMovementRouter.get("/current/:assetId", authorize("asset-movements", "read"), assetMovementController.current);
+// Dar de baja (plan 012): permiso propio, aparte de asignar.
+assetMovementRouter.get(
+  "/decommission/:assetId",
+  authorize("asset-decommissions", "create"),
+  assetMovementController.decommissionCheck,
+);
+assetMovementRouter.get(
+  "/decommission/:assetId/photo",
+  authorize("asset-decommissions", "create"),
+  assetMovementController.decommissionPhoto,
+);
+assetMovementRouter.post(
+  "/decommission",
+  authorize("asset-decommissions", "create"),
+  // Plan 013: la foto del activo es obligatoria (se valida su contenido real).
+  uploadSingle("photo", { kind: "image", maxFileSizeBytes: MAX_PHOTO_SIZE_BYTES }),
+  validateBody(assetMovementController.decommissionAssetSchema),
+  assetMovementController.decommission,
+);
 assetMovementRouter.get(
   "/:id/handover.pdf",
   authorize("asset-movements", "read"),

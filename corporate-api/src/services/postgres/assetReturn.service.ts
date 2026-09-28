@@ -525,10 +525,11 @@ export async function receiveAssetReturn(
 ): Promise<AssetReturnDetail> {
   await postgres.transaction(async (transaction) => {
     const assetReturn = await lockReturn(id, transaction);
-    // Separacion de funciones: ni quien solicito la devolucion ni quien la envio puede recibirla (un
-    // administrador queda exento). Cubre el caso de un admin que envia por cuenta del solicitante.
-    if (!actor.isAdmin && (assetReturn.sentBy === actor.userId || assetReturn.requestedBy === actor.userId)) {
-      throw new ForbiddenError("Quien solicitó o envió la devolución no puede recibirla");
+    // Solo recibe Sistemas (rol del centro de costo 1110) o un administrador. Quien solicito o envio
+    // puede recibir si es de Sistemas: el analista que hace la toma y pide el despacho a la tienda
+    // tambien lo recepciona. Los demas centros de costo solo solicitan.
+    if (!actor.isAdmin && !actor.isSystems) {
+      throw new ForbiddenError("Solo el personal de Sistemas (centro de costo 1110) puede recibir devoluciones");
     }
     assertStatus(assetReturn, "SENT", "recibir");
 

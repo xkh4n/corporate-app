@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>013 — Foto al dar de baja, estado «Pendiente de baja contable» y baja contable individual o por lote</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:900px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.5rem; font-size:1.25rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  h3 { margin-top:1.6rem; font-size:1.05rem; }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }
+  th, td { border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 013</span>
+  <h1>Foto al dar de baja, estado «Pendiente de baja contable» y baja contable individual o por lote</h1>
+  <div class="meta">corporate-app · corporate-api + corporate-front · Estado: aprobado · 2026-09-28</div>
+</header>
+
+<h2>Contexto</h2>
+<p>Hoy, <strong>Dar de Baja Activos</strong> (plan 012) deja el activo <code>DECOMMISSIONED</code> («De baja»), y la foto por activo se sube recién en <strong>Baja Contable</strong> (plan 008), dentro de cada borrador.</p>
+<p>Lo que pide el usuario (2026-09-28):</p>
+<ul>
+<li><strong>Foto al dar de baja:</strong> al dar de baja se exige <strong>la foto</strong> del activo, y el activo queda en un estado <strong>pendiente</strong>, esperando la baja contable.
+</li>
+<li><strong>Baja Contable individual:</strong> 1 activo, con 1 certificado y la foto que ya trae.
+</li>
+<li><strong>Baja Contable por lote:</strong> todos los pendientes, con <strong>1 solo certificado</strong>. Cada activo conserva la foto tomada al darlo de baja.
+</li></ul>
+<p>Decisiones del usuario:</p>
+<ul>
+<li><strong>Estado nuevo.</strong> <code>DECOMMISSIONED</code> pasa a mostrarse como <strong>«Pendiente de baja contable»</strong>, y al confirmar la Baja Contable el activo pasa a un estado nuevo <strong><code>WRITTEN_OFF</code> «De baja»</strong>.
+</li>
+<li><strong>Bajas desde la Toma de Inventario (sin foto):</strong> quedan igual de pendientes. Si no tienen foto, Baja Contable la pide antes de confirmar, como hoy.
+</li></ul>
+<h2>Lo que se reutiliza</h2>
+<ul>
+<li><code>decommissionAsset</code> / <code>getDecommissionCheck</code> (<code>corporate-api/src/services/postgres/assetMovement.service.ts</code>).
+</li>
+<li><code>uploadSingle(field, { kind: "image", maxFileSizeBytes })</code> (<code>middlewares/upload.ts</code>): valida el contenido real del archivo.
+</li>
+<li><code>saveBuffer</code> / <code>deleteIfExists</code> (<code>library/documentStorage.ts</code>); el patrón es el de <code>addPhoto</code> en <code>assetWriteOff.service.ts</code>: se escribe dentro de la transacción y se borra si esta falla.
+</li>
+<li><code>resolveStoredFile</code> (<code>assetWriteOff.service.ts</code>) para servir los archivos.
+</li>
+<li>Todo el flujo del borrador de Baja Contable: <code>createWriteOff</code>, certificado y <code>confirmWriteOff</code>.
+</li>
+<li>El CHECK de tipos de movimiento, que se reescribe solo si falta un tipo (<code>migrate.ts</code>, <code>movementTypes</code>).
+</li></ul>
+<h2>Diseño</h2>
+<h3>1. Estados (migración, <code>databases/postgres/migrate.ts</code>)</h3>
+<ul>
+<li>Insertar <code>('WRITTEN_OFF', 'De baja', 'Baja contable confirmada: definitiva')</code>.
+</li>
+<li><code>UPDATE asset_statuses SET name = 'Pendiente de baja contable', description = … WHERE code = 'DECOMMISSIONED'</code>. La siembra usa <code>ON CONFLICT DO NOTHING</code>, así que el cambio de nombre va explícito.
+</li>
+<li>Agregar <code>'WRITTEN_OFF'</code> a <code>movementTypes</code>.
+</li>
+<li><strong>Backfill idempotente de los activos ya dados de baja contablemente:</strong> <code>DECOMMISSIONED</code> con <code>asset_accounting.stage = 'WRITTEN_OFF'</code> pasan a <code>WRITTEN_OFF</code>.
+</li>
+<li><strong>Tabla nueva <code>asset_decommission_photos</code>:</strong> <code>id</code>, <code>asset_id</code> (FK assets), <code>movement_id</code> (FK asset_movements), <code>filename</code>, <code>mime_type</code> (jpeg/png), <code>size_bytes</code>, <code>created_by</code>, <code>created_at</code>; índice por <code>asset_id</code>.
+</li>
+<li>Carpeta <code>getAssetDecommissionFolder(assetId)</code> en <code>documentStorage.ts</code>.
+</li></ul>
+<h3>2. Dar de Baja con foto (API)</h3>
+<ul>
+<li><code>POST /asset-movements/decommission</code> pasa a <strong>multipart</strong>, en este orden:
+<ol>
+<li><code>authorize("asset-decommissions","create")</code>;
+</li>
+<li><code>uploadSingle("photo", { kind: "image", 5 MB })</code>;
+</li>
+<li>validación Zod de los campos (<code>assetId</code> convertido a número, <code>reason</code>, <code>detail</code>).
+</li></ol>
+</li>
+<li><strong>La foto es obligatoria</strong> (400 si falta; solo JPEG o PNG).
+</li>
+<li><code>decommissionAsset</code> recibe el archivo. En la misma transacción crea el movimiento, inserta la fila de la foto y la guarda en disco. Si algo falla, borra el archivo.
+</li>
+<li><code>GET /asset-movements/decommission/:assetId/photo</code>, con <code>asset-decommissions:create</code>, para ver la foto recién tomada.
+</li>
+<li>El mensaje de éxito cambia a «queda Pendiente de baja contable».
+</li></ul>
+<h3>3. Baja Contable (API, <code>assetWriteOff.service.ts</code>)</h3>
+<ul>
+<li><strong>Estado al confirmar:</strong> <code>confirmWriteOff</code> pasa cada activo a <code>WRITTEN_OFF</code> con un movimiento <code>WRITTEN_OFF</code>, cuya nota es «Baja contable N° {id}».
+<ul>
+<li>Se agrega <code>WRITTEN_OFF: "WRITTEN_OFF"</code> a <code>STATUS_CODE_BY_MOVEMENT_TYPE</code>.
+</li>
+<li><code>createAssetMovement</code> solo lo acepta desde <code>DECOMMISSIONED</code>.
+</li>
+<li>No escribe en el Kardex, que ya quedó en 0 al dar de baja.
+</li></ul>
+</li>
+<li><strong>Fotos de las líneas:</strong> el detalle incluye, por línea, <code>decommissionPhotos</code>, las fotos de la baja operativa.
+<ul>
+<li>Nueva ruta <code>GET /asset-write-offs/:id/decommission-photos/:photoId</code>, con <code>asset-write-offs:read</code>. Exige que el activo sea una línea de esa baja.
+</li></ul>
+</li>
+<li><strong>Requisito de foto al confirmar:</strong> el activo necesita al menos una foto, sumando las del borrador y las de la baja operativa. Así, lo que viene de Dar de Baja no pide nada más, y lo que viene de la Toma de Inventario pide subirla como hoy.
+</li>
+<li><strong>Baja por lote:</strong> <code>POST /asset-write-offs</code> acepta <code>{ allPending: true }</code> en vez de <code>assetIds</code>. Toma todos los elegibles (hasta <code>MAX_ASSETS_PER_WRITE_OFF</code>), y si hay más avisa cuántos quedaron fuera. Si no hay pendientes, responde 400.
+</li>
+<li><strong>Baja individual:</strong> es el mismo borrador con 1 activo. Ya funciona; solo cambia la pantalla.
+</li></ul>
+<h3>4. <code>WRITTEN_OFF</code> se trata igual que <code>DECOMMISSIONED</code> en todo lo demás</h3>
+<p>En cada lista de estados de «salido de servicio» se agrega <code>WRITTEN_OFF</code>:</p>
+<ul>
+<li><strong>Contabilidad y valorización:</strong>
+<ul>
+<li><code>assetAccounting.service.ts</code>: <code>EXCLUDED_STATUS_CODES</code>.
+</li>
+<li><code>assetDepreciation.service.ts</code>: <code>NOT_DEPRECIABLE</code>, <code>DERECOGNIZED</code>.
+</li>
+<li><code>assetValuation.service.ts</code>: <code>NOT_VALUABLE</code>.
+</li></ul>
+</li>
+<li><strong>Toma de Inventario:</strong>
+<ul>
+<li><code>inventoryCount.service.ts</code>: se excluye de los faltantes.
+</li>
+<li><code>inventoryAssetTransition.ts</code>: si se encuentra en uso, se devalúa, igual que <code>DECOMMISSIONED</code>.
+</li>
+<li><code>instructionFor</code>: el aviso al auditor.
+</li>
+<li>PDF del informe (<code>inventoryCountReportPdf.ts</code>): etiqueta.
+</li></ul>
+</li>
+<li><strong>Movimientos:</strong> en <code>assetMovement.service.ts</code>, <code>DEVALUATED</code> se permite desde <code>WRITTEN_OFF</code>.
+</li>
+<li><strong>Dar de Baja:</strong> <code>statusBlockReason</code> responde «ya dado de baja» o «pendiente de baja contable», según el estado.
+</li>
+<li><strong>Tipos y etiquetas del front:</strong> <code>types/assetMovement.ts</code>, <code>serviceDeskLabels.ts</code> y el resto de las etiquetas de estado.
+</li></ul>
+<h3>5. Front (<code>corporate-front/src</code>)</h3>
+<ul>
+<li><strong><code>pages/activos/DecommissionAsset.tsx</code>:</strong>
+<ul>
+<li>Campo <strong>Foto del activo</strong> (obligatorio): <code>accept="image/jpeg,image/png"</code> y <code>capture="environment"</code>, para usar la cámara en móvil. Muestra una vista previa, y «Dar de baja» se habilita solo con foto.
+</li>
+<li><code>assetMovementService.decommission</code> envía <code>FormData</code>.
+</li></ul>
+</li>
+<li><strong><code>pages/contabilidad/BajaContable.tsx</code> y <code>WriteOffPanel.tsx</code>:</strong>
+<ul>
+<li>Botones <strong>«Baja individual»</strong> (desde un pendiente de la lista) y <strong>«Baja por lote (todos los pendientes: N)»</strong>.
+</li>
+<li>En cada línea se muestra la <strong>foto de la baja operativa</strong>; la subida de fotos queda solo para las líneas sin foto.
+</li>
+<li>El resto (fecha, motivo, notaría, certificado, confirmar) no cambia.
+</li></ul>
+</li>
+<li><strong>Servicios y tipos:</strong> <code>assetWriteOffService.create({ allPending: true })</code>, <code>decommissionPhotos</code> en <code>WriteOffLine</code>, y la descarga de la foto como blob.
+</li></ul>
+<h2>Paso 0</h2>
+<p>Copiar este plan aprobado a <code>.claude/planes/013-foto-baja-y-baja-contable-por-lote.html</code> y agregar la entrada en la bitácora <code>.claude/README.md</code>.</p>
+<h2>Archivos críticos</h2>
+<ul>
+<li><strong>API:</strong>
+<ul>
+<li><code>databases/postgres/migrate.ts</code>
+</li>
+<li><code>library/documentStorage.ts</code>
+</li>
+<li><code>services/postgres/assetMovement.service.ts</code>
+</li>
+<li><code>services/postgres/assetWriteOff.service.ts</code>
+</li>
+<li><code>controllers/assetMovement.controller.ts</code>, <code>controllers/assetWriteOff.controller.ts</code>
+</li>
+<li><code>routes/assetMovement.routes.ts</code>, <code>routes/assetWriteOff.routes.ts</code>
+</li>
+<li>servicios contables, de valorización y de inventario, y <code>library/inventoryAssetTransition.ts</code>
+</li></ul>
+</li>
+<li><strong>Front:</strong>
+<ul>
+<li><code>pages/activos/DecommissionAsset.tsx</code>
+</li>
+<li><code>pages/contabilidad/BajaContable.tsx</code>, <code>WriteOffPanel.tsx</code>
+</li>
+<li><code>services/assetMovementService.ts</code>, <code>services/assetWriteOffService.ts</code>
+</li>
+<li>tipos y etiquetas
+</li></ul>
+</li></ul>
+<h2>Verificación</h2>
+<ol>
+<li><strong>API:</strong> <code>tsc</code> y pruebas unitarias; <code>inventoryAssetTransition.unit.test</code> incluye <code>WRITTEN_OFF</code>.
+</li>
+<li><strong>Integración contra Testing:</strong>
+<ul>
+<li><code>assetDecommission</code> (con foto; sin foto → 400);
+</li>
+<li><code>assetWriteOff</code>: individual sin subir foto en Baja Contable; lote con <code>allPending</code>; el activo de una Toma de Inventario sin foto debe subirla; al confirmar, el estado queda <code>WRITTEN_OFF</code> con su movimiento;
+</li>
+<li>suites de inventario, depreciación y valorización.
+</li></ul>
+</li>
+<li><strong>Front:</strong> <code>tsc -p tsconfig.app.json --noEmit</code>, lint y pruebas.
+</li>
+<li><strong>Manual en Development</strong> (reiniciar la API):
+<ul>
+<li>Dar de Baja <code>ARR000000001</code> con foto → «Pendiente de baja contable».
+</li>
+<li>Baja Contable → baja individual: sin subir foto, adjuntar el certificado y confirmar → «De baja».
+</li>
+<li>Repetir con el lote.
+</li>
+<li>Verificar el backfill en la BD.
+</li></ul>
+</li>
+<li><strong>Revisión de seguridad antes de promover:</strong> subida de imagen en Dar de Baja, ruta nueva de fotos (que el activo sea línea de la baja), baja por lote.
+</li></ol>
+
+<footer class="doc-footer">Copia del plan aprobado en la sesión del 2026-09-28.</footer>
+</div>
+</body>
+</html>

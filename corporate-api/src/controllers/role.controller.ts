@@ -7,6 +7,8 @@ import { invalidateUserSessions, revokeAllRefreshTokens } from "../services/redi
 import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
 import { sendList, sendOk, sendNoContent } from "../library/response";
 import { permissionActor } from "../library/permissionActor";
+import { ForbiddenError } from "../library/errors";
+import { isSystemsRole } from "../library/roleCostCenter";
 
 export const createRoleSchema = z.object({
   name: z.string().min(2).max(50),
@@ -51,6 +53,10 @@ export async function getById(req: Request, res: Response, next: NextFunction): 
 export async function create(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof createRoleSchema>;
+    // Revision 2026-09-28 (M1): el prefijo 1110- da el privilegio de recibir devoluciones.
+    if (!permissionActor(req).isAdmin && isSystemsRole(body.name)) {
+      throw new ForbiddenError("Solo un administrador crea roles de Sistemas (centro de costo 1110)");
+    }
     const role = await roleService.createRole(body);
     sendOk(res, role, "Rol creado exitosamente", 201);
   } catch (err) {
@@ -61,7 +67,20 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 export async function update(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof updateRoleSchema>;
-    const role = await roleService.updateRole(Number(req.params.id), body);
+    const roleId = Number(req.params.id);
+    const actor = permissionActor(req);
+    if (!actor.isAdmin) {
+      // Revision 2026-09-28 (M1): mismo criterio que sus permisos (no el propio rol ni admin), y el
+      // prefijo de Sistemas (1110) solo lo pone o lo quita un administrador.
+      await permissionService.assertActorCanManageRole(actor, roleId);
+      if (body.name !== undefined) {
+        const current = await roleService.getRoleByIdOrThrow(roleId);
+        if (body.name !== current.name && (isSystemsRole(body.name) || isSystemsRole(current.name))) {
+          throw new ForbiddenError("Solo un administrador renombra roles de Sistemas (centro de costo 1110)");
+        }
+      }
+    }
+    const role = await roleService.updateRole(roleId, body);
     sendOk(res, role, "Rol actualizado exitosamente");
   } catch (err) {
     next(err);

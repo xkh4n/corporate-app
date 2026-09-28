@@ -7,10 +7,12 @@ export interface AssetReturnUserLabel {
   fullName: string;
 }
 
-// Quien ejecuta la accion. isAdmin viene del rol del JWT/sesion (nunca del cuerpo).
+// Quien ejecuta la accion. isAdmin e isSystems vienen del rol del JWT/sesion (nunca del cuerpo).
+// isSystems: rol del centro de costo 1110 (Sistemas), el unico que recibe devoluciones.
 export interface AssetReturnActor {
   userId: number;
   isAdmin: boolean;
+  isSystems?: boolean;
 }
 
 // scope OWN: costCenterId se DERIVA del activo (todos deben compartirlo) y no se elige; con OTHERS es obligatorio.

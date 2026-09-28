@@ -587,7 +587,7 @@ export async function closeInventoryCount(
       `SELECT a.id, s.code
          FROM assets a
          JOIN asset_statuses s ON s.id = a.status_id
-        WHERE s.code NOT IN ('DECOMMISSIONED', 'MOVE_TO_RETURNED')
+        WHERE s.code NOT IN ('DECOMMISSIONED', 'WRITTEN_OFF', 'MOVE_TO_RETURNED')
           AND NOT EXISTS (
             SELECT 1 FROM inventory_count_lines l
              WHERE l.inventory_count_id = :countId AND l.asset_id = a.id

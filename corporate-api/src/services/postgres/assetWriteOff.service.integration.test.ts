@@ -5,12 +5,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resetTestData } from "../../../test/setupIntegration";
 import { postgres } from "../../databases/postgres/connection";
 import { BadRequestError, ConflictError } from "../../library/errors";
-import { getAssetWriteOffFolder } from "../../library/documentStorage";
+import { getAssetDecommissionFolder, getAssetWriteOffFolder } from "../../library/documentStorage";
 import { currentDate } from "../../library/depreciation";
 import { createCostCenter } from "./costCenter.service";
+import { getRoleByName } from "./role.service";
+import { createPerson } from "../mssql/person.service";
+import { createUser } from "../mssql/user.service";
 import { createProduct } from "../mongo/product.service";
-import { createAssetsFromReceipt } from "./asset.service";
-import { createAssetMovement } from "./assetMovement.service";
+import { createAssetsFromReceipt, getAssetByIdOrThrow } from "./asset.service";
+import { createAssetMovement, decommissionAsset } from "./assetMovement.service";
 import { updatePolicy } from "./assetAccountingPolicy.service";
 import { capitalize, classify, confirmCost, getRecordOrThrow, updateDepreciationParams } from "./assetAccounting.service";
 import { closePeriod, voidRun } from "./assetDepreciation.service";
@@ -18,8 +21,10 @@ import {
   addPhoto,
   attachCertificate,
   confirmWriteOff,
+  createAllPendingWriteOff,
   createWriteOff,
   discardWriteOff,
+  getLineDecommissionPhotoFile,
   getWriteOffOrThrow,
   listEligible,
   removePhoto,
@@ -27,6 +32,7 @@ import {
 } from "./assetWriteOff.service";
 
 const RESET_TABLES = {
+  mssql: ["users", "persons"],
   postgres: [
     "asset_write_off_photos",
     "asset_write_off_lines",
@@ -35,6 +41,7 @@ const RESET_TABLES = {
     "asset_depreciation_runs",
     "asset_attributable_costs",
     "asset_accounting",
+    "asset_decommission_photos",
     "asset_movement_users",
     "asset_movements",
     "asset_kardex_entries",
@@ -49,6 +56,7 @@ const PARAMS = { page: 1, limit: 50, sortBy: "id", sortOrder: "asc" } as const;
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 let seq = 0;
 const createdWriteOffs = new Set<number>();
+const decommissionedAssets = new Set<number>();
 
 function fakeFile(mimetype: string, buffer: Buffer): Express.Multer.File {
   return { mimetype, buffer, size: buffer.length } as Express.Multer.File;
@@ -64,6 +72,8 @@ beforeEach(async () => {
 afterEach(async () => {
   for (const id of createdWriteOffs) fs.rmSync(getAssetWriteOffFolder(id), { recursive: true, force: true });
   createdWriteOffs.clear();
+  for (const id of decommissionedAssets) fs.rmSync(getAssetDecommissionFolder(id), { recursive: true, force: true });
+  decommissionedAssets.clear();
   await resetTestData(RESET_TABLES);
 });
 
@@ -150,6 +160,13 @@ describe("baja contable de activos", () => {
     expect(confirmed.lines.find((line) => line.assetId === expense.id)).toMatchObject({ stage: "CLASSIFIED", bookValue: "0.00" });
 
     expect(await getRecordOrThrow(fixed!.id)).toMatchObject({ stage: "WRITTEN_OFF", bookValue: "0.00" });
+    // Plan 013: la baja contable deja el activo «De baja» con su movimiento.
+    expect((await getAssetByIdOrThrow(fixed!.id)).status?.code).toBe("WRITTEN_OFF");
+    const [lastMovement] = await postgres.query<{ movement_type: string; notes: string }>(
+      "SELECT movement_type, notes FROM asset_movements WHERE asset_id = :assetId ORDER BY id DESC LIMIT 1",
+      { replacements: { assetId: fixed!.id }, type: QueryTypes.SELECT },
+    );
+    expect(lastMovement).toEqual({ movement_type: "WRITTEN_OFF", notes: `Baja contable N° ${writeOff.id}` });
     expect((await listEligible({ ...PARAMS })).total).toBe(0);
     expect(fs.existsSync(path.join(getAssetWriteOffFolder(writeOff.id), "certificado.pdf"))).toBe(true);
 
@@ -218,5 +235,92 @@ describe("baja contable de activos", () => {
     await discardWriteOff(writeOff.id);
     expect(fs.existsSync(folder)).toBe(false);
     await expect(getWriteOffOrThrow(writeOff.id)).rejects.toThrow(/no existe/);
+  });
+});
+
+// Plan 013: la foto se toma en Dar de Baja Activos y la baja contable la reutiliza.
+describe("baja contable con la foto de Dar de Baja (plan 013)", () => {
+  async function decommissionedWithPhoto() {
+    const [asset] = await createAssets(1, "200.00");
+    await classify(asset!.id, { classification: "EXPENSE" }, USER_ID);
+    await decommissionAsset({ assetId: asset!.id, reason: "OBSOLESCENCE", photo: photo(), createdBy: USER_ID });
+    decommissionedAssets.add(asset!.id);
+    return asset!;
+  }
+
+  async function complete(writeOffId: number) {
+    await updateWriteOff(writeOffId, { writeOffDate: currentDate(), reason: "Obsolescencia" });
+    await attachCertificate(writeOffId, certificate());
+  }
+
+  it("individual: se confirma sin subir fotos, con la foto de la baja operativa", async () => {
+    const asset = await decommissionedWithPhoto();
+    expect((await getAssetByIdOrThrow(asset.id)).status?.code).toBe("DECOMMISSIONED");
+
+    const writeOff = await draft([asset.id]);
+    const line = writeOff.lines[0]!;
+    expect(line.photos).toHaveLength(0);
+    expect(line.decommissionPhotos).toHaveLength(1);
+    const file = await getLineDecommissionPhotoFile(writeOff.id, line.decommissionPhotos[0]!.id);
+    expect(file.mimeType).toBe("image/png");
+
+    await complete(writeOff.id);
+    await expect(confirmWriteOff(writeOff.id, USER_ID)).resolves.toMatchObject({ status: "CONFIRMED", assetCount: 1 });
+    expect((await getAssetByIdOrThrow(asset.id)).status?.code).toBe("WRITTEN_OFF");
+  });
+
+  it("revision 2026-09-28 B1: la foto de una baja anterior no sirve para la baja vigente", async () => {
+    const asset = await decommissionedWithPhoto();
+    const oldPhotoId = (await draft([asset.id])).lines[0]!.decommissionPhotos[0]!.id;
+    await postgres.query("DELETE FROM asset_write_off_lines WHERE asset_id = :assetId", {
+      replacements: { assetId: asset.id },
+    });
+    // Hallado en uso (devaluado) y dado de baja otra vez desde una toma, sin foto.
+    const userRole = await getRoleByName("user");
+    const person = await createPerson({
+      firstName: "Test",
+      lastName: `Baja${++seq}`,
+      documentId: `TESTDOC-WO${seq}`,
+      email: `test-wo-${seq}@example.com`,
+    });
+    const holder = await createUser({ personId: person.id, roleId: userRole!.id, username: `testwo${seq}` });
+    await createAssetMovement({ assetId: asset.id, movementType: "DEVALUATED", userIds: [holder.id] });
+    await createAssetMovement({ assetId: asset.id, movementType: "DECOMMISSIONED" });
+
+    const writeOff = await draft([asset.id]);
+    expect(writeOff.lines[0]!.decommissionPhotos).toHaveLength(0);
+    await expect(getLineDecommissionPhotoFile(writeOff.id, oldPhotoId)).rejects.toThrow(/no existe/);
+    await complete(writeOff.id);
+    await expect(confirmWriteOff(writeOff.id, USER_ID)).rejects.toThrow(/foto/);
+  });
+
+  it("la foto de la baja operativa solo se sirve desde una baja que tiene ese activo", async () => {
+    const asset = await decommissionedWithPhoto();
+    const other = await decommissionedWithPhoto();
+    const writeOff = await draft([asset.id]);
+    const otherPhotoId = (await draft([other.id])).lines[0]!.decommissionPhotos[0]!.id;
+    await expect(getLineDecommissionPhotoFile(writeOff.id, otherPhotoId)).rejects.toThrow(/no existe/);
+  });
+
+  it("por lote: toma todos los pendientes fuera de otros borradores; lo de la toma sin foto la pide", async () => {
+    const a = await decommissionedWithPhoto();
+    const b = await decommissionedWithPhoto();
+    const inOtherDraft = await decommissionedWithPhoto();
+    const fromInventory = await decommissionedExpense();
+    await draft([inOtherDraft.id]);
+
+    const { detail, notIncluded } = await createAllPendingWriteOff(USER_ID);
+    createdWriteOffs.add(detail.id);
+    expect(notIncluded).toBe(0);
+    expect(detail.lines.map((line) => line.assetId)).toEqual([a.id, b.id, fromInventory.id]);
+
+    await complete(detail.id);
+    await expect(confirmWriteOff(detail.id, USER_ID)).rejects.toThrow(new RegExp(fromInventory.tag));
+    await addPhoto(detail.id, fromInventory.id, photo(), USER_ID);
+    await expect(confirmWriteOff(detail.id, USER_ID)).resolves.toMatchObject({ status: "CONFIRMED", assetCount: 3 });
+
+    // Solo queda el que esta en el otro borrador.
+    const again = await createAllPendingWriteOff(USER_ID).catch((err: unknown) => err);
+    expect(again).toBeInstanceOf(BadRequestError);
   });
 });

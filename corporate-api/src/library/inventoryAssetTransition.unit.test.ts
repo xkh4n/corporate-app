@@ -50,6 +50,16 @@ describe("planExistingAssetChange", () => {
     }
   });
 
+  it("con baja contable (WRITTEN_OFF, plan 013): igual que una baja", () => {
+    expect(plan("WRITTEN_OFF", "ASSIGNED")).toEqual({
+      ok: true,
+      resultingStatusCode: "DEVALUATED",
+      steps: [move("DEVALUATED", true)],
+    });
+    expect(plan("WRITTEN_OFF", "DECOMMISSIONED")).toEqual({ ok: true, resultingStatusCode: "WRITTEN_OFF", steps: [] });
+    expect(plan("WRITTEN_OFF", "AVAILABLE").ok).toBe(false);
+  });
+
   it("devaluado: mismo usuario sin cambio, otro usuario movimiento nuevo, disponible rechazado", () => {
     expect(plan("DEVALUATED", "ASSIGNED", true)).toEqual({ ok: true, resultingStatusCode: "DEVALUATED", steps: [] });
     expect(plan("DEVALUATED", "ASSIGNED", false)).toEqual({

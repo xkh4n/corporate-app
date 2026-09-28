@@ -307,8 +307,17 @@ async function migrateAssets(): Promise<void> {
       ('DAMAGED', 'Dañado', 'El activo esta danado y no operativo (levantado en una toma de inventario)'),
       ('RETURNED', 'Devolución', 'El activo fue devuelto por su usuario y esta pendiente de revision por Soporte TI / Adquisiciones TI'),
       ('DEVALUATED', 'Devaluado', 'Activo dado de baja que se encontro en uso: sigue asignado con valor 0, sin afectar el kardex'),
-      ('MOVE_TO_RETURNED', 'En tránsito a devolución', 'El activo fue despachado con guia hacia Adquisiciones TI y aun no ha sido recibido')
+      ('MOVE_TO_RETURNED', 'En tránsito a devolución', 'El activo fue despachado con guia hacia Adquisiciones TI y aun no ha sido recibido'),
+      ('WRITTEN_OFF', 'De baja', 'Baja contable confirmada: definitiva')
     ON CONFLICT (code) DO NOTHING;
+  `);
+  // Plan 013: DECOMMISSIONED es la baja operativa, pendiente de la baja contable (que la deja WRITTEN_OFF).
+  // La siembra no pisa nombres existentes (ON CONFLICT DO NOTHING): el cambio va explicito.
+  await postgres.query(`
+    UPDATE asset_statuses
+       SET name = 'Pendiente de baja contable',
+           description = 'Dado de baja operativamente (Kardex en cero); pendiente de la baja contable'
+     WHERE code = 'DECOMMISSIONED' AND name <> 'Pendiente de baja contable';
   `);
 
   // Modelo maestro + movimientos: el estado actual vive en assets.status_id,
@@ -383,6 +392,8 @@ async function migrateAssets(): Promise<void> {
     'MOVE_TO_RETURNED',
     'SUPPORT_TO_HOLDER',
     'SUPPORT_TO_STOCK',
+    // Plan 013: confirmacion de la baja contable (DECOMMISSIONED -> WRITTEN_OFF).
+    'WRITTEN_OFF',
   ];
   const currentMovementCheck = await postgres.query<{ definition: string }>(
     `SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
@@ -712,6 +723,31 @@ async function migrateAssetWriteOffs(): Promise<void> {
   `);
   await runDdl(`
     ALTER TABLE asset_accounting ADD COLUMN IF NOT EXISTS write_off_id INTEGER REFERENCES asset_write_offs(id);
+  `);
+
+  // Plan 013: la foto se toma al dar de baja (Dar de Baja Activos) y queda con el activo; la baja
+  // contable la reutiliza. movement_id: el movimiento DECOMMISSIONED que la acompania.
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS asset_decommission_photos (
+      id SERIAL PRIMARY KEY,
+      asset_id INTEGER NOT NULL REFERENCES assets(id),
+      movement_id INTEGER NOT NULL REFERENCES asset_movements(id),
+      filename VARCHAR(80) NOT NULL,
+      mime_type VARCHAR(30) NOT NULL CHECK (mime_type IN ('image/jpeg','image/png')),
+      size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
+      created_by INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_asset_decommission_photos_asset ON asset_decommission_photos(asset_id);`);
+
+  // Plan 013: las bajas contables ya confirmadas dejan el activo en WRITTEN_OFF (idempotente).
+  await postgres.query(`
+    UPDATE assets a
+       SET status_id = (SELECT id FROM asset_statuses WHERE code = 'WRITTEN_OFF'), updated_at = now()
+      FROM asset_accounting aa, asset_statuses s
+     WHERE aa.asset_id = a.id AND aa.stage = 'WRITTEN_OFF'
+       AND s.id = a.status_id AND s.code = 'DECOMMISSIONED';
   `);
 }
 

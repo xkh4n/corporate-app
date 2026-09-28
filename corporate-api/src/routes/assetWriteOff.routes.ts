@@ -51,6 +51,12 @@ assetWriteOffRouter.post(
   controller.uploadPhoto,
 );
 assetWriteOffRouter.get("/:id/photos/:photoId", authorize("asset-write-offs", "read"), controller.getPhoto);
+// Foto tomada al dar de baja el activo (plan 013): solo de activos que son linea de esta baja.
+assetWriteOffRouter.get(
+  "/:id/decommission-photos/:photoId",
+  authorize("asset-write-offs", "read"),
+  controller.getDecommissionPhoto,
+);
 assetWriteOffRouter.delete("/:id/photos/:photoId", authorize("asset-write-offs", "create"), controller.removePhoto);
 
 assetWriteOffRouter.post("/:id/confirm", authorize("asset-write-offs", "approve"), controller.confirm);

@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { QueryTypes, Transaction } from "sequelize";
 import { postgres } from "../../databases/postgres/connection";
 import { AssetModel } from "../../models/postgres/asset.model";
@@ -17,6 +20,7 @@ import { getPositionById } from "../mongo/position.service";
 import { getProductById, getProductsByIds, listProductIdsByCategory } from "../mongo/product.service";
 import { getProductCategoriesByIds, getProductCategoryById } from "../mongo/productCategory.service";
 import { classifyEquipment } from "../../library/equipmentKind";
+import { deleteIfExists, getAssetDecommissionFolder, saveBuffer } from "../../library/documentStorage";
 import { BadRequestError, ConflictError, NotFoundError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
@@ -28,6 +32,10 @@ import type {
   AssignmentRow,
   CreateAssetMovementInput,
   CurrentAssignment,
+  DecommissionAssetInput,
+  DecommissionCheck,
+  DecommissionReason,
+  DecommissionPhotoFile,
   ReassignAssetInput,
 } from "../../types/postgres/assetMovement.types";
 import type { AssetHandoverPdfData } from "../../library/pdf/assetHandoverPdf";
@@ -47,7 +55,17 @@ const STATUS_CODE_BY_MOVEMENT_TYPE = {
   // Salida de soporte desde un ticket del Service Desk (plan 009).
   SUPPORT_TO_HOLDER: "ASSIGNED",
   SUPPORT_TO_STOCK: "AVAILABLE",
+  // Confirmacion de la baja contable (plan 013), interno de assetWriteOff.service.ts.
+  WRITTEN_OFF: "WRITTEN_OFF",
 } as const;
+
+async function hasAccountingWriteOff(assetId: number, transaction: Transaction): Promise<boolean> {
+  const [row] = await postgres.query<{ stage: string }>(
+    "SELECT stage FROM asset_accounting WHERE asset_id = :assetId",
+    { replacements: { assetId }, type: QueryTypes.SELECT, transaction },
+  );
+  return row?.stage === "WRITTEN_OFF";
+}
 
 // Movimientos que dejan el activo en manos de un usuario: exigen usuario y
 // definen el tenedor vigente (listCurrentHoldersByAssetIds). DEVALUATED es una
@@ -111,7 +129,13 @@ export async function createAssetMovement(
     await lockAssetRow(input.assetId, transaction);
     const asset = await getAssetByIdOrThrow(input.assetId, transaction);
     // Dentro de la transaccion: consultarlo fuera tomaba otra conexion del pool mientras se retiene esta.
-    const newStatus = await getAssetStatusByCodeOrThrow(STATUS_CODE_BY_MOVEMENT_TYPE[input.movementType], transaction);
+    // Plan 013: si el activo ya tiene baja contable (p. ej. devaluado y declarado de nuevo de baja en
+    // una toma), la nueva baja lo deja «De baja» y no otra vez pendiente de una baja contable que ya se hizo.
+    const statusCode =
+      input.movementType === "DECOMMISSIONED" && (await hasAccountingWriteOff(input.assetId, transaction))
+        ? "WRITTEN_OFF"
+        : STATUS_CODE_BY_MOVEMENT_TYPE[input.movementType];
+    const newStatus = await getAssetStatusByCodeOrThrow(statusCode, transaction);
 
     // Un activo despachado en una devolucion (MOVE_TO_RETURNED) solo puede recibirse en Adquisiciones
     // (RETURNED). Cualquier otro movimiento lo sacaria de la devolucion y dejaria la recepcion trabada.
@@ -177,7 +201,29 @@ export async function createAssetMovement(
         throw new ConflictError(`El activo ${asset.tag} esta en soporte por el ticket ${ticketNumber}: devuelvalo desde el ticket`);
       }
     }
-    if (input.movementType === "DEVALUATED" && !["DECOMMISSIONED", "DEVALUATED"].includes(asset.status?.code ?? "")) {
+    // Plan 013: la baja contable solo cierra una baja operativa, y un activo con baja contable
+    // solo puede volver a aparecer en uso (devaluado, desde la toma de inventario).
+    if (input.movementType === "WRITTEN_OFF" && asset.status?.code !== "DECOMMISSIONED") {
+      throw new ConflictError(
+        `El activo ${asset.tag} no esta pendiente de baja contable (estado actual: ${asset.status?.code ?? "desconocido"})`,
+      );
+    }
+    if (asset.status?.code === "WRITTEN_OFF" && input.movementType !== "DEVALUATED") {
+      throw new ConflictError(`El activo ${asset.tag} tiene baja contable: es definitiva`);
+    }
+    // Revision 2026-09-28 (M2): una baja pendiente solo sale por su baja contable o devaluada (hallada en
+    // uso en una toma). Sin esto, POST /asset-movements con SUPPORT la reactivaba con el Kardex en cero.
+    if (
+      asset.status?.code === "DECOMMISSIONED" &&
+      input.movementType !== "WRITTEN_OFF" &&
+      input.movementType !== "DEVALUATED"
+    ) {
+      throw new ConflictError(`El activo ${asset.tag} esta dado de baja: pendiente de su baja contable`);
+    }
+    if (
+      input.movementType === "DEVALUATED" &&
+      !["DECOMMISSIONED", "WRITTEN_OFF", "DEVALUATED"].includes(asset.status?.code ?? "")
+    ) {
       throw new ConflictError(
         `El activo ${asset.tag} no esta dado de baja, no se puede devaluar (estado actual: ${asset.status?.code ?? "desconocido"})`,
       );
@@ -224,7 +270,10 @@ export async function createAssetMovement(
     // NO escribe al Kardex a proposito -mover un activo entre personas no
     // cambia su valorizacion.
     if (input.movementType === "DECOMMISSIONED") {
-      await recordWriteOff({ assetId: input.assetId, reference: asset.tag }, transaction);
+      await recordWriteOff(
+        { assetId: input.assetId, reference: asset.tag, notes: input.notes ?? null, createdBy: input.createdBy ?? null },
+        transaction,
+      );
     }
 
     return created;
@@ -608,4 +657,190 @@ export async function listAssignments(
     };
   });
   return { items, total: Number(countRows[0]?.total ?? 0) };
+}
+
+// ---------------------------------------------------------------------------
+// Dar de baja (plan 012): baja operativa centralizada, con motivo y exigiendo
+// clasificacion contable (sin ella el activo nunca podria ir a Baja Contable:
+// Clasificacion Contable rechaza activos dados de baja).
+// ---------------------------------------------------------------------------
+
+export const DECOMMISSION_REASON_LABELS: Record<DecommissionReason, string> = {
+  OBSOLESCENCE: "Obsolescencia",
+  IRREPARABLE_DAMAGE: "Daño irreparable",
+  THEFT_LOSS: "Robo / Pérdida",
+  OTHER: "Otro",
+};
+
+// Activos que estan en TI (decision del usuario). ASSIGNED/DEVALUATED primero se
+// devuelven con su guia; MOVE_TO_RETURNED esta en transito.
+const DECOMMISSIONABLE_STATUS_CODES = ["RETURNED", "SUPPORT", "DAMAGED", "AVAILABLE", "RECEIVED"];
+
+function statusBlockReason(tag: string, statusCode: string, statusName: string): string | null {
+  if (DECOMMISSIONABLE_STATUS_CODES.includes(statusCode)) return null;
+  if (HELD_STATUS_CODES.includes(statusCode)) {
+    return `El activo ${tag} esta en manos de un usuario: primero registre su devolucion en Devoluciones de Activos`;
+  }
+  if (statusCode === "DECOMMISSIONED") {
+    return `El activo ${tag} ya fue dado de baja: esta pendiente de su baja contable en Contabilidad`;
+  }
+  if (statusCode === "WRITTEN_OFF") return `El activo ${tag} ya tiene baja contable`;
+  return `El activo ${tag} no se puede dar de baja en su estado actual (${statusName})`;
+}
+
+async function findClassification(assetId: number, transaction?: Transaction): Promise<string | null> {
+  const [row] = await postgres.query<{ classification: string }>(
+    "SELECT classification FROM asset_accounting WHERE asset_id = :assetId",
+    { replacements: { assetId }, type: QueryTypes.SELECT, transaction },
+  );
+  return row?.classification ?? null;
+}
+
+const NOT_CLASSIFIED_REASON = (tag: string) =>
+  `El activo ${tag} no esta clasificado: clasifiquelo primero en Clasificacion Contable (sin eso no podra ir a Baja Contable)`;
+
+export async function getDecommissionCheck(assetId: number): Promise<DecommissionCheck> {
+  const asset = await getAssetByIdOrThrow(assetId);
+  const statusCode = asset.status?.code ?? "";
+  const statusName = asset.status?.name ?? statusCode;
+  const [classification, openTicketNumber, costCenters] = await Promise.all([
+    findClassification(asset.id),
+    statusCode === "SUPPORT" ? findOpenSupportTicketNumber(asset.id) : Promise.resolve(null),
+    loadCostCenters(asset.costCenterId !== null ? [asset.costCenterId] : []),
+  ]);
+  const blockReason =
+    statusBlockReason(asset.tag, statusCode, statusName) ??
+    (openTicketNumber ? `El activo ${asset.tag} esta en soporte por el ticket ${openTicketNumber}: devuelvalo desde el ticket` : null) ??
+    (classification === null ? NOT_CLASSIFIED_REASON(asset.tag) : null);
+  return {
+    assetId: asset.id,
+    tag: asset.tag,
+    serialNumber: asset.serialNumber,
+    statusCode,
+    statusName,
+    costCenter: asset.costCenterId !== null ? (costCenters.get(asset.costCenterId) ?? null) : null,
+    classified: classification !== null,
+    classification,
+    openTicketNumber,
+    eligible: blockReason === null,
+    blockReason,
+  };
+}
+
+// Deja el activo DECOMMISSIONED en UNA transaccion: movimiento con el motivo y
+// asiento WRITE_OFF del Kardex (createAssetMovement). Los guards se repiten bajo
+// el bloqueo de la fila: lo que mostro la pantalla puede haber cambiado. El ticket
+// abierto en soporte lo sigue rechazando createAssetMovement.
+export async function decommissionAsset(input: DecommissionAssetInput): Promise<AssetMovementModel> {
+  const detail = input.detail?.trim() || null;
+  if (input.reason === "OTHER" && !detail) {
+    throw new BadRequestError("Indique el detalle del motivo de la baja");
+  }
+  const extension = PHOTO_EXTENSIONS[input.photo?.mimetype ?? ""];
+  if (!input.photo || !extension) throw new BadRequestError("Adjunte la foto del activo (JPEG o PNG)");
+  // Plan 013: la foto se guarda con el activo en la misma transaccion; si algo falla despues de
+  // escribirla, se borra.
+  const folder = getAssetDecommissionFolder(input.assetId);
+  const filename = `foto-${randomUUID()}${extension}`;
+  let written = false;
+  try {
+    return await postgres.transaction(async (transaction) => {
+    await lockAssetRow(input.assetId, transaction);
+    const asset = await getAssetByIdOrThrow(input.assetId, transaction);
+    const statusCode = asset.status?.code ?? "";
+    const blocked = statusBlockReason(asset.tag, statusCode, asset.status?.name ?? statusCode);
+    if (blocked) throw new ConflictError(blocked);
+    if ((await findClassification(asset.id, transaction)) === null) {
+      throw new ConflictError(NOT_CLASSIFIED_REASON(asset.tag));
+    }
+    const notes = [`Baja: ${DECOMMISSION_REASON_LABELS[input.reason]}`, detail].filter(Boolean).join(". ");
+    const movement = await createAssetMovement(
+      {
+        assetId: asset.id,
+        movementType: "DECOMMISSIONED",
+        notes: notes.slice(0, NOTES_MAX_LENGTH),
+        createdBy: input.createdBy,
+      },
+      transaction,
+    );
+    await postgres.query(
+      `INSERT INTO asset_decommission_photos (asset_id, movement_id, filename, mime_type, size_bytes, created_by)
+       VALUES (:assetId, :movementId, :filename, :mimeType, :sizeBytes, :createdBy)`,
+      {
+        replacements: {
+          assetId: asset.id,
+          movementId: movement.id,
+          filename,
+          mimeType: input.photo.mimetype,
+          sizeBytes: input.photo.size,
+          createdBy: input.createdBy ?? null,
+        },
+        transaction,
+      },
+    );
+    saveBuffer(folder, filename, input.photo.buffer);
+    written = true;
+    return movement;
+    });
+  } catch (err) {
+    if (written) deleteIfExists(folder, filename);
+    throw err;
+  }
+}
+
+const PHOTO_EXTENSIONS: Record<string, string> = { "image/jpeg": ".jpg", "image/png": ".png" };
+
+export interface DecommissionPhoto {
+  id: number;
+  assetId: number;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: Date;
+}
+
+// Revision 2026-09-28 (B1): solo cuenta la foto de la baja vigente (el ultimo DECOMMISSIONED del activo),
+// no la de una baja anterior de la que el activo volvio (devaluado y dado de baja otra vez).
+export const LATEST_DECOMMISSION_MOVEMENT_SQL = `(SELECT MAX(m.id) FROM asset_movements m
+   WHERE m.asset_id = d.asset_id AND m.movement_type = 'DECOMMISSIONED')`;
+
+export async function listDecommissionPhotos(assetIds: number[], transaction?: Transaction): Promise<DecommissionPhoto[]> {
+  if (assetIds.length === 0) return [];
+  return postgres.query<DecommissionPhoto>(
+    `SELECT d.id, d.asset_id AS "assetId", d.mime_type AS "mimeType", d.size_bytes AS "sizeBytes", d.created_at AS "createdAt"
+       FROM asset_decommission_photos d
+      WHERE d.asset_id IN (:assetIds) AND d.movement_id = ${LATEST_DECOMMISSION_MOVEMENT_SQL}
+      ORDER BY d.asset_id, d.id`,
+    { replacements: { assetIds }, type: QueryTypes.SELECT, transaction },
+  );
+}
+
+// Ruta en disco de una foto de baja. El nombre viene de la BD (lo genero el servidor); aun asi se
+// reduce a basename y se exige que quede dentro de la carpeta del activo.
+export async function getDecommissionPhotoFile(
+  photoId: number,
+  assetId?: number,
+): Promise<{ filePath: string; mimeType: string }> {
+  const [row] = await postgres.query<{ assetId: number; filename: string; mimeType: string }>(
+    `SELECT asset_id AS "assetId", filename, mime_type AS "mimeType" FROM asset_decommission_photos WHERE id = :photoId`,
+    { replacements: { photoId }, type: QueryTypes.SELECT },
+  );
+  if (!row || (assetId !== undefined && row.assetId !== assetId)) {
+    throw new NotFoundError(`La foto ${photoId} no existe`);
+  }
+  const folder = getAssetDecommissionFolder(row.assetId);
+  const filePath = path.resolve(folder, path.basename(row.filename));
+  if (!filePath.startsWith(path.resolve(folder) + path.sep) || !fs.existsSync(filePath)) {
+    throw new NotFoundError("La foto no se encuentra en el almacenamiento");
+  }
+  return { filePath, mimeType: row.mimeType };
+}
+
+// La ultima foto tomada al dar de baja el activo (la pantalla la muestra tras la baja).
+export async function getLatestDecommissionPhotoFile(assetId: number): Promise<{ filePath: string; mimeType: string }> {
+  const [row] = await postgres.query<{ id: number }>(
+    "SELECT id FROM asset_decommission_photos WHERE asset_id = :assetId ORDER BY id DESC LIMIT 1",
+    { replacements: { assetId }, type: QueryTypes.SELECT },
+  );
+  if (!row) throw new NotFoundError(`El activo ${assetId} no tiene foto de baja`);
+  return getDecommissionPhotoFile(row.id, assetId);
 }

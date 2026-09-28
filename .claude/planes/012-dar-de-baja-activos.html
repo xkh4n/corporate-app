@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>012 — «Dar de Baja Activos» en Movimiento Activos (y valorización habilitada en su pantalla)</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:900px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.5rem; font-size:1.25rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  h3 { margin-top:1.6rem; font-size:1.05rem; }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }
+  th, td { border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 012</span>
+  <h1>«Dar de Baja Activos» en Movimiento Activos (y valorización habilitada en su pantalla)</h1>
+  <div class="meta">corporate-app · corporate-api + corporate-front · Estado: aprobado · 2026-09-28</div>
+</header>
+
+<h2>Contexto</h2>
+<p>Para llegar a <strong>Baja Contable</strong> (plan 008), un activo debe estar <code>DECOMMISSIONED</code> y <strong>clasificado</strong> (tener fila en <code>asset_accounting</code>). Hoy:</p>
+<ul>
+<li>La única pantalla que deja un activo <code>DECOMMISSIONED</code> es <strong>Toma de Inventario</strong>, y un activo devuelto (<code>RETURNED</code>) queda forzado a <code>SUPPORT</code>. Hacen falta <strong>dos tomas</strong> para darlo de baja.
+</li>
+<li><strong>Clasificación Contable</strong> rechaza activos ya dados de baja. Uno que se da de baja sin clasificar queda <strong>sin salida</strong> hacia Baja Contable.
+</li>
+<li>La API genérica <code>POST /asset-movements</code> acepta <code>DECOMMISSIONED</code> con solo <code>asset-movements:create</code> (el permiso de asignar). Es una vía sin pantalla, sin motivo y sin control de clasificación.
+</li></ul>
+<p>El usuario quiere una acción centralizada <strong>«Dar de Baja Activos»</strong> en la carpeta <em>Movimiento Activos</em>.</p>
+<p>Decisiones del usuario (2026-09-28):</p>
+<ul>
+<li><strong>Estados permitidos:</strong> los que están en TI, es decir <code>RETURNED</code>, <code>SUPPORT</code> (sin ticket abierto), <code>DAMAGED</code>, <code>AVAILABLE</code> y <code>RECEIVED</code>. <code>ASSIGNED</code>/<code>DEVALUATED</code> primero se devuelven con guía; <code>MOVE_TO_RETURNED</code> está en tránsito.
+</li>
+<li><strong>Clasificación exigida:</strong> sin clasificación contable no se da de baja; la pantalla avisa que pase por Clasificación Contable.
+</li>
+<li><strong>Motivo obligatorio</strong> de una lista (Obsolescencia, Daño irreparable, Robo/Pérdida, Otro) más un detalle libre (obligatorio si es «Otro»). Queda en el movimiento y en el asiento del Kardex.
+</li></ul>
+<h2>Lo que ya existe y se reutiliza</h2>
+<ul>
+<li><code>createAssetMovement</code> (<code>corporate-api/src/services/postgres/assetMovement.service.ts</code>):
+<ul>
+<li><code>DECOMMISSIONED</code> bloquea la fila y cambia el estado;
+</li>
+<li>llama a <code>recordWriteOff</code> (<code>assetKardex.service.ts</code>), que deja el Kardex en 0 en la misma transacción;
+</li>
+<li>rechaza <code>MOVE_TO_RETURNED</code>;
+</li>
+<li>rechaza <code>SUPPORT</code> con ticket abierto (<code>findOpenSupportTicketNumber</code>).
+</li></ul>
+</li>
+<li><code>findRecord</code>/tabla <code>asset_accounting</code> (<code>assetAccounting.service.ts</code>): saber si el activo está clasificado.
+</li>
+<li><code>listEligible</code> de Baja Contable (<code>assetWriteOff.service.ts</code>): se ve ahí apenas queda <code>DECOMMISSIONED</code> y clasificado.
+</li>
+<li>Front:
+<ul>
+<li>patrón de búsqueda por tag o serie y toast por estado (<code>ReassignAsset.tsx</code>, <code>AssignAsset.tsx</code>);
+</li>
+<li><code>components/ui</code> (Field, Select, Textarea, Button, Modal, Alert).
+</li></ul>
+</li>
+<li>Siembra de permisos y menú (upsert por label; agrupador <code>&lt;slug&gt;:access</code>).
+</li></ul>
+<h2>Diseño</h2>
+<h3>API</h3>
+<ol>
+<li><strong>Permiso base nuevo</strong> en <code>permission-catalog.ts</code>: <code>{ resource: "asset-decommissions", action: "create", description: "Dar de baja activos (deja el Kardex en cero)" }</code>, sin <code>grantToUser</code>.
+</li>
+<li><strong>Endurecer la vía genérica:</strong> quitar <code>DECOMMISSIONED</code> del enum de <code>createAssetMovementSchema</code> (<code>controllers/assetMovement.controller.ts</code>). El front no la usa. Quedan dos caminos: la toma de inventario (interna) y el endpoint nuevo.
+</li>
+<li><strong><code>assetDecommission</code> en <code>assetMovement.service.ts</code>:</strong>
+<ul>
+<li><code>DECOMMISSION_REASONS = { OBSOLESCENCE: "Obsolescencia", IRREPARABLE_DAMAGE: "Daño irreparable", THEFT_LOSS: "Robo / Pérdida", OTHER: "Otro" }</code>.
+</li>
+<li><code>DECOMMISSIONABLE_STATUS_CODES = ["RETURNED","SUPPORT","DAMAGED","AVAILABLE","RECEIVED"]</code>.
+</li>
+<li><code>getDecommissionCheck(assetId)</code> devuelve <code>{ assetId, tag, serialNumber, statusCode, statusName, costCenter, classified, classification, openTicketNumber, eligible, blockReason }</code>. <code>blockReason</code> explica por qué no se puede: estado, sin clasificar o ticket abierto.
+</li>
+<li><code>decommissionAsset({ assetId, reason, detail, createdBy })</code>, en una transacción:
+<ol>
+<li><code>lockAssetRow</code>;
+</li>
+<li>estado permitido (si no, 409 indicando el camino: «devuélvalo con su guía» si está <code>ASSIGNED</code>/<code>DEVALUATED</code>);
+</li>
+<li>clasificación existente (si no, 409: «clasifíquelo primero en Clasificación Contable»);
+</li>
+<li><code>createAssetMovement({ movementType: "DECOMMISSIONED", notes: "Baja: &lt;motivo&gt;. &lt;detalle&gt;" }, transaction)</code>.
+</li></ol>
+</li>
+<li><code>recordWriteOff</code> recibe también <code>notes</code> (hoy solo <code>reference</code>), para que el asiento del Kardex lleve el motivo.
+</li></ul>
+</li>
+<li><strong>Rutas</strong> (<code>routes/assetMovement.routes.ts</code>), antes de <code>/:id</code>:
+<ul>
+<li><code>GET /asset-movements/decommission/:assetId</code> → <code>authorize("asset-decommissions","create")</code>;
+</li>
+<li><code>POST /asset-movements/decommission</code> → <code>authorize("asset-decommissions","create")</code>, con el schema Zod <code>{ assetId, reason: enum, detail: string ≤200 }</code> y un refine que exige detalle si <code>reason = OTHER</code>.
+</li></ul>
+</li></ol>
+<h3>Permisos y menú</h3>
+<ul>
+<li>Agrupador <code>asset-decommission:access</code>, «Pantalla: Dar de Baja Activos», con <code>assets:read</code> y <code>asset-decommissions:create</code>. Es una pantalla de acción, como Asignar y Reasignar.
+</li>
+<li>Hoja «Dar de Baja Activos» (<code>/assets/decommission</code>, ícono <code>IoTrashBinOutline</code>) en «Movimiento Activos», sortOrder 50.
+</li></ul>
+<h3>Front (<code>corporate-front/src</code>)</h3>
+<ul>
+<li><strong><code>pages/activos/DecommissionAsset.tsx</code>:</strong>
+<ol>
+<li>Busca por tag o serie (<code>assetService.list</code>). Filtra los estados permitidos; si no hay ninguno, un toast por estado (p. ej. «El activo X está asignado: primero regístrelo en Devoluciones de Activos»).
+</li>
+<li>Al seleccionar, llama a <code>getDecommissionCheck</code> y muestra estado, centro de costo y clasificación.
+</li>
+<li>Si hay <code>blockReason</code> (sin clasificar, ticket abierto), muestra un <code>Alert</code> y deshabilita el botón.
+</li>
+<li>Motivo (Select) y detalle (Textarea).
+</li>
+<li>«Dar de baja» abre un Modal de confirmación: «Es definitivo: el Kardex queda en 0; luego podrá incluirlo en Baja Contable». Al confirmar, toast y vuelta a la búsqueda.
+</li></ol>
+</li>
+<li>Servicio y tipos: <code>assetMovementService.decommissionCheck</code>, <code>.decommission</code>; <code>DecommissionReason</code> y <code>DecommissionCheck</code> en <code>types/assetMovement.ts</code>.
+</li>
+<li><code>routes/AppRoutes.tsx</code>: <code>"/assets/decommission"</code> en <code>MODULE_PAGES</code>.
+</li></ul>
+<h3>Valorización de Activos: quien tiene la pantalla puede ingresar el valor</h3>
+<p>Pedido del usuario (2026-09-28): los analistas de Adquisiciones y Contable tienen «Pantalla: Valorización de Activos» y no pueden ingresar el valor. El agrupador solo trae <code>asset-valuation:read</code>; el <code>update</code> quedó en «Valorización de Activos (edición)».</p>
+<ul>
+<li>En <code>permission-catalog.ts</code>, <code>asset-valuation-view</code> pasa a incluir <code>asset-valuation:read</code> <strong>y</strong> <code>asset-valuation:update</code>. Es una excepción explícita del usuario a la regla lectura/edición, para esta pantalla. La siembra lo agrega a cada BD al arrancar y todo rol con la pantalla queda habilitado.
+</li>
+<li><code>asset-valuation-edit</code> queda redundante: se conserva en el catálogo para no romper roles que ya lo tengan, con la descripción «Pantalla: Valorización de Activos (edición, incluida en la pantalla)».
+</li>
+<li>Se registra en la memoria de permisos de pantalla como excepción decidida por el usuario.
+</li></ul>
+<h2>Paso 0</h2>
+<p>Copiar este plan aprobado a <code>.claude/planes/012-dar-de-baja-activos.html</code> y agregar la entrada en la bitácora <code>.claude/README.md</code>.</p>
+<h2>Archivos críticos</h2>
+<ul>
+<li>API:
+<ul>
+<li><code>services/postgres/assetMovement.service.ts</code>
+</li>
+<li><code>services/postgres/assetKardex.service.ts</code> (<code>notes</code> en <code>recordWriteOff</code>)
+</li>
+<li><code>controllers/assetMovement.controller.ts</code>
+</li>
+<li><code>routes/assetMovement.routes.ts</code>
+</li>
+<li><code>databases/permission-catalog.ts</code>
+</li>
+<li><code>databases/menu-catalog.ts</code>
+</li>
+<li><code>types/postgres/assetMovement.types.ts</code>
+</li></ul>
+</li>
+<li>Front:
+<ul>
+<li>nuevo <code>pages/activos/DecommissionAsset.tsx</code>
+</li>
+<li><code>services/assetMovementService.ts</code>
+</li>
+<li><code>types/assetMovement.ts</code>
+</li>
+<li><code>routes/AppRoutes.tsx</code>
+</li></ul>
+</li></ul>
+<h2>Verificación</h2>
+<ol>
+<li><strong>API:</strong> <code>tsc --noEmit</code> y tests unitarios. Nuevo <code>assetDecommission.service.integration.test.ts</code>, contra Testing:
+<ul>
+<li><code>RETURNED</code> clasificado → <code>DECOMMISSIONED</code>, asiento <code>WRITE_OFF</code> con el motivo en notas, y aparece en <code>listEligible</code> de Baja Contable;
+</li>
+<li>sin clasificar → 409; <code>ASSIGNED</code> → 409;
+</li>
+<li><code>getDecommissionCheck</code> devuelve <code>blockReason</code> en ambos casos.
+ Correr también las suites de movimientos, inventario (usa <code>DECOMMISSIONED</code> internamente), baja contable, permisos y menú.
+</li></ul>
+</li>
+<li><strong>Front:</strong> <code>tsc -p tsconfig.app.json --noEmit</code>, lint y tests.
+</li>
+<li><strong>Valorización:</strong> después de reiniciar, verificar en la BD de Development que <code>asset-valuation-view</code> incluye <code>asset-valuation:update</code>, y que un analista con solo esa pantalla ve y usa el botón para ingresar el valor.
+</li>
+<li><strong>Manual en Development</strong> (reiniciar la API):
+<ul>
+<li>hoja «Dar de Baja Activos» en Movimiento Activos;
+</li>
+<li>dar de baja un activo <code>RETURNED</code> clasificado y verlo en Baja Contable;
+</li>
+<li>intentar con uno sin clasificar (bloqueado) y con uno asignado (toast).
+</li></ul>
+</li>
+<li>Revisión de seguridad antes de promover: permiso nuevo, endpoint que escribe el Kardex, cierre de la vía genérica y ampliación del agrupador de valorización.
+</li></ol>
+
+<footer class="doc-footer">Copia del plan aprobado en la sesión del 2026-09-28.</footer>
+</div>
+</body>
+</html>

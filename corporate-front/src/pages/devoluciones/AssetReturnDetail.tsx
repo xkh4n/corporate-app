@@ -7,6 +7,7 @@ import { handleError } from "../../lib/Errors";
 import { assetReturnService } from "../../services/assetReturnService";
 import type { AssetReturnDetail } from "../../types/assetReturn";
 import { downloadBlob } from "../../lib/downloadBlob";
+import { isSystemsRole } from "../../lib/roleCostCenter";
 import { formatDateTime, statusLabel } from "../inventario/inventoryLabels";
 import { CandidatePicker } from "./CandidatePicker";
 import {
@@ -21,7 +22,7 @@ const TH = "px-4 py-2 text-left font-semibold text-slate-600";
 // Una devolucion puntual. Segun su estado y los permisos del usuario:
 //  - DRAFT + asset-returns:create: agregar/quitar activos, adjuntar la guia,
 //    "Enviar a Adquisiciones" y cancelar.
-//  - SENT + asset-returns:update: recepcion por activo (Adquisiciones TI).
+//  - SENT + asset-returns:update + rol de Sistemas (1110) o admin: recepcion por activo.
 //  - Cualquier estado: descargar la guia (asset-returns:read). Solo se ofrece la descarga: el servidor la
 //    entrega como archivo (attachment) ya saneado, no se abre en el visor del navegador.
 export function AssetReturnDetailView({ id, onBack }: { id: number; onBack: () => void }) {
@@ -152,12 +153,11 @@ export function AssetReturnDetailView({ id, onBack }: { id: number; onBack: () =
   const isSent = detail.status === "SENT";
   // El servidor es quien manda (403); esto solo evita mostrar botones que fallarian.
   // Modificar (agregar/quitar, guia, enviar, cancelar): el solicitante o un admin.
-  // Recibir: Adquisiciones, y ni quien solicito ni quien envio la devolucion (salvo admin).
+  // Recibir: solo Sistemas (rol del centro de costo 1110) o un admin, aunque haya solicitado o enviado.
   const isAdmin = user?.roleName === "admin";
   const isRequester = user !== null && user !== undefined && detail.requestedBy?.userId === user.userId;
-  const isSender = user !== null && user !== undefined && detail.sentBy?.userId === user.userId;
   const canRequest = can("asset-returns:create") && (isAdmin || isRequester);
-  const canReceive = can("asset-returns:update") && (isAdmin || (!isSender && !isRequester));
+  const canReceive = can("asset-returns:update") && (isAdmin || isSystemsRole(user?.roleName));
   const pendingLines = detail.lines.filter((line) => line.receivedAt === null);
   const showSelection = isSent && canReceive;
   const cannotSendReason = !detail.hasDocument
@@ -240,6 +240,9 @@ export function AssetReturnDetailView({ id, onBack }: { id: number; onBack: () =
                 Cancelar devolución
               </Button>
             </>
+          )}
+          {isSent && !canReceive && pendingLines.length > 0 && (
+            <span className="text-sm text-slate-500">Pendiente de recepción por Sistemas (centro de costo 1110).</span>
           )}
           {showSelection && pendingLines.length > 0 && (
             <>

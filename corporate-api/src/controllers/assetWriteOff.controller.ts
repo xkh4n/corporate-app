@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
+import { sendInlinePhoto } from "./assetMovement.controller";
 import * as writeOffService from "../services/postgres/assetWriteOff.service";
 import { BadRequestError, UnauthorizedError } from "../library/errors";
 import { buildPaginationMeta, parsePaginationParams } from "../library/pagination";
@@ -12,7 +13,11 @@ const ASSET_IDS = z
   .max(writeOffService.MAX_ASSETS_PER_WRITE_OFF);
 const DATE = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, "Formato esperado: AAAA-MM-DD");
 
-export const createWriteOffSchema = z.object({ assetIds: ASSET_IDS }).strict();
+// assetIds (individual o seleccion) o allPending: todos los pendientes (baja por lote, plan 013).
+export const createWriteOffSchema = z.union([
+  z.object({ assetIds: ASSET_IDS }).strict(),
+  z.object({ allPending: z.literal(true) }).strict(),
+]);
 
 export const updateWriteOffSchema = z
   .object({
@@ -70,8 +75,17 @@ export async function getById(req: Request, res: Response, next: NextFunction): 
 
 export async function create(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { assetIds } = req.body as z.infer<typeof createWriteOffSchema>;
-    sendOk(res, await writeOffService.createWriteOff(assetIds, requireUserId(req)), "Borrador de baja creado", 201);
+    const body = req.body as z.infer<typeof createWriteOffSchema>;
+    if ("allPending" in body) {
+      const { detail, notIncluded } = await writeOffService.createAllPendingWriteOff(requireUserId(req));
+      const message =
+        notIncluded > 0
+          ? `Borrador de baja por lote creado con ${detail.lines.length} activos; quedaron ${notIncluded} para otra baja`
+          : `Borrador de baja por lote creado con ${detail.lines.length} activos`;
+      sendOk(res, detail, message, 201);
+      return;
+    }
+    sendOk(res, await writeOffService.createWriteOff(body.assetIds, requireUserId(req)), "Borrador de baja creado", 201);
   } catch (err) {
     next(err);
   }
@@ -155,6 +169,18 @@ export async function uploadPhoto(req: Request, res: Response, next: NextFunctio
       requireUserId(req),
     );
     sendOk(res, photo, "Foto agregada", 201);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getDecommissionPhoto(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    sendInlinePhoto(
+      res,
+      next,
+      await writeOffService.getLineDecommissionPhotoFile(writeOffId(req), parseId(req.params.photoId, "Id de foto")),
+    );
   } catch (err) {
     next(err);
   }
