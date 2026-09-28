@@ -21,6 +21,7 @@ import AssignAsset from "../pages/activos/AssignAsset";
 import ReassignAsset from "../pages/activos/ReassignAsset";
 import AssetAssignments from "../pages/activos/AssetAssignments";
 import AssetHandoverForm from "../pages/activos/AssetHandoverForm";
+import DecommissionAsset from "../pages/activos/DecommissionAsset";
 import AssetKardex from "../pages/activos/AssetKardex";
 import PrintAssetLabels from "../pages/activos/PrintAssetLabels";
 import AssetValuation from "../pages/activos/AssetValuation";
@@ -94,6 +95,7 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/assets/reassign": () => <ReassignAsset />,
   "/assets/assignments": () => <AssetAssignments />,
   "/assets/handover-form": () => <AssetHandoverForm />,
+  "/assets/decommission": () => <DecommissionAsset />,
   "/solicitudes/estado-activos": () => <RequestAssetStatus />,
   "/assets/kardex": () => <AssetKardex />,
   "/assets/labels": () => <PrintAssetLabels />,

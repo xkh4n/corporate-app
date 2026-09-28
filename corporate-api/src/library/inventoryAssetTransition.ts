@@ -63,8 +63,9 @@ export function planExistingAssetChange(input: PlanInput): ExistingAssetPlan | R
     };
   }
 
-  // Una baja encontrada en uso queda devaluada (asignada, valor 0, sin Kardex).
-  if (system === "DECOMMISSIONED") {
+  // Una baja encontrada en uso queda devaluada (asignada, valor 0, sin Kardex). Igual si ya tiene
+  // baja contable (WRITTEN_OFF, plan 013): declararla «Baja» no la cambia.
+  if (system === "DECOMMISSIONED" || system === "WRITTEN_OFF") {
     if (declared === "ASSIGNED") {
       return {
         ok: true,
@@ -176,6 +177,6 @@ export function forcedDeclaredStatus(systemStatus: string): InventoryLineStatusC
 export function instructionFor(systemStatus: string): string | null {
   if (systemStatus === "RETURNED") return RETURNED_INSTRUCTION;
   if (systemStatus === "MOVE_TO_RETURNED") return IN_TRANSIT_INSTRUCTION;
-  if (systemStatus === "DECOMMISSIONED") return DECOMMISSIONED_INSTRUCTION;
+  if (systemStatus === "DECOMMISSIONED" || systemStatus === "WRITTEN_OFF") return DECOMMISSIONED_INSTRUCTION;
   return null;
 }

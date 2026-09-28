@@ -34,6 +34,8 @@ export interface WriteOffLine {
   stage: AccountingStage;
   bookValue: string;
   photos: WriteOffPhoto[];
+  // Fotos tomadas al dar de baja el activo en Dar de Baja Activos (plan 013).
+  decommissionPhotos: WriteOffPhoto[];
 }
 
 export interface WriteOffSummary {
