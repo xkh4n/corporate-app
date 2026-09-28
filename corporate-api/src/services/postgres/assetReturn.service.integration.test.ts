@@ -107,7 +107,13 @@ async function createAssignedAsset(catalog: Catalog, serial: string, holderId: n
   return asset!;
 }
 
-const actorOf = (user: { id: number }, isAdmin = false): AssetReturnActor => ({ userId: user.id, isAdmin });
+const actorOf = (user: { id: number }, isAdmin = false, isSystems = false): AssetReturnActor => ({
+  userId: user.id,
+  isAdmin,
+  isSystems,
+});
+// Sistemas (rol 1110): el unico, junto con admin, que recibe devoluciones.
+const systemsActorOf = (user: { id: number }): AssetReturnActor => actorOf(user, false, true);
 
 // Candidatos "equipos de otro usuario" de un centro de costo, vistos por el solicitante.
 const othersOf = (user: { id: number }, costCenterId: number) => ({
@@ -377,21 +383,21 @@ describe("receiveAssetReturn", () => {
     const receiver = await createFixtureUser();
     const sent = await sendAssetReturn(id, actorOf(requester));
 
-    const partial = await receiveAssetReturn(id, [sent.lines[0]!.id], actorOf(receiver));
+    const partial = await receiveAssetReturn(id, [sent.lines[0]!.id], systemsActorOf(receiver));
     expect(partial).toMatchObject({ status: "SENT", receivedCount: 1, lineCount: 2 });
     expect(await statusOf(a.tag)).toBe("RETURNED");
     expect(await statusOf(b.tag)).toBe("MOVE_TO_RETURNED");
     expect(partial.lines[0]!.receivedAt).not.toBeNull();
 
     // Recibir dos veces la misma linea no es posible.
-    await expect(receiveAssetReturn(id, [sent.lines[0]!.id], actorOf(receiver))).rejects.toBeInstanceOf(BadRequestError);
+    await expect(receiveAssetReturn(id, [sent.lines[0]!.id], systemsActorOf(receiver))).rejects.toBeInstanceOf(BadRequestError);
 
-    const done = await receiveAssetReturn(id, undefined, actorOf(receiver));
+    const done = await receiveAssetReturn(id, undefined, systemsActorOf(receiver));
     expect(done).toMatchObject({ status: "RECEIVED", receivedCount: 2 });
     expect(done.receivedAt).not.toBeNull();
     expect(await statusOf(b.tag)).toBe("RETURNED");
 
-    await expect(receiveAssetReturn(id, undefined, actorOf(receiver))).rejects.toBeInstanceOf(ConflictError);
+    await expect(receiveAssetReturn(id, undefined, systemsActorOf(receiver))).rejects.toBeInstanceOf(ConflictError);
     const movements = await AssetMovementModel.findAll({ where: { assetId: b.id, movementType: "RETURNED" } });
     expect(movements).toHaveLength(1);
   });
@@ -399,10 +405,10 @@ describe("receiveAssetReturn", () => {
   it("no se recibe un borrador ni una linea ajena", async () => {
     const { requester, id } = await draftWithDocument();
     const receiver = await createFixtureUser();
-    await expect(receiveAssetReturn(id, undefined, actorOf(receiver))).rejects.toBeInstanceOf(ConflictError);
+    await expect(receiveAssetReturn(id, undefined, systemsActorOf(receiver))).rejects.toBeInstanceOf(ConflictError);
 
     await sendAssetReturn(id, actorOf(requester));
-    await expect(receiveAssetReturn(id, [999999], actorOf(receiver))).rejects.toBeInstanceOf(BadRequestError);
+    await expect(receiveAssetReturn(id, [999999], systemsActorOf(receiver))).rejects.toBeInstanceOf(BadRequestError);
   });
 });
 
@@ -528,19 +534,18 @@ describe("propiedad de la devolucion y separacion de funciones", () => {
     expect(requester.id).not.toBe(stranger.id);
   });
 
-  it("ni quien solicito ni quien envio la devolucion puede recibirla, salvo un administrador", async () => {
+  it("solo Sistemas (rol 1110) o un administrador recibe; los demas centros de costo solo solicitan", async () => {
     const { requester, a, id } = await draftWithDocument();
-    const admin = await createFixtureUser();
-    // Un admin envia por cuenta del solicitante: el solicitante tampoco puede recibirla.
-    await sendAssetReturn(id, actorOf(admin, true));
+    await sendAssetReturn(id, actorOf(requester));
 
+    // Un usuario de otro centro de costo (tienda) no recibe, ni siendo quien la solicito.
     await expect(receiveAssetReturn(id, undefined, actorOf(requester))).rejects.toBeInstanceOf(ForbiddenError);
-    await expect(receiveAssetReturn(id, undefined, actorOf(admin))).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(receiveAssetReturn(id, undefined, actorOf(await createFixtureUser()))).rejects.toBeInstanceOf(ForbiddenError);
     expect(await statusOf(a.tag)).toBe("MOVE_TO_RETURNED");
 
-    // Otro usuario (Adquisiciones) si; el admin tambien aunque haya enviado.
-    const receiver = await createFixtureUser();
-    await expect(receiveAssetReturn(id, undefined, actorOf(receiver))).resolves.toMatchObject({ status: "RECEIVED" });
+    // Sistemas si, aunque sea quien la solicito y envio.
+    await expect(receiveAssetReturn(id, undefined, systemsActorOf(requester))).resolves.toMatchObject({ status: "RECEIVED" });
+    expect(await statusOf(a.tag)).toBe("RETURNED");
   });
 });
 

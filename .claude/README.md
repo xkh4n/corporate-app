@@ -18,6 +18,28 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (13) — Devoluciones: solo Sistemas (1110) recibe
+
+### Decisión
+- **Antes:** quien solicitó o envió una devolución no podía recibirla, salvo un admin. Esto bloqueaba al analista que hace la toma, pide el despacho a la tienda y luego lo recepciona, o cuando no está el analista de Adquisiciones.
+- **Ahora:** recibe solo quien tiene un rol del centro de costo **1110** (Sistemas), o un admin, aunque haya solicitado o enviado la devolución. Los demás centros de costo solo solicitan. Se sigue exigiendo `asset-returns:update`.
+- **Cómo se sabe el centro de costo:** por el prefijo del rol. Nuevo Rol arma el nombre como `<código>-<nombre>`, y el usuario recibe el rol por su cargo.
+
+### Implementación
+- **API:**
+  - `library/roleCostCenter.ts` con `isSystemsRole`, más su prueba unitaria.
+  - `AssetReturnActor.isSystems` se toma del rol de la sesión.
+  - `receiveAssetReturn` responde 403 si el usuario no es de Sistemas ni admin.
+- **Front:**
+  - `lib/roleCostCenter.ts` aplica la misma regla.
+  - El detalle muestra «Pendiente de recepción por Sistemas» a quien no puede recibir.
+- **Pruebas:** integración de devoluciones 32/32 contra Testing.
+
+### Ojo
+- La API no valida el prefijo al crear o renombrar roles; hoy solo lo arma el front. Quien tenga `roles:create`/`roles:update` podría crear un rol `1110-…`, pero para eso ya administra roles.
+
+---
+
 ## 2026-09-28 (12) — Plan 012: Dar de Baja Activos y valorización habilitada (aprobado)
 
 ### Hecho
