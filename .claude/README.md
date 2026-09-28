@@ -18,6 +18,15 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (6) — Asignar Activos explica por qué un activo no se puede asignar
+
+### Hecho
+- **Reporte:** un equipo dado de alta en una toma de inventario (`ARR000000002`) no aparecía en Asignar Activos. La búsqueda sí lo encontraba (por tag o serie), pero la pantalla descarta lo que no está `AVAILABLE`, y el alta de la toma lo deja `ASSIGNED` al tenedor. El mensaje decía «no se encontró».
+- **Cambio:** si la búsqueda encuentra activos pero ninguno está disponible, el toast dice «El activo X ya se encuentra asignado» o muestra el estado en que está. «No se encontró» queda solo para cuando no existe ninguno.
+
+### Verificación
+- `tsc -p tsconfig.app.json` y eslint del archivo, limpios.
+
 ## 2026-09-28 (5) — Folio de toma de inventario sin guiones
 
 ### Hecho
