@@ -37,6 +37,8 @@ import {
   TicketTable,
   Timeline,
 } from "./components";
+import { EMPTY_EQUIPMENT_DRAFT, toEquipmentPayload, type EquipmentDraft } from "./equipmentDraft";
+import { EquipmentRequestFields } from "./EquipmentRequestFields";
 import { ASSET_STATUS_LABELS, humanizeKey, IMPACT_LABELS, MAX_ATTACHMENT_BYTES, RESOLUTION_LABELS, TYPE_LABELS, URGENCY_LABELS } from "./serviceDeskLabels";
 
 // Portal del solicitante (plan 009): registrar un incidente o pedir un
@@ -72,7 +74,11 @@ export default function GenerateTicket() {
             <>
               <Tabs tabs={tabs} active={tab} onChange={(key) => setSearchParams({ tab: key })} />
               {tab === "new" && (
-                <NewTicketForm canKb={canKb} onCreated={(id) => setSearchParams({ ticket: String(id) })} />
+                <NewTicketForm
+                  canKb={canKb}
+                  initialService={searchParams.get("service")}
+                  onCreated={(id) => setSearchParams({ ticket: String(id) })}
+                />
               )}
               {tab === "mine" && <MyTickets onOpen={(id) => setSearchParams({ ticket: String(id) })} />}
               {tab === "help" && canKb && <HelpCenter />}
@@ -87,7 +93,9 @@ export default function GenerateTicket() {
 // ---------------------------------------------------------------------------
 // Nuevo ticket
 // ---------------------------------------------------------------------------
-function NewTicketForm({ canKb, onCreated }: { canKb: boolean; onCreated: (id: number) => void }) {
+// initialService: "equipment" (la solicitud de equipo, a donde redirige la vieja
+// "Nueva Solicitud") o el id de un item del catalogo.
+function NewTicketForm({ canKb, initialService, onCreated }: { canKb: boolean; initialService: string | null; onCreated: (id: number) => void }) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
@@ -104,6 +112,7 @@ function NewTicketForm({ canKb, onCreated }: { canKb: boolean; onCreated: (id: n
   const [variables, setVariables] = useState<Record<string, unknown>>({});
   const [assetIds, setAssetIds] = useState<Set<number>>(new Set());
   const [files, setFiles] = useState<File[]>([]);
+  const [equipment, setEquipment] = useState<EquipmentDraft>(EMPTY_EQUIPMENT_DRAFT);
   const [saving, setSaving] = useState(false);
   const [suggestions, setSuggestions] = useState<KbArticleSummary[]>([]);
   const [openArticleId, setOpenArticleId] = useState<number | null>(null);
@@ -114,10 +123,18 @@ function NewTicketForm({ canKb, onCreated }: { canKb: boolean; onCreated: (id: n
         setCategories(catalog.categories);
         setCatalogItems(catalog.catalogItems);
         setMyAssets(assets);
+        const preselected =
+          initialService === "equipment"
+            ? catalog.catalogItems.find((item) => item.fulfillment === "PURCHASE_REQUEST")
+            : catalog.catalogItems.find((item) => String(item.id) === initialService);
+        if (preselected) {
+          setType("SERVICE_REQUEST");
+          setCatalogItemId(preselected.id);
+        }
       })
       .catch((error) => handleError(error, navigate))
       .finally(() => setLoading(false));
-  }, [navigate]);
+  }, [navigate, initialService]);
 
   // Sugerencias de la base de conocimiento mientras escribe el asunto (autoservicio).
   useEffect(() => {
@@ -139,6 +156,7 @@ function NewTicketForm({ canKb, onCreated }: { canKb: boolean; onCreated: (id: n
   }, [title, canKb]);
 
   const selectedItem = catalogItems.find((item) => item.id === catalogItemId) ?? null;
+  const createsPurchase = type === "SERVICE_REQUEST" && selectedItem?.fulfillment === "PURCHASE_REQUEST";
   const incidentCategories = useMemo(
     () => categories.filter((category) => category.appliesTo.includes(type)),
     [categories, type],
@@ -177,6 +195,7 @@ function NewTicketForm({ canKb, onCreated }: { canKb: boolean; onCreated: (id: n
           throw createValidationError(`Complete el campo «${field.label}»`);
         }
       }
+      const purchaseRequest = createsPurchase ? toEquipmentPayload(equipment) : undefined;
       setSaving(true);
       const cleanVariables = Object.fromEntries(Object.entries(variables).filter(([, value]) => value !== undefined && value !== ""));
       const created = await servicePortalService.create({
@@ -189,6 +208,7 @@ function NewTicketForm({ canKb, onCreated }: { canKb: boolean; onCreated: (id: n
         impact,
         urgency,
         assetIds: [...assetIds],
+        purchaseRequest,
       });
       let failed = 0;
       for (const file of files) {
@@ -199,7 +219,11 @@ function NewTicketForm({ canKb, onCreated }: { canKb: boolean; onCreated: (id: n
         }
       }
       if (failed > 0) showWarningToast(`${failed} adjunto(s) no se pudieron subir: agréguelos desde el detalle`);
-      showSuccessToast(`Ticket ${created.number} registrado`);
+      showSuccessToast(
+        created.purchaseRequest?.number
+          ? `Ticket ${created.number} y solicitud de compra ${created.purchaseRequest.number} registrados`
+          : `Ticket ${created.number} registrado`,
+      );
       onCreated(created.id);
     } catch (error) {
       handleError(error, navigate);
@@ -233,6 +257,7 @@ function NewTicketForm({ canKb, onCreated }: { canKb: boolean; onCreated: (id: n
                 onChange={() => {
                   setType(option.key);
                   setVariables({});
+                  setEquipment(EMPTY_EQUIPMENT_DRAFT);
                 }}
               />
               <span className="block font-semibold text-slate-800">{option.title}</span>
@@ -251,6 +276,7 @@ function NewTicketForm({ canKb, onCreated }: { canKb: boolean; onCreated: (id: n
               onChange={(e) => {
                 setCatalogItemId(e.target.value ? Number(e.target.value) : "");
                 setVariables({});
+                setEquipment(EMPTY_EQUIPMENT_DRAFT);
               }}
             >
               <option value="">Seleccione…</option>
@@ -267,6 +293,11 @@ function NewTicketForm({ canKb, onCreated }: { canKb: boolean; onCreated: (id: n
               {selectedItem.requiresApproval && (
                 <p className="mt-1 text-xs text-violet-700">Este servicio requiere aprobación antes de atenderse.</p>
               )}
+              {selectedItem.fulfillment === "PURCHASE_REQUEST" && (
+                <p className="mt-1 text-xs text-violet-700">
+                  Genera una solicitud de compra: la aprueba quien usted elija y el ticket le muestra cada avance hasta la entrega.
+                </p>
+              )}
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 {selectedItem.fields.map((field) => (
                   <DynamicField
@@ -277,6 +308,11 @@ function NewTicketForm({ canKb, onCreated }: { canKb: boolean; onCreated: (id: n
                   />
                 ))}
               </div>
+              {createsPurchase && (
+                <div className="mt-3">
+                  <EquipmentRequestFields value={equipment} onChange={setEquipment} />
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -519,7 +555,9 @@ function PortalTicketDetail({ id, onBack }: { id: number; onBack: () => void }) 
   }
 
   const isFinal = detail.status === "CLOSED" || detail.status === "CANCELLED";
-  const canCancel = ["PENDING_APPROVAL", "NEW", "ASSIGNED"].includes(detail.status);
+  // Con compra vinculada, anular el ticket retira la compra: solo antes de que alguien la apruebe.
+  const purchaseWithdrawable = !detail.purchaseRequest || ["DRAFT", "SUBMITTED"].includes(detail.purchaseRequest.status ?? "");
+  const canCancel = ["PENDING_APPROVAL", "NEW", "ASSIGNED"].includes(detail.status) && purchaseWithdrawable;
   const isResolved = detail.status === "RESOLVED";
 
   return (
@@ -540,6 +578,12 @@ function PortalTicketDetail({ id, onBack }: { id: number; onBack: () => void }) 
           {detail.assigneeName ? ` (${detail.assigneeName})` : ""}
         </p>
         <PlainText text={detail.description} className="mt-3" />
+        {detail.purchaseRequest && (
+          <p className="mt-3 rounded-md bg-violet-50 px-3 py-2 text-sm text-violet-900">
+            Solicitud de compra <span className="font-semibold">{detail.purchaseRequest.number ?? `#${detail.purchaseRequest.id}`}</span>:{" "}
+            {detail.purchaseRequest.statusLabel ?? "estado no disponible"}
+          </p>
+        )}
         {Object.keys(detail.variables).length > 0 && (
           <dl className="mt-3 grid gap-1 text-sm sm:grid-cols-2">
             {Object.entries(detail.variables).map(([key, value]) => (
@@ -577,7 +621,7 @@ function PortalTicketDetail({ id, onBack }: { id: number; onBack: () => void }) 
         {canCancel && (
           <div className="mt-4">
             <Button type="button" variant="ghost" onClick={() => setModal("cancel")}>
-              Anular ticket
+              {detail.purchaseRequest ? "Anular ticket y solicitud de compra" : "Anular ticket"}
             </Button>
           </div>
         )}

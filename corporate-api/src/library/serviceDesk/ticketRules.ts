@@ -100,6 +100,57 @@ export function resolvePriority(matrix: PriorityMatrix, impact: number, urgency:
 export const SLA_WARNING_RATIO = 0.75;
 
 // ---------------------------------------------------------------------------
+// Solicitud de equipo (plan 010): el item del catalogo que genera la solicitud
+// de compra y como mueve la compra al ticket vinculado.
+// ---------------------------------------------------------------------------
+export const CATALOG_FULFILLMENTS = ["PURCHASE_REQUEST"] as const;
+export type CatalogFulfillment = (typeof CATALOG_FULFILLMENTS)[number];
+
+// Estados de la compra desde los que el ticket ya no espera nada de ella: el
+// agente vuelve a poder resolverlo o anularlo a mano.
+export const PURCHASE_SETTLED_STATUSES: readonly string[] = ["DELIVERED", "CLOSED", "REJECTED", "CANCELLED"];
+// El solicitante retira la compra (anulando el ticket) solo antes de que alguien la apruebe.
+export const PURCHASE_WITHDRAWABLE_STATUSES: readonly string[] = ["DRAFT", "SUBMITTED"];
+
+export type PurchaseSyncEffect = "EVENT" | "HOLD" | "RESOLVE" | "CLOSE" | "CANCEL";
+
+// Que le pasa al ticket cuando la compra llega a "status". OC emitida: espera al
+// proveedor (pausa el SLA). Recepcion completa: resuelto. Rechazo o anulacion:
+// el ticket se anula. El resto solo deja constancia en la linea de tiempo.
+export function purchaseSyncEffect(status: string): PurchaseSyncEffect {
+  switch (status) {
+    case "OC_GENERATED":
+      return "HOLD";
+    case "DELIVERED":
+      return "RESOLVE";
+    case "CLOSED":
+      return "CLOSE";
+    case "REJECTED":
+    case "CANCELLED":
+      return "CANCEL";
+    default:
+      return "EVENT";
+  }
+}
+
+// Texto para el solicitante de cada estado de la compra.
+export const PURCHASE_STATUS_LABELS: Record<string, string> = {
+  DRAFT: "Registrada",
+  SUBMITTED: "Enviada a aprobación",
+  APPROVED: "Aprobada",
+  REJECTED: "Rechazada",
+  IN_QUOTATION: "En cotización",
+  APPROVE_QUOTE: "Cotizaciones en revisión",
+  QUOTE_APPROVED: "Cotización aprobada",
+  OC_GENERATED: "Orden de compra emitida",
+  PENDING_DELIVERY: "Esperando la entrega del proveedor",
+  AVAILABLE: "Recepción parcial",
+  DELIVERED: "Equipo recepcionado",
+  CANCELLED: "Anulada",
+  CLOSED: "Cerrada",
+};
+
+// ---------------------------------------------------------------------------
 // Campos dinamicos de un item del catalogo de servicios.
 // ---------------------------------------------------------------------------
 export const CATALOG_FIELD_TYPES = ["text", "textarea", "number", "date", "select", "boolean"] as const;

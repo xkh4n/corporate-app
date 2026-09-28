@@ -4,7 +4,7 @@ import { BadRequestError } from "../library/errors";
 import { logger } from "../library/logger";
 import { buildPaginationMeta, parsePaginationParams } from "../library/pagination";
 import { sendList, sendNoContent, sendOk } from "../library/response";
-import { catalogFieldsSchema, PRIORITIES, TICKET_TYPES } from "../library/serviceDesk/ticketRules";
+import { CATALOG_FULFILLMENTS, catalogFieldsSchema, PRIORITIES, TICKET_TYPES } from "../library/serviceDesk/ticketRules";
 import { listSettingsAudit, recordSettingsChange, type AuditAction } from "../services/postgres/serviceDesk/audit.service";
 import * as settings from "../services/postgres/serviceDesk/settings.service";
 import { actorOf, ID, LEVEL, parseId, queryString, requireUserId, TEXT } from "./serviceDesk.shared";
@@ -46,6 +46,7 @@ export const catalogItemSchema = z
     categoryId: ID.nullable().optional(),
     defaultGroupId: ID.nullable().optional(),
     approvalGroupId: ID.nullable().optional(),
+    fulfillment: z.enum(CATALOG_FULFILLMENTS).nullable().optional(),
     fields: catalogFieldsSchema,
     isActive: z.boolean().optional(),
   })

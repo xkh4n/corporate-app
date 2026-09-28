@@ -1,4 +1,4 @@
-import type { CatalogField, Priority, TicketType } from "../library/serviceDesk/ticketRules";
+import type { CatalogField, CatalogFulfillment, Priority, TicketType } from "../library/serviceDesk/ticketRules";
 
 // Configuracion inicial del Service Desk (plan 009). Se siembra UNA vez, solo
 // si la tabla correspondiente esta vacia (ver migrateServiceDesk en
@@ -84,21 +84,23 @@ export const DEFAULT_CATEGORIES: { name: string; group: string; appliesTo: strin
   { name: "Otros", group: "Mesa de Ayuda N1", appliesTo: ["INCIDENT", "SERVICE_REQUEST"] },
 ];
 
-export const DEFAULT_CATALOG_ITEMS: { name: string; description: string; category: string; fields: CatalogField[] }[] = [
+// Item que genera la solicitud de compra junto con el ticket (plan 010). Los
+// productos se eligen en las lineas de la compra, no en un campo del formulario.
+export const EQUIPMENT_REQUEST_ITEM_NAME = "Solicitud de equipo";
+
+export const DEFAULT_CATALOG_ITEMS: {
+  name: string;
+  description: string;
+  category: string;
+  fields: CatalogField[];
+  fulfillment?: CatalogFulfillment;
+}[] = [
   {
-    name: "Solicitud de equipo",
-    description: "Notebook, monitor, periféricos u otro equipo para un colaborador.",
+    name: EQUIPMENT_REQUEST_ITEM_NAME,
+    description: "Notebook, monitor, periféricos u otro equipo para un colaborador. Genera la solicitud de compra.",
     category: "Hardware",
-    fields: [
-      {
-        key: "equipo",
-        label: "Equipo",
-        type: "select",
-        required: true,
-        options: ["Notebook", "Monitor", "Teclado/Mouse", "Teléfono", "Otro"],
-      },
-      { key: "justificacion", label: "Justificación", type: "textarea", required: true },
-    ],
+    fulfillment: "PURCHASE_REQUEST",
+    fields: [{ key: "justificacion", label: "Justificación", type: "textarea", required: true }],
   },
   {
     name: "Acceso a sistema",

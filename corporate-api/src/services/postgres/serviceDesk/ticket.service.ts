@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { QueryTypes, type Transaction } from "sequelize";
+import { mssql } from "../../../databases/mssql/connection";
 import { postgres } from "../../../databases/postgres/connection";
 import { deleteIfExists, getServiceTicketFolder, saveBuffer } from "../../../library/documentStorage";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../../../library/errors";
+import { logger } from "../../../library/logger";
 import type { PaginationParams } from "../../../library/pagination";
 import { getOffset } from "../../../library/pagination";
 import { addBusinessMinutes, businessMinutesBetween } from "../../../library/serviceDesk/businessTime";
@@ -14,6 +16,10 @@ import {
   canAgentTransition,
   canRequesterCancel,
   FINAL_STATUSES,
+  PURCHASE_SETTLED_STATUSES,
+  PURCHASE_STATUS_LABELS,
+  PURCHASE_WITHDRAWABLE_STATUSES,
+  purchaseSyncEffect,
   resolvePriority,
   SLA_WARNING_RATIO,
   type Channel,
@@ -23,7 +29,17 @@ import {
   type TicketStatus,
   type TicketType,
 } from "../../../library/serviceDesk/ticketRules";
+import type { PurchaseRequestModel } from "../../../models/mssql/purchaseRequest.model";
+import {
+  createPurchaseRequestWithLines,
+  getPurchaseRequestStatuses,
+  notifyPurchaseRequestCreated,
+  withdrawPurchaseRequest,
+  type PurchaseRequestLineDraft,
+} from "../../mssql/purchaseRequest.service";
 import { getUserByIdOrThrow, getUserDirectory } from "../../mssql/user.service";
+import { hasPermission } from "../permission.service";
+import { getRoleByIdOrThrow } from "../role.service";
 import { nextServiceDeskNumber } from "./numbering";
 import {
   emailRequester,
@@ -127,6 +143,9 @@ interface TicketRow {
   csatComment: string | null;
   problemId: number | null;
   approvalGroupId: number | null;
+  purchaseRequestId: number | null;
+  purchaseRequestNumber: string | null;
+  purchaseRequestStatus: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -142,6 +161,8 @@ const ROW_COLUMNS = `
   t.sla_paused_minutes AS "slaPausedMinutes", t.on_hold_since AS "onHoldSince", t.first_response_at AS "firstResponseAt",
   t.response_breached AS "responseBreached", t.resolution_breached AS "resolutionBreached", t.warned_at AS "warnedAt",
   t.approval_group_id AS "approvalGroupId",
+  t.purchase_request_id AS "purchaseRequestId", t.purchase_request_number AS "purchaseRequestNumber",
+  t.purchase_request_status AS "purchaseRequestStatus",
   t.resolved_at AS "resolvedAt", t.resolved_by AS "resolvedBy", t.auto_close_at AS "autoCloseAt",
   t.closed_at AS "closedAt", t.closed_by AS "closedBy", t.reopen_count AS "reopenCount",
   t.csat_score AS "csatScore", t.csat_comment AS "csatComment", t.problem_id AS "problemId",
@@ -210,6 +231,14 @@ export interface TicketApproval {
   decidedAt: Date;
 }
 
+// Solicitud de compra que genero el ticket (solicitud de equipo, plan 010).
+export interface LinkedPurchaseRequest {
+  id: number;
+  number: string | null;
+  status: string | null;
+  statusLabel: string | null;
+}
+
 export interface TicketDetail extends TicketSummary {
   description: string;
   variables: Record<string, unknown>;
@@ -230,6 +259,7 @@ export interface TicketDetail extends TicketSummary {
   attachments: TicketAttachment[];
   approvals: TicketApproval[];
   assets: TicketAsset[];
+  purchaseRequest: LinkedPurchaseRequest | null;
   // Solo para el agente: transiciones permitidas desde el estado actual.
   allowedTransitions: TicketStatus[];
 }
@@ -419,6 +449,77 @@ export interface CreateTicketInput {
   requesterUserId?: number;
   assignedGroupId?: number | null;
   isMajor?: boolean;
+  // Solo la solicitud de equipo (item con fulfillment PURCHASE_REQUEST, plan 010).
+  purchaseRequest?: EquipmentPurchaseInput;
+}
+
+export interface EquipmentPurchaseInput {
+  // Sin beneficiario, el equipo es para el propio solicitante.
+  beneficiaryPersonId?: number | null;
+  costCenterId: number;
+  approverId: number;
+  requesterEmail?: string;
+  requesterPhone?: string;
+  lines: PurchaseRequestLineDraft[];
+}
+
+// Solicitud de compra abierta en MSSQL (sin commit) mientras se crea el ticket.
+interface PendingPurchase {
+  request: PurchaseRequestModel;
+  transaction: Transaction;
+}
+
+// Solicitud de equipo (plan 010): si el item del catalogo genera compra, crea la
+// solicitud y sus lineas en una transaccion MSSQL que queda abierta. El llamador
+// crea el ticket en Postgres y recien despues hace commit de MSSQL; si el ticket
+// falla, rollback y no queda la compra (ni se quema el numero SOL).
+async function openEquipmentPurchase(input: CreateTicketInput, actor: TicketActor, mode: "PORTAL" | "AGENT"): Promise<PendingPurchase | null> {
+  const catalogItem = input.catalogItemId ? await getCatalogItem(input.catalogItemId) : null;
+  if (!catalogItem?.fulfillment) {
+    if (input.purchaseRequest) throw new BadRequestError("Solo una solicitud de equipo lleva datos de compra");
+    return null;
+  }
+  if (mode !== "PORTAL") throw new BadRequestError("La solicitud de equipo la registra el propio solicitante desde Generar Ticket");
+  if (!input.purchaseRequest) throw new BadRequestError("Complete los datos de la compra: centro de costo, aprobador y productos");
+  // Defensa en profundidad: el agrupador "Generar Ticket" los incluye, pero la ruta solo exige service-tickets:create.
+  if (!(await canCreatePurchaseRequests(actor))) {
+    throw new ForbiddenError("Requiere permiso 'purchase-requests:create' y 'purchase-request-lines:create'");
+  }
+  const user = await getUserByIdOrThrow(actor.userId);
+  const role = actor.roleId ? await getRoleByIdOrThrow(actor.roleId) : null;
+  const purchase = input.purchaseRequest;
+  const transaction = await mssql.transaction();
+  try {
+    const request = await createPurchaseRequestWithLines(
+      {
+        // El solicitante es siempre quien tiene la sesion: no viaja en el cuerpo.
+        requesterId: user.personId,
+        beneficiaryId: purchase.beneficiaryPersonId ?? user.personId,
+        costCenterId: purchase.costCenterId,
+        approverId: purchase.approverId,
+        requesterPosition: role?.name,
+        requesterEmail: purchase.requesterEmail,
+        requesterPhone: purchase.requesterPhone,
+        notes: input.title.slice(0, 500),
+        createdBy: actor.userId,
+      },
+      purchase.lines,
+      transaction,
+    );
+    return { request, transaction };
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
+  }
+}
+
+async function canCreatePurchaseRequests(actor: TicketActor): Promise<boolean> {
+  if (actor.isAdmin) return true;
+  if (!actor.roleId) return false;
+  return (
+    (await hasPermission(actor.roleId, "purchase-requests", "create")) &&
+    (await hasPermission(actor.roleId, "purchase-request-lines", "create"))
+  );
 }
 
 export async function createTicket(
@@ -431,7 +532,56 @@ export async function createTicket(
     throw new BadRequestError("El solicitante esta inactivo");
   }
 
-  const created = await postgres.transaction(async (transaction) => {
+  const purchase = await openEquipmentPurchase(input, actor, mode);
+  let created: { id: number; number: string; status: TicketStatus; assignedGroupId: number | null; approvalGroupId: number | null; priority: Priority };
+  try {
+    created = await insertTicket(input, actor, mode, requesterUserId, purchase);
+  } catch (err) {
+    await purchase?.transaction.rollback();
+    throw err;
+  }
+  if (purchase) {
+    try {
+      await purchase.transaction.commit();
+    } catch (err) {
+      logger.error({ err, ticketId: created.id }, "Service Desk: fallo el commit de la solicitud de compra de un ticket ya creado");
+      await cancelOrphanPurchaseTicket(created.id);
+      throw new ConflictError("No se pudo registrar la solicitud de compra: intente de nuevo");
+    }
+    notifyPurchaseRequestCreated(purchase.request);
+  }
+
+  const record: NotifiableRecord = { id: created.id, number: created.number, title: input.title };
+  fireAndForget(async () => {
+    await emailRequester(
+      requesterUserId,
+      record,
+      "Registramos su ticket",
+      created.status === "PENDING_APPROVAL"
+        ? "Su solicitud quedó registrada y está esperando aprobación."
+        : purchase
+          ? `Su solicitud de equipo quedó registrada con la solicitud de compra ${purchase.request.requestNumber}. Le avisaremos de cada avance.`
+          : `Su ticket quedó registrado con prioridad ${created.priority}. Le avisaremos de cada avance.`,
+    );
+    if (created.status === "PENDING_APPROVAL") {
+      await notifyGroup(created.approvalGroupId, "ticket-approval-pending", record, "Solicitud pendiente de aprobación", "Hay una solicitud esperando su aprobación.", { allMembers: true });
+    } else {
+      await notifyGroup(created.assignedGroupId, "ticket-assigned", record, "Nuevo ticket en la cola del grupo", `Nuevo ticket ${created.priority} en la cola del grupo.`, {
+        allMembers: created.priority === "P1",
+      });
+    }
+  });
+  return getTicketDetail(created.id, { audience: "agent" });
+}
+
+async function insertTicket(
+  input: CreateTicketInput,
+  actor: TicketActor,
+  mode: "PORTAL" | "AGENT",
+  requesterUserId: number,
+  purchase: PendingPurchase | null,
+) {
+  return postgres.transaction(async (transaction) => {
     const category = input.categoryId ? await getCategory(input.categoryId, transaction) : null;
     if (input.categoryId && (!category || !category.isActive)) throw new BadRequestError("La categoria no existe o esta inactiva");
     if (category && !category.appliesTo.includes(input.type)) {
@@ -447,6 +597,10 @@ export async function createTicket(
     }
     if (mode === "PORTAL" && input.type === "SERVICE_REQUEST" && !catalogItem) {
       throw new BadRequestError("Elija el servicio del catalogo que necesita");
+    }
+    // El item se leyo antes de abrir la compra: si cambio entretanto, no se mezcla.
+    if (Boolean(catalogItem?.fulfillment) !== Boolean(purchase)) {
+      throw new ConflictError("El servicio cambio mientras se registraba el ticket: intente de nuevo");
     }
     let variables: Record<string, unknown> = {};
     if (catalogItem) {
@@ -471,16 +625,19 @@ export async function createTicket(
 
     const categoryId = category?.id ?? catalogItem?.categoryId ?? null;
     const priority = resolvePriority(await loadPriorityMatrix(transaction), input.impact, input.urgency);
-    const needsApproval = catalogItem?.approvalGroupId !== null && catalogItem?.approvalGroupId !== undefined;
+    // La solicitud de equipo la aprueba el aprobador de la compra, no un grupo del Service Desk.
+    const needsApproval = !purchase && catalogItem?.approvalGroupId !== null && catalogItem?.approvalGroupId !== undefined;
     const status: TicketStatus = needsApproval ? "PENDING_APPROVAL" : "NEW";
-    const number = await nextServiceDeskNumber(input.type === "INCIDENT" ? "INC" : "REQ", transaction);
+    const number = await nextServiceDeskNumber(input.type === "INCIDENT" ? "INC" : "REQ", transaction, assignedGroupId);
 
     const [row] = await postgres.query<{ id: number }>(
       `INSERT INTO service_tickets (number, type, status, title, description, category_id, catalog_item_id, variables,
                                     impact, urgency, priority, channel, is_major, requester_user_id, opened_by,
-                                    assigned_group_id, approval_group_id)
+                                    assigned_group_id, approval_group_id, purchase_request_id, purchase_request_number,
+                                    purchase_request_status)
        VALUES (:number, :type, :status, :title, :description, :categoryId, :catalogItemId, CAST(:variables AS JSONB),
-               :impact, :urgency, :priority, :channel, :isMajor, :requesterUserId, :openedBy, :assignedGroupId, :approvalGroupId)
+               :impact, :urgency, :priority, :channel, :isMajor, :requesterUserId, :openedBy, :assignedGroupId, :approvalGroupId,
+               :purchaseRequestId, :purchaseRequestNumber, :purchaseRequestStatus)
        RETURNING id`,
       {
         replacements: {
@@ -502,6 +659,9 @@ export async function createTicket(
           assignedGroupId,
           // Fijado al crear: cambiar despues el item del catalogo no cambia quien aprueba (run-3 final, L6).
           approvalGroupId: needsApproval ? catalogItem!.approvalGroupId : null,
+          purchaseRequestId: purchase?.request.id ?? null,
+          purchaseRequestNumber: purchase?.request.requestNumber ?? null,
+          purchaseRequestStatus: purchase?.request.status ?? null,
         },
         type: QueryTypes.SELECT,
         transaction,
@@ -512,32 +672,36 @@ export async function createTicket(
       isPublic: true,
       payload: { status, priority, assignedGroupId, channel: mode === "PORTAL" ? "PORTAL" : (input.channel ?? "AGENT") },
     });
+    if (purchase) {
+      await addEvent(transaction, id, "PURCHASE_REQUEST_LINKED", actor.userId, {
+        isPublic: true,
+        body: `Se generó la solicitud de compra ${purchase.request.requestNumber}: la revisará el aprobador que eligió.`,
+        payload: { purchaseRequestId: purchase.request.id, requestNumber: purchase.request.requestNumber },
+      });
+    }
     if (status === "NEW") await startSla({ id, type: input.type, priority }, transaction);
     if (input.assetIds && input.assetIds.length > 0) {
       await linkAssetsInTransaction(id, input.assetIds, actor.userId, { ownOnlyFor: mode === "PORTAL" ? actor.userId : null }, transaction);
     }
-    return { id, number, status, assignedGroupId, approvalGroupId: catalogItem?.approvalGroupId ?? null, priority };
+    return { id, number, status, assignedGroupId, approvalGroupId: needsApproval ? catalogItem!.approvalGroupId : null, priority };
   });
+}
 
-  const record: NotifiableRecord = { id: created.id, number: created.number, title: input.title };
-  fireAndForget(async () => {
-    await emailRequester(
-      requesterUserId,
-      record,
-      "Registramos su ticket",
-      created.status === "PENDING_APPROVAL"
-        ? "Su solicitud quedó registrada y está esperando aprobación."
-        : `Su ticket quedó registrado con prioridad ${created.priority}. Le avisaremos de cada avance.`,
-    );
-    if (created.status === "PENDING_APPROVAL") {
-      await notifyGroup(created.approvalGroupId, "ticket-approval-pending", record, "Solicitud pendiente de aprobación", "Hay una solicitud esperando su aprobación.", { allMembers: true });
-    } else {
-      await notifyGroup(created.assignedGroupId, "ticket-assigned", record, "Nuevo ticket en la cola del grupo", `Nuevo ticket ${created.priority} en la cola del grupo.`, {
-        allMembers: created.priority === "P1",
-      });
-    }
-  });
-  return getTicketDetail(created.id, { audience: "agent" });
+// El ticket quedo creado pero la compra no (fallo el commit de MSSQL): se anula
+// y se suelta el vinculo, para que la sincronizacion no busque una compra que no existe.
+async function cancelOrphanPurchaseTicket(id: number): Promise<void> {
+  try {
+    await postgres.transaction(async (transaction) => {
+      const row = await lockTicket(id, transaction);
+      await postgres.query(
+        `UPDATE service_tickets SET purchase_request_id = NULL, purchase_request_status = NULL, purchase_request_number = NULL WHERE id = :id`,
+        { replacements: { id }, transaction },
+      );
+      await applyTransition(row, { status: "CANCELLED", comment: "No se pudo registrar la solicitud de compra" }, null, transaction, "system");
+    });
+  } catch (err) {
+    logger.error({ err, ticketId: id }, "Service Desk: no se pudo anular el ticket de una solicitud de compra fallida");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -747,6 +911,7 @@ export async function getTicketDetail(id: number, options: DetailOptions): Promi
     { replacements: { id }, type: QueryTypes.SELECT },
   );
   const assets = await listTicketAssets(id);
+  const purchaseRequest = await loadLinkedPurchaseRequest(row);
 
   const directory = await getUserDirectory([
     row.requesterUserId,
@@ -778,8 +943,36 @@ export async function getTicketDetail(id: number, options: DetailOptions): Promi
     attachments: attachments.map((attachment) => ({ ...attachment, uploadedByName: nameOf(attachment.uploadedBy) })),
     approvals: approvals.map((approval) => ({ ...approval, approverName: nameOf(approval.approverUserId) })),
     assets,
-    allowedTransitions: publicOnly ? [] : [...agentTransitionsFrom(row.status)],
+    purchaseRequest,
+    allowedTransitions: publicOnly ? [] : agentTransitionsFrom(row.status).filter((to) => !isBlockedByPurchase(row, to)),
   };
+}
+
+// Estado en vivo de la compra; si MSSQL no responde, el ultimo aplicado al ticket.
+async function loadLinkedPurchaseRequest(row: TicketRow): Promise<LinkedPurchaseRequest | null> {
+  if (row.purchaseRequestId === null) return null;
+  let number = row.purchaseRequestNumber;
+  let status = row.purchaseRequestStatus;
+  try {
+    const live = (await getPurchaseRequestStatuses([row.purchaseRequestId])).get(row.purchaseRequestId);
+    if (live) {
+      number = live.requestNumber;
+      status = live.status;
+    }
+  } catch (err) {
+    logger.warn({ err, ticketId: row.id }, "Service Desk: no se pudo leer el estado de la solicitud de compra");
+  }
+  return { id: row.purchaseRequestId, number, status, statusLabel: status ? (PURCHASE_STATUS_LABELS[status] ?? status) : null };
+}
+
+// Un ticket de solicitud de equipo lo resuelve o lo anula la compra: mientras
+// siga en tramite, el agente no puede cerrarlo a mano (plan 010).
+function isBlockedByPurchase(row: TicketRow, to: TicketStatus): boolean {
+  return (
+    row.purchaseRequestId !== null &&
+    (to === "RESOLVED" || to === "CANCELLED") &&
+    !PURCHASE_SETTLED_STATUSES.includes(row.purchaseRequestStatus ?? "")
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -908,6 +1101,11 @@ export async function changeStatus(id: number, input: StatusInput, actor: Ticket
     const row = await lockWorkableTicket(id, actor, transaction);
     if (!canAgentTransition(row.status, input.status)) {
       throw new ConflictError(`No se puede pasar de ${row.status} a ${input.status}`);
+    }
+    if (isBlockedByPurchase(row, input.status)) {
+      throw new ConflictError(
+        `El ticket ${row.number} sigue la solicitud de compra ${row.purchaseRequestNumber ?? ""}: se resuelve al recepcionar el equipo y se anula si la compra se rechaza o anula`,
+      );
     }
     await applyTransition(row, input, actor, transaction, "agent");
     return row;
@@ -1341,6 +1539,17 @@ export async function requesterAction(
     switch (action) {
       case "cancel":
         if (!canRequesterCancel(row.status)) throw new ConflictError("El ticket ya se esta atendiendo: pida la anulacion en un comentario");
+        // Solicitud de equipo: anular el ticket retira la compra, solo si nadie la aprobo todavia.
+        if (row.purchaseRequestId !== null) {
+          if (!PURCHASE_WITHDRAWABLE_STATUSES.includes(row.purchaseRequestStatus ?? "")) {
+            throw new ConflictError("La solicitud de compra ya se esta tramitando: pida la anulacion en un comentario");
+          }
+          await withdrawPurchaseRequest(row.purchaseRequestId, actor.userId);
+          await postgres.query(`UPDATE service_tickets SET purchase_request_status = 'CANCELLED' WHERE id = :id`, {
+            replacements: { id },
+            transaction,
+          });
+        }
         await applyTransition(row, { status: "CANCELLED", comment: input.comment ?? "Anulado por el solicitante" }, actor, transaction, "requester");
         break;
       case "reopen":
@@ -1370,6 +1579,84 @@ export async function requesterAction(
     fireAndForget(() => emailUsersAbout(targets, record, "El solicitante reabrió el ticket", input.comment?.trim() ?? ""));
   }
   return getTicketDetail(id, { audience: "requester", requesterUserId: actor.userId });
+}
+
+// ---------------------------------------------------------------------------
+// Solicitud de equipo: la compra mueve el ticket (plan 010)
+// ---------------------------------------------------------------------------
+export interface PurchaseRequestState {
+  requestNumber: string;
+  status: string;
+  updatedBy: number | null;
+}
+
+// Aplica al ticket el estado actual de su compra. Idempotente: compara contra
+// purchase_request_status, asi el aviso inmediato y el barrido pueden correr los dos.
+// Devuelve true si hubo cambios.
+export async function applyPurchaseRequestState(ticketId: number, purchase: PurchaseRequestState): Promise<boolean> {
+  const outcome = await postgres.transaction(async (transaction) => {
+    const row = await lockTicket(ticketId, transaction);
+    if (row.purchaseRequestId === null || row.purchaseRequestStatus === purchase.status) return null;
+    const label = PURCHASE_STATUS_LABELS[purchase.status] ?? purchase.status;
+    await postgres.query(
+      `UPDATE service_tickets SET purchase_request_status = :status, purchase_request_number = :number, updated_at = now() WHERE id = :id`,
+      { replacements: { id: ticketId, status: purchase.status, number: purchase.requestNumber }, transaction },
+    );
+    await addEvent(transaction, ticketId, "PURCHASE_REQUEST_UPDATED", purchase.updatedBy, {
+      isPublic: true,
+      body: `Solicitud de compra ${purchase.requestNumber}: ${label}`,
+      payload: { requestNumber: purchase.requestNumber, from: row.purchaseRequestStatus, to: purchase.status },
+    });
+    row.purchaseRequestStatus = purchase.status;
+    const transition = await purchaseTransitionFor(row, purchase, transaction);
+    if (transition) await applyTransition(row, transition, null, transaction, "system");
+    return { row, transition };
+  });
+  if (!outcome) return false;
+  if (outcome.transition) afterTransition(outcome.row, outcome.transition);
+  else pushTo([outcome.row.requesterUserId], "ticket-updated", recordOf(outcome.row));
+  if (outcome.transition?.status === "CANCELLED") {
+    const { row, transition } = outcome;
+    fireAndForget(() => emailRequester(row.requesterUserId, recordOf(row), "Su solicitud de equipo no seguirá", transition.comment ?? ""));
+  }
+  return true;
+}
+
+async function purchaseTransitionFor(row: TicketRow, purchase: PurchaseRequestState, transaction: Transaction): Promise<StatusInput | null> {
+  if (FINAL_STATUSES.includes(row.status) || row.status === "PENDING_APPROVAL") return null;
+  switch (purchaseSyncEffect(purchase.status)) {
+    case "HOLD":
+      return ["NEW", "ASSIGNED", "IN_PROGRESS"].includes(row.status)
+        ? { status: "ON_HOLD", onHoldReason: "AWAITING_VENDOR", comment: `Orden de compra emitida: se espera la entrega del proveedor` }
+        : null;
+    case "RESOLVE":
+      if (row.status === "RESOLVED" || !(await canLeaveSupport(row.id, transaction))) return null;
+      return {
+        status: "RESOLVED",
+        resolutionCode: "FULFILLED",
+        resolutionNotes: `Se recepcionó el equipo de la solicitud de compra ${purchase.requestNumber}. Si todavía no lo tiene, reabra el ticket.`,
+      };
+    case "CLOSE":
+      return row.status === "RESOLVED" ? { status: "CLOSED", comment: `Solicitud de compra ${purchase.requestNumber} cerrada` } : null;
+    case "CANCEL":
+      if (!(await canLeaveSupport(row.id, transaction))) return null;
+      return {
+        status: "CANCELLED",
+        comment: `La solicitud de compra ${purchase.requestNumber} fue ${purchase.status === "REJECTED" ? "rechazada" : "anulada"}`,
+      };
+    default:
+      return null;
+  }
+}
+
+// Con un activo en soporte el ticket no se resuelve ni se anula solo: queda para el agente.
+async function canLeaveSupport(ticketId: number, transaction: Transaction): Promise<boolean> {
+  try {
+    await assertNoAssetInSupport(ticketId, transaction);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // Cierre automatico de un RESUELTO sin respuesta (lo llama el barrido de SLA).

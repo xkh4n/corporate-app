@@ -322,6 +322,12 @@ export function TicketWorkspace({
               <Row label="Canal" value={CHANNEL_LABELS[detail.channel]} />
               <Row label="Categoría" value={detail.categoryName ?? "-"} />
               {detail.catalogItemName && <Row label="Servicio" value={detail.catalogItemName} />}
+              {detail.purchaseRequest && (
+                <Row
+                  label="Solicitud de compra"
+                  value={`${detail.purchaseRequest.number ?? `#${detail.purchaseRequest.id}`} · ${detail.purchaseRequest.statusLabel ?? "sin estado"}`}
+                />
+              )}
               <Row label="Impacto / urgencia" value={`${LEVEL_LABELS[detail.impact]} / ${LEVEL_LABELS[detail.urgency]}`} />
               <Row label="Grupo" value={detail.assignedGroupName ?? "Sin grupo"} />
               <Row label="Agente" value={detail.assigneeName ?? "Sin agente"} />
