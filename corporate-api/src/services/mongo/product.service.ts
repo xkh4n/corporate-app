@@ -50,6 +50,15 @@ export async function getProductsByIds(ids: string[]): Promise<ProductDocument[]
   return ProductModel.find({ _id: { $in: validIds } });
 }
 
+// Ids de los productos de una categoria (Visualizar Asignaciones, plan 011): el
+// filtro por categoria de los activos se resuelve aca y se aplica en Postgres
+// sobre assets.product_id. Un id mal formado devuelve [] (sin resultados).
+export async function listProductIdsByCategory(categoryId: string): Promise<string[]> {
+  if (!isValidObjectId(categoryId)) return [];
+  const products = await ProductModel.find({ categoryId }, { _id: 1 }).lean();
+  return products.map((product) => String(product._id));
+}
+
 // Batch por nombre EXACTO (name es unico): la carga masiva por CSV identifica el producto por su nombre. Los
 // nombres llegan como strings (celdas de un CSV), asi que no pueden inyectar operadores de Mongo.
 export async function getProductsByNames(names: string[]): Promise<ProductDocument[]> {

@@ -261,6 +261,35 @@ export async function listAssignableUsers(search: string): Promise<SafeUser[]> {
   return users.map(toSafeUser);
 }
 
+// Ids de usuarios (activos o no: un activo puede seguir en manos de alguien que
+// ya no esta) cuyo RUT o nombre contiene el texto. Solo ids, para filtrar
+// Visualizar Asignaciones (plan 011) por tenedor; el nombre se muestra con
+// getUserDirectory. Sin escape en MSSQL: se quitan los comodines del texto.
+export async function findUserIdsBySearch(search: string, limit = 200): Promise<number[]> {
+  const trimmed = search.replace(/[%_[\]]/g, "").trim();
+  if (!trimmed) return [];
+  const users = await UserModel.findAll({
+    attributes: ["id"],
+    include: [
+      {
+        model: PersonModel,
+        as: "person",
+        required: true,
+        attributes: [],
+        where: {
+          [Op.or]: [
+            { documentId: { [Op.like]: `%${trimmed}%` } },
+            { firstName: { [Op.like]: `%${trimmed}%` } },
+            { lastName: { [Op.like]: `%${trimmed}%` } },
+          ],
+        },
+      },
+    ],
+    limit,
+  });
+  return users.map((user) => user.id);
+}
+
 // Coincidencia EXACTA por RUT de un usuario activo (picker de la toma de inventario). Devuelve solo lo
 // necesario para mostrar y asignar; no expone el resto de los datos personales.
 export async function findActiveUserByDocumentId(

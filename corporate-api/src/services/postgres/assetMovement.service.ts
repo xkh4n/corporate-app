@@ -3,22 +3,32 @@ import { postgres } from "../../databases/postgres/connection";
 import { AssetModel } from "../../models/postgres/asset.model";
 import { AssetMovementModel } from "../../models/postgres/assetMovement.model";
 import { AssetMovementUserModel } from "../../models/postgres/assetMovementUser.model";
-import { getAssetByIdOrThrow, lockAssetRow, setAssetStatus } from "./asset.service";
+import { getAssetByIdOrThrow, lockAssetRow, setAssetStatus, updateAssetLocation } from "./asset.service";
 import { getAssetStatusByCodeOrThrow } from "./assetStatus.service";
 import { recordWriteOff } from "./assetKardex.service";
-import { getUserByIdOrThrow } from "../mssql/user.service";
+import { findUserIdsBySearch, getUserByIdOrThrow, getUserDirectory } from "../mssql/user.service";
 import { getEmployeeByPersonId } from "../mssql/employee.service";
 import { GoodsReceiptModel } from "../../models/mssql/goodsReceipt.model";
 import { getSupplierByIdOrThrow } from "../mssql/supplier.service";
 import { getBusinessPartnerByIdOrThrow } from "../mssql/businessPartner.service";
-import { getCostCenterById } from "./costCenter.service";
+import { getCostCenterById, getCostCenterByIdOrThrow } from "./costCenter.service";
+import { CostCenterModel } from "../../models/postgres/costCenter.model";
 import { getPositionById } from "../mongo/position.service";
-import { getProductById } from "../mongo/product.service";
+import { getProductById, getProductsByIds, listProductIdsByCategory } from "../mongo/product.service";
+import { getProductCategoriesByIds } from "../mongo/productCategory.service";
 import { BadRequestError, ConflictError, NotFoundError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
-import { buildSequelizeOrder } from "../../library/sequelizeSearch";
-import type { AssignAssetInput, CreateAssetMovementInput } from "../../types/postgres/assetMovement.types";
+import { buildSequelizeOrder, escapeLikePattern } from "../../library/sequelizeSearch";
+import type {
+  AssignAssetInput,
+  AssignmentCostCenter,
+  AssignmentFilters,
+  AssignmentRow,
+  CreateAssetMovementInput,
+  CurrentAssignment,
+  ReassignAssetInput,
+} from "../../types/postgres/assetMovement.types";
 import type { AssetHandoverPdfData } from "../../library/pdf/assetHandoverPdf";
 
 // El estado ACTUAL del activo (Asset.statusId) se actualiza aca como efecto
@@ -328,4 +338,266 @@ export async function assignAssetToUser(input: AssignAssetInput): Promise<AssetM
     hasCharger: input.hasCharger,
     createdBy: input.createdBy,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Movimiento de Activos (plan 011): reasignar, asignacion vigente y listado.
+// ---------------------------------------------------------------------------
+
+// Estados con tenedor: los unicos que se reasignan y los que lista Visualizar
+// Asignaciones. DEVALUATED es una baja reactivada en uso (valor 0).
+const HELD_STATUS_CODES = ["ASSIGNED", "DEVALUATED"];
+// Movimientos que generan acta (datos de entrega). SUPPORT_TO_HOLDER devuelve el
+// activo reparado a quien ya lo tenia: su acta sigue siendo la anterior.
+const HANDOVER_MOVEMENT_TYPES = ["ASSIGNED", "REASSIGNED", "DEVALUATED"];
+const NOTES_MAX_LENGTH = 255;
+
+function describeCostCenter(costCenter: AssignmentCostCenter | undefined | null): string {
+  return costCenter ? `${costCenter.code} ${costCenter.name}` : "sin centro de costo";
+}
+
+async function loadCostCenters(ids: number[], transaction?: Transaction): Promise<Map<number, AssignmentCostCenter>> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return new Map();
+  const rows = await CostCenterModel.findAll({ where: { id: unique }, transaction });
+  return new Map(rows.map((row) => [row.id, { id: row.id, code: row.code, name: row.name }]));
+}
+
+// Cambia el tenedor, el centro de costo o ambos de un activo en uso, en UNA
+// transaccion: el cambio de centro de costo y el movimiento (con su acta) se
+// confirman juntos. Solo centro de costo tambien es un movimiento, con el mismo
+// usuario, para que quede en el historial (decision del usuario). Un activo
+// devaluado sigue devaluado (DEVALUATED -> DEVALUATED conserva el valor 0).
+export async function reassignAsset(input: ReassignAssetInput): Promise<AssetMovementModel> {
+  if (input.userId === undefined && input.costCenterId === undefined) {
+    throw new BadRequestError("Indique un nuevo usuario, un nuevo centro de costo o ambos");
+  }
+  if (input.userId !== undefined) {
+    const user = await getUserByIdOrThrow(input.userId);
+    if (!user.isActive) throw new ConflictError("El usuario destino esta inactivo, no se le puede asignar el activo");
+  }
+  if (input.costCenterId !== undefined) await getCostCenterByIdOrThrow(input.costCenterId);
+
+  return postgres.transaction(async (transaction) => {
+    await lockAssetRow(input.assetId, transaction);
+    const asset = await getAssetByIdOrThrow(input.assetId, transaction);
+    const statusCode = asset.status?.code ?? "";
+    if (!HELD_STATUS_CODES.includes(statusCode)) {
+      throw new ConflictError(
+        `El activo ${asset.tag} no esta asignado, no se puede reasignar (estado actual: ${statusCode || "desconocido"})`,
+      );
+    }
+
+    const currentHolder = (await listCurrentHoldersByAssetIds([asset.id], transaction)).get(asset.id) ?? null;
+    const targetUserId = input.userId ?? currentHolder;
+    if (targetUserId === null) {
+      throw new ConflictError(`El activo ${asset.tag} no tiene un usuario vigente: indique a quien se reasigna`);
+    }
+    const userChanged = targetUserId !== currentHolder;
+    const costCenterChanged = input.costCenterId !== undefined && input.costCenterId !== asset.costCenterId;
+    if (!userChanged && !costCenterChanged) {
+      throw new BadRequestError(`El activo ${asset.tag} ya esta asignado a ese usuario y centro de costo`);
+    }
+
+    const changes: string[] = [];
+    if (userChanged) {
+      const directory = await getUserDirectory([currentHolder, targetUserId].filter((id): id is number => id !== null));
+      const from = currentHolder !== null ? (directory.get(currentHolder)?.fullName ?? `usuario ${currentHolder}`) : "sin usuario";
+      changes.push(`usuario ${from} -> ${directory.get(targetUserId)?.fullName ?? `usuario ${targetUserId}`}`);
+    }
+    if (costCenterChanged && input.costCenterId !== undefined) {
+      const costCenters = await loadCostCenters(
+        [asset.costCenterId, input.costCenterId].filter((id): id is number => id !== null),
+        transaction,
+      );
+      changes.push(
+        `centro de costo ${describeCostCenter(asset.costCenterId !== null ? costCenters.get(asset.costCenterId) : null)} -> ` +
+          describeCostCenter(costCenters.get(input.costCenterId)),
+      );
+      await updateAssetLocation(
+        asset.id,
+        { costCenterId: input.costCenterId, updatedBy: input.createdBy ?? undefined },
+        transaction,
+      );
+    }
+    const notes = [`Reasignacion: ${changes.join("; ")}`, input.notes?.trim()].filter(Boolean).join(". ");
+
+    return createAssetMovement(
+      {
+        assetId: asset.id,
+        movementType: statusCode === "DEVALUATED" ? "DEVALUATED" : "REASSIGNED",
+        userIds: [targetUserId],
+        notes: notes.slice(0, NOTES_MAX_LENGTH),
+        supervisorName: input.supervisorName,
+        macAddress: input.macAddress,
+        storageCapacity: input.storageCapacity,
+        ramCapacity: input.ramCapacity,
+        hasBag: input.hasBag,
+        hasLock: input.hasLock,
+        hasCharger: input.hasCharger,
+        createdBy: input.createdBy,
+      },
+      transaction,
+    );
+  });
+}
+
+// Asignacion vigente: precarga Reasignar y da el movimiento cuya acta se
+// reimprime. 404 si el activo no esta en manos de nadie.
+export async function getCurrentAssignment(assetId: number): Promise<CurrentAssignment> {
+  const asset = await getAssetByIdOrThrow(assetId);
+  const statusCode = asset.status?.code ?? "";
+  const holderUserId = HELD_STATUS_CODES.includes(statusCode)
+    ? ((await listCurrentHoldersByAssetIds([asset.id])).get(asset.id) ?? null)
+    : null;
+  const [handoverRow] = await postgres.query<{ id: number }>(
+    `SELECT id FROM asset_movements WHERE asset_id = :assetId AND movement_type IN (:types)
+      ORDER BY movement_date DESC, id DESC LIMIT 1`,
+    { replacements: { assetId: asset.id, types: HANDOVER_MOVEMENT_TYPES }, type: QueryTypes.SELECT },
+  );
+  const movement = handoverRow ? await AssetMovementModel.findByPk(handoverRow.id) : null;
+  if (holderUserId === null || !movement) {
+    throw new NotFoundError(`El activo ${asset.tag} no tiene una asignacion vigente`);
+  }
+
+  const [directory, costCenters] = await Promise.all([
+    getUserDirectory([holderUserId]),
+    loadCostCenters(asset.costCenterId !== null ? [asset.costCenterId] : []),
+  ]);
+  return {
+    assetId: asset.id,
+    tag: asset.tag,
+    serialNumber: asset.serialNumber,
+    statusCode,
+    statusName: asset.status?.name ?? statusCode,
+    movementId: movement.id,
+    movementType: movement.movementType,
+    movementDate: movement.movementDate,
+    holder: { userId: holderUserId, fullName: directory.get(holderUserId)?.fullName ?? `Usuario ${holderUserId}` },
+    costCenter: asset.costCenterId !== null ? (costCenters.get(asset.costCenterId) ?? null) : null,
+    handover: {
+      supervisorName: movement.supervisorName,
+      macAddress: movement.macAddress,
+      storageCapacity: movement.storageCapacity,
+      ramCapacity: movement.ramCapacity,
+      hasBag: movement.hasBag,
+      hasLock: movement.hasLock,
+      hasCharger: movement.hasCharger,
+    },
+  };
+}
+
+interface AssignmentSqlRow {
+  asset_id: number;
+  tag: string;
+  serial_number: string | null;
+  product_id: string | null;
+  cost_center_id: number | null;
+  status_code: string;
+  status_name: string;
+  holder_user_id: number | null;
+  movement_id: number | null;
+  movement_date: Date | null;
+}
+
+// Activos en uso con su tenedor vigente (ultimo movimiento, mismo criterio que
+// listCurrentHoldersByAssetIds) y el movimiento de su acta. Los filtros de
+// categoria y usuario se resuelven primero en Mongo y MSSQL (a ids) y se
+// aplican aca; sin coincidencias alli, el resultado es vacio sin consultar.
+export async function listAssignments(
+  params: PaginationParams,
+  filters: AssignmentFilters,
+): Promise<{ items: AssignmentRow[]; total: number }> {
+  const conditions = ["s.code IN (:heldStatuses)"];
+  const replacements: Record<string, unknown> = { heldStatuses: HELD_STATUS_CODES, handoverTypes: HANDOVER_MOVEMENT_TYPES };
+
+  if (filters.costCenterId !== undefined) {
+    conditions.push("a.cost_center_id = :costCenterId");
+    replacements.costCenterId = filters.costCenterId;
+  }
+  const serial = filters.serial?.trim();
+  if (serial) {
+    conditions.push("(a.tag ILIKE :serial OR a.serial_number ILIKE :serial)");
+    replacements.serial = `%${escapeLikePattern(serial)}%`;
+  }
+  if (filters.categoryId) {
+    const productIds = await listProductIdsByCategory(filters.categoryId);
+    if (productIds.length === 0) return { items: [], total: 0 };
+    conditions.push("a.product_id IN (:productIds)");
+    replacements.productIds = productIds;
+  }
+  const user = filters.user?.trim();
+  if (user) {
+    const userIds = await findUserIdsBySearch(user);
+    if (userIds.length === 0) return { items: [], total: 0 };
+    conditions.push("cur.user_id IN (:userIds)");
+    replacements.userIds = userIds;
+  }
+
+  const from = `
+    FROM assets a
+    JOIN asset_statuses s ON s.id = a.status_id
+    LEFT JOIN LATERAL (
+      SELECT mu.user_id FROM asset_movements m
+        LEFT JOIN asset_movement_users mu ON mu.asset_movement_id = m.id
+       WHERE m.asset_id = a.id
+       ORDER BY m.movement_date DESC, m.id DESC, mu.id ASC
+       LIMIT 1
+    ) cur ON true
+    LEFT JOIN LATERAL (
+      SELECT m.id, m.movement_date FROM asset_movements m
+       WHERE m.asset_id = a.id AND m.movement_type IN (:handoverTypes)
+       ORDER BY m.movement_date DESC, m.id DESC
+       LIMIT 1
+    ) ho ON true
+    WHERE ${conditions.join(" AND ")}`;
+
+  const [countRows, rows] = await Promise.all([
+    postgres.query<{ total: string }>(`SELECT COUNT(*) AS total ${from}`, { replacements, type: QueryTypes.SELECT }),
+    postgres.query<AssignmentSqlRow>(
+      `SELECT a.id AS asset_id, a.tag, a.serial_number, a.product_id, a.cost_center_id,
+              s.code AS status_code, s.name AS status_name, cur.user_id AS holder_user_id,
+              ho.id AS movement_id, ho.movement_date
+       ${from}
+       ORDER BY a.tag ASC
+       LIMIT :limit OFFSET :offset`,
+      { replacements: { ...replacements, limit: params.limit, offset: getOffset(params) }, type: QueryTypes.SELECT },
+    ),
+  ]);
+
+  const productIds = rows.map((row) => row.product_id).filter((id): id is string => id !== null);
+  const [directory, costCenters, products] = await Promise.all([
+    getUserDirectory(rows.map((row) => row.holder_user_id).filter((id): id is number => id !== null)),
+    loadCostCenters(rows.map((row) => row.cost_center_id).filter((id): id is number => id !== null)),
+    getProductsByIds(productIds),
+  ]);
+  const productById = new Map(products.map((product) => [String(product._id), product]));
+  const categories = await getProductCategoriesByIds(
+    products.map((product) => (product.categoryId ? String(product.categoryId) : "")).filter(Boolean),
+  );
+  const categoryNameById = new Map(categories.map((category) => [String(category._id), category.name]));
+
+  const items = rows.map((row): AssignmentRow => {
+    const product = row.product_id ? productById.get(row.product_id) : undefined;
+    return {
+      assetId: row.asset_id,
+      tag: row.tag,
+      serialNumber: row.serial_number,
+      statusCode: row.status_code,
+      statusName: row.status_name,
+      productName: product?.name ?? null,
+      categoryName: product?.categoryId ? (categoryNameById.get(String(product.categoryId)) ?? null) : null,
+      holder:
+        row.holder_user_id !== null
+          ? {
+              userId: row.holder_user_id,
+              fullName: directory.get(row.holder_user_id)?.fullName ?? `Usuario ${row.holder_user_id}`,
+            }
+          : null,
+      costCenter: row.cost_center_id !== null ? (costCenters.get(row.cost_center_id) ?? null) : null,
+      movementId: row.movement_id,
+      assignedAt: row.movement_date,
+    };
+  });
+  return { items, total: Number(countRows[0]?.total ?? 0) };
 }
