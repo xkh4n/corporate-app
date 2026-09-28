@@ -366,7 +366,7 @@ describe("solicitudes del catalogo con aprobacion", () => {
     await expect(ticketService.createTicket({ ...base, variables: {} }, { userId: requester.id }, "PORTAL")).rejects.toBeInstanceOf(BadRequestError);
     const ticket = await ticketService.createTicket({ ...base, variables: { software: "Visio" } }, { userId: requester.id }, "PORTAL");
     createdTickets.add(ticket.id);
-    expect(ticket.number).toMatch(/^REQ-/);
+    expect(ticket.number).toMatch(/^REQ\d{4}\d{2}\d{6}$/);
     expect(ticket.status).toBe("PENDING_APPROVAL");
     expect(ticket.resolutionDueAt).toBeNull();
 
@@ -638,7 +638,7 @@ describe("problemas", () => {
       { title: "Cola de impresion se cuelga", description: "Varios incidentes", impact: 2, urgency: 2, incidentIds: [assigned.id, unassigned.id] },
       agent.id,
     );
-    expect(problem.number).toMatch(/^PRB-/);
+    expect(problem.number).toMatch(/^PRB\d{4}\d{2}\d{6}$/);
     expect(problem.incidents).toHaveLength(2);
 
     await problemService.changeProblemStatus(problem.id, { status: "UNDER_INVESTIGATION" }, agent.id);

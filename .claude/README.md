@@ -18,6 +18,19 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (3) — Tests de integración contra Testing y hosts desde ALLOCATED_IP
+
+### Hecho
+- **Causa del timeout:** Testing estaba construido desde una rama local `testing` desactualizada (`92493e1`, 34 commits atrás). Su Redis no tenía el usuario ACL `pristest` (llegó en PR #27) y los tests quedaban reintentando con `WRONGPASS`. Se avanzó la rama local a `origin/testing` y el usuario recreó el stack.
+- **`ALLOCATED_IP`:** `test/setupIntegration.ts` lee solo `ALLOCATED_IP` de `corporate-secrets/Environment/.env` y la usa en los `*_HOST` de `.env.test` que valen `${ALLOCATED_IP}` o están vacíos (un host explícito gana). `.env.test.example` y `TESTING.md` lo explican. Así no se vuelve a copiar una IP vieja.
+- **Folios:** dos asserts viejos (`/^REQ-/`, `/^PRB-/`) pasaron al formato nuevo.
+
+### Verificación
+- Suite de integración completa contra Testing: 28 archivos, 264 tests OK, 4 saltados, incluido `purchaseLink.service.integration.test.ts` (11 tests). `tsc --noEmit` limpio.
+
+### Pendiente
+- Redespliegue de producción, prueba en navegador y promoción de este commit.
+
 ## 2026-09-28 (2) — Promoción del plan 010 y de los folios con código de grupo a master (PR #30, #31)
 
 ### Hecho
