@@ -18,6 +18,19 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (2) — Promoción del plan 010 y de los folios con código de grupo a master (PR #30, #31)
+
+### Hecho
+- **Commits en `develop`:** `0317ea2` (API), `b9d8a93` (front) y `b23e80d` (docs).
+- **Revisión de seguridad** (skill `security-review` sobre todo el delta): sin hallazgos. Gate marcado sobre `b23e80d`.
+- **PR #30** `develop → testing`: CI verde (API y Web).
+- **PR #31** `release/master → master`: `promote-to-master` excluyó 4 archivos de prueba y la guardia de rutas prohibidas pasó. `master` quedó en `d2175ce`.
+
+### Pendiente
+- **Tests de integración:** `purchaseLink.service.integration.test.ts` y el test ajustado de folios no se corrieron. El build de Testing falló con `ERR_SSL_CIPHER_OPERATION_FAILED` en `npm install` (red) y `.env.test` apunta a la IP vieja (.4 en vez de .5).
+- **Redespliegue:** Testing y producción. La migración asigna los códigos de grupo, convierte «Solicitud de equipo», retira «Nueva Solicitud» y da «Generar Ticket» a los roles que la tenían.
+- **Navegador:** probar el ciclo completo.
+
 ## 2026-09-28 (1) — Folios del Service Desk sin guiones y con código de grupo (sin commitear)
 
 ### Hecho
