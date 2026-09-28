@@ -78,7 +78,9 @@ export function WriteOffPanel({ id, onBack, onChanged }: Props) {
     const isDraft = detail.status === "DRAFT";
     const editable = isDraft && can("asset-write-offs:create");
     const canConfirm = isDraft && can("asset-write-offs:approve");
-    const linesWithoutPhoto = detail.lines.filter((line) => line.photos.length === 0);
+    // Plan 013: la foto de Dar de Baja Activos cuenta; lo que dio de baja la toma de inventario la sube aca.
+    const hasPhoto = (line: (typeof detail.lines)[number]) => line.photos.length + line.decommissionPhotos.length > 0;
+    const linesWithoutPhoto = detail.lines.filter((line) => !hasPhoto(line));
     const dataDirty =
         writeOffDate !== (detail.writeOffDate ?? "") ||
         reason !== (detail.reason ?? "") ||
@@ -316,7 +318,7 @@ export function WriteOffPanel({ id, onBack, onChanged }: Props) {
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {detail.lines.map((line) => (
-                                <tr key={line.assetId} className={isDraft && line.photos.length === 0 ? "bg-amber-50" : undefined}>
+                                <tr key={line.assetId} className={isDraft && !hasPhoto(line) ? "bg-amber-50" : undefined}>
                                     <td className="px-3 py-2">
                                         <p className="font-medium text-slate-900">{line.tag}</p>
                                         <p className="text-xs text-slate-500">{line.productName ?? line.serialNumber ?? "-"}</p>
@@ -326,6 +328,21 @@ export function WriteOffPanel({ id, onBack, onChanged }: Props) {
                                     <td className="px-3 py-2 text-right text-slate-800">{formatMoney(line.bookValue)}</td>
                                     <td className="px-3 py-2">
                                         <div className="flex flex-wrap items-center gap-2">
+                                            {line.decommissionPhotos.map((photo) => (
+                                                <a
+                                                    key={`d-${photo.id}`}
+                                                    href={assetWriteOffService.decommissionPhotoUrl(id, photo.id)}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    title="Foto tomada al dar de baja"
+                                                >
+                                                    <img
+                                                        src={assetWriteOffService.decommissionPhotoUrl(id, photo.id)}
+                                                        alt={`Foto de ${line.tag} al darlo de baja`}
+                                                        className="h-14 w-14 rounded border-2 border-indigo-300 object-cover"
+                                                    />
+                                                </a>
+                                            ))}
                                             {line.photos.map((photo) => (
                                                 <div key={photo.id} className="relative">
                                                     <a
@@ -352,7 +369,7 @@ export function WriteOffPanel({ id, onBack, onChanged }: Props) {
                                                     )}
                                                 </div>
                                             ))}
-                                            {editable && (
+                                            {editable && line.decommissionPhotos.length === 0 && (
                                                 <Button
                                                     type="button"
                                                     variant="secondary"
@@ -364,7 +381,7 @@ export function WriteOffPanel({ id, onBack, onChanged }: Props) {
                                                     + Foto
                                                 </Button>
                                             )}
-                                            {line.photos.length === 0 && !editable && <span className="text-xs text-slate-400">-</span>}
+                                            {!hasPhoto(line) && !editable && <span className="text-xs text-slate-400">-</span>}
                                         </div>
                                     </td>
                                     {editable && (

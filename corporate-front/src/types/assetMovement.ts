@@ -6,7 +6,10 @@ export type AssetMovementType =
   | "DECOMMISSIONED"
   | "RETURNED"
   | "DEVALUATED"
-  | "MOVE_TO_RETURNED";
+  | "MOVE_TO_RETURNED"
+  | "SUPPORT_TO_HOLDER"
+  | "SUPPORT_TO_STOCK"
+  | "WRITTEN_OFF";
 
 export interface AssetMovementUser {
   id: number;
@@ -125,10 +128,12 @@ export interface AssignmentRow {
 // Dar de baja (plan 012).
 export type DecommissionReason = "OBSOLESCENCE" | "IRREPARABLE_DAMAGE" | "THEFT_LOSS" | "OTHER";
 
+// Va como multipart: la foto del activo es obligatoria (plan 013).
 export interface DecommissionAssetInput {
   assetId: number;
   reason: DecommissionReason;
   detail?: string;
+  photo: File;
 }
 
 export interface DecommissionCheck {

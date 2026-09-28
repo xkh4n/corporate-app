@@ -14,6 +14,8 @@ import { WriteOffPanel } from "./WriteOffPanel";
 // Baja contable (plan 008): cierra el ciclo contable de activos ya dados de
 // baja operativamente. Se arma un borrador con fotos por activo y un
 // certificado notarial; confirmar (asset-write-offs:approve) es definitivo.
+// Plan 013: individual (1 activo) o por lote (todos los pendientes), con 1
+// certificado; la foto de cada activo ya viene de Dar de Baja Activos.
 const REQUIRED_PERMISSIONS = ["asset-write-offs:read"] as const;
 const PAGE_SIZE = 20;
 const TH = "px-3 py-2 text-left font-semibold text-slate-600";
@@ -62,8 +64,9 @@ function WriteOffContent() {
         <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
             <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-2 text-center text-gray-600">Baja Contable</h1>
             <p className="mb-6 text-sm text-slate-600 text-center max-w-3xl">
-                Registra la baja contable de activos ya dados de baja operativamente, con al menos una foto por activo y el
-                certificado notarial de la baja. Una baja confirmada es definitiva.
+                Registra la baja contable de los activos pendientes (dados de baja en Dar de Baja Activos), de a uno o por
+                lote, con un certificado notarial por baja. Cada activo usa la foto tomada al darlo de baja. Una baja
+                confirmada es definitiva y deja el activo «De baja».
             </p>
 
             <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
@@ -110,7 +113,7 @@ function EligibleAssets({ onCreated }: { onCreated: (id: number) => void }) {
     const [totalPages, setTotalPages] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
     const [selected, setSelected] = useState<Map<number, EligibleWriteOffAsset>>(new Map());
-    const [creating, setCreating] = useState(false);
+    const [creating, setCreating] = useState<"selection" | "all" | number | null>(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -143,17 +146,25 @@ function EligibleAssets({ onCreated }: { onCreated: (id: number) => void }) {
         });
     }
 
-    async function handleCreate() {
-        setCreating(true);
+    // Seleccion, un activo (baja individual) o todos los pendientes (baja por lote).
+    async function handleCreate(kind: "selection" | "all" | number) {
+        setCreating(kind);
         try {
-            const created = await assetWriteOffService.create([...selected.keys()]);
-            showSuccessToast(`Borrador de baja #${created.id} creado con ${created.lines.length} activo(s)`);
+            const created =
+                kind === "all"
+                    ? await assetWriteOffService.createAllPending()
+                    : await assetWriteOffService.create(kind === "selection" ? [...selected.keys()] : [kind]);
+            const skipped = kind === "all" ? totalItems - created.lines.length : 0;
+            showSuccessToast(
+                `Borrador de baja #${created.id} creado con ${created.lines.length} activo(s)` +
+                    (skipped > 0 ? `; ${skipped} ya estaban en otro borrador o superan el tope de la baja` : ""),
+            );
             setSelected(new Map());
             onCreated(created.id);
         } catch (error) {
             handleError(error, navigate);
         } finally {
-            setCreating(false);
+            setCreating(null);
         }
     }
 
@@ -180,12 +191,21 @@ function EligibleAssets({ onCreated }: { onCreated: (id: number) => void }) {
                     </span>
                     <Button
                         type="button"
-                        variant="success"
-                        disabled={selected.size === 0}
-                        loading={creating}
-                        onClick={() => void handleCreate()}
+                        variant="secondary"
+                        disabled={selected.size === 0 || creating !== null}
+                        loading={creating === "selection"}
+                        onClick={() => void handleCreate("selection")}
                     >
-                        Crear borrador de baja
+                        Baja de los seleccionados
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="success"
+                        disabled={totalItems === 0 || creating !== null}
+                        loading={creating === "all"}
+                        onClick={() => void handleCreate("all")}
+                    >
+                        Baja por lote (todos los pendientes: {totalItems})
                     </Button>
                 </div>
             </div>
@@ -196,8 +216,8 @@ function EligibleAssets({ onCreated }: { onCreated: (id: number) => void }) {
                 </div>
             ) : assets.length === 0 ? (
                 <EmptyState
-                    title="Sin activos para dar de baja"
-                    description="Solo aparecen activos clasificados contablemente y dados de baja operativamente (estado «De baja»)."
+                    title="Sin activos pendientes de baja contable"
+                    description="Aparecen los activos clasificados contablemente y dados de baja en Dar de Baja Activos (estado «Pendiente de baja contable»)."
                 />
             ) : (
                 <>
@@ -212,6 +232,7 @@ function EligibleAssets({ onCreated }: { onCreated: (id: number) => void }) {
                                     <th className={TH}>Clasificación</th>
                                     <th className={TH}>Etapa</th>
                                     <th className={`${TH} text-right`}>Valor libro</th>
+                                    <th className="px-3 py-2" />
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -238,6 +259,21 @@ function EligibleAssets({ onCreated }: { onCreated: (id: number) => void }) {
                                         <td className="px-3 py-2 text-slate-600">{CLASSIFICATION_LABEL[asset.classification]}</td>
                                         <td className="px-3 py-2 text-slate-600">{STAGE_LABEL[asset.stage]}</td>
                                         <td className="px-3 py-2 text-right text-slate-800">{formatMoney(asset.bookValue)}</td>
+                                        <td className="px-3 py-2 text-right">
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                className="px-2! py-1! text-xs"
+                                                disabled={creating !== null}
+                                                loading={creating === asset.assetId}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    void handleCreate(asset.assetId);
+                                                }}
+                                            >
+                                                Baja individual
+                                            </Button>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>

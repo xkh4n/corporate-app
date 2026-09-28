@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { RequirePermissions } from "../../components/RequirePermissions";
 import { Alert, Button, EmptyState, Field, Input, Modal, Select, Textarea } from "../../components/ui";
@@ -23,6 +23,10 @@ const REASON_OPTIONS: { value: DecommissionReason; label: string }[] = [
 ];
 
 const CLASSIFICATION_LABEL: Record<string, string> = { FIXED_ASSET: "Activo fijo", EXPENSE: "Gasto" };
+
+// Plan 013: foto obligatoria, la misma que luego usa Baja Contable. Mismo tope que la API.
+const PHOTO_TYPES = ["image/jpeg", "image/png"];
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 
 function notDecommissionableMessage(found: Asset[]): string {
   if (found.length === 0) return "No se encontró ningún activo con ese criterio";
@@ -49,12 +53,37 @@ export default function DecommissionAsset() {
   const [detail, setDetail] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!photo) {
+      setPhotoPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(photo);
+    setPhotoPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [photo]);
+
+  function handlePhotoSelected(files: FileList | null): void {
+    const file = files?.[0] ?? null;
+    if (photoInputRef.current) photoInputRef.current.value = "";
+    if (!file) return;
+    if (!PHOTO_TYPES.includes(file.type) || file.size > MAX_PHOTO_BYTES) {
+      showErrorToast("La foto debe ser JPEG o PNG de hasta 5 MB");
+      return;
+    }
+    setPhoto(file);
+  }
 
   function reset(): void {
     setCheck(null);
     setCandidates([]);
     setReason("");
     setDetail("");
+    setPhoto(null);
     setConfirming(false);
   }
 
@@ -95,14 +124,15 @@ export default function DecommissionAsset() {
   }
 
   const detailRequired = reason === "OTHER";
-  const canSubmit = check?.eligible === true && reason !== "" && (!detailRequired || detail.trim() !== "");
+  const canSubmit =
+    check?.eligible === true && reason !== "" && (!detailRequired || detail.trim() !== "") && photo !== null;
 
   async function handleDecommission(): Promise<void> {
-    if (!check || !canSubmit) return;
+    if (!check || !canSubmit || !photo) return;
     setSaving(true);
     try {
-      await assetMovementService.decommission({ assetId: check.assetId, reason, detail: detail.trim() || undefined });
-      showSuccessToast(`Activo ${check.tag} dado de baja. Ya puede incluirse en Baja Contable.`);
+      await assetMovementService.decommission({ assetId: check.assetId, reason, detail: detail.trim() || undefined, photo });
+      showSuccessToast(`Activo ${check.tag} dado de baja: queda Pendiente de baja contable.`);
       setSearch("");
       reset();
     } catch (error) {
@@ -215,6 +245,29 @@ export default function DecommissionAsset() {
                     <Field label={detailRequired ? "Detalle (obligatorio)" : "Detalle (opcional)"} htmlFor="detail">
                       <Textarea id="detail" value={detail} maxLength={200} rows={2} onChange={(e) => setDetail(e.target.value)} />
                     </Field>
+                    <Field label="Foto del activo (obligatoria)" htmlFor="photo">
+                      <div className="flex flex-wrap items-center gap-3">
+                        {photoPreview && (
+                          <img
+                            src={photoPreview}
+                            alt={`Foto de ${check.tag}`}
+                            className="h-24 w-24 rounded border border-slate-200 object-cover"
+                          />
+                        )}
+                        <Button type="button" variant="secondary" onClick={() => photoInputRef.current?.click()}>
+                          {photo ? "Cambiar foto" : "Tomar o subir foto"}
+                        </Button>
+                        <input
+                          ref={photoInputRef}
+                          id="photo"
+                          type="file"
+                          accept="image/jpeg,image/png"
+                          capture="environment"
+                          className="hidden"
+                          onChange={(e) => handlePhotoSelected(e.target.files)}
+                        />
+                      </div>
+                    </Field>
                   </div>
                 )}
 
@@ -254,8 +307,8 @@ export default function DecommissionAsset() {
           }
         >
           <p className="text-sm text-slate-700">
-            La baja es definitiva: el activo queda <strong>De baja</strong> y su Kardex en cero. Después podrá incluirse en
-            Baja Contable.
+            El activo queda <strong>Pendiente de baja contable</strong> y su Kardex en cero. Contabilidad lo da de baja
+            definitivamente en Baja Contable (de a uno o por lote), con la foto que adjunta aquí.
           </p>
         </Modal>
       </div>

@@ -43,6 +43,12 @@ export const assetMovementService = {
 
   // Dar de baja (plan 012): revision previa (estado, clasificacion, ticket) y la baja.
   decommissionCheck: (assetId: number) => apiFetch<DecommissionCheck>(`/asset-movements/decommission/${assetId}`),
-  decommission: (body: DecommissionAssetInput) =>
-    apiFetch<AssetMovement>("/asset-movements/decommission", { method: "POST", body }),
+  decommission: (input: DecommissionAssetInput) => {
+    const form = new FormData();
+    form.append("assetId", String(input.assetId));
+    form.append("reason", input.reason);
+    if (input.detail) form.append("detail", input.detail);
+    form.append("photo", input.photo);
+    return apiFetch<AssetMovement>("/asset-movements/decommission", { method: "POST", body: form });
+  },
 };

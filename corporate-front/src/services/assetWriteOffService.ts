@@ -27,6 +27,10 @@ export const assetWriteOffService = {
 
   create: (assetIds: number[]) => apiFetch<WriteOffDetail>("/asset-write-offs", { method: "POST", body: { assetIds } }),
 
+  // Baja por lote (plan 013): todos los pendientes que no estan en otro borrador.
+  createAllPending: () =>
+    apiFetch<WriteOffDetail>("/asset-write-offs", { method: "POST", body: { allPending: true } }),
+
   update: (id: number, input: WriteOffUpdate) =>
     apiFetch<WriteOffDetail>(`/asset-write-offs/${id}`, { method: "PUT", body: input }),
 
@@ -42,6 +46,9 @@ export const assetWriteOffService = {
 
   // Va directo en <img src>: la cookie de sesion viaja sola (mismo origen).
   photoUrl: (id: number, photoId: number) => `/api/asset-write-offs/${id}/photos/${photoId}`,
+
+  // Foto tomada al dar de baja (plan 013), de un activo que es linea de esta baja.
+  decommissionPhotoUrl: (id: number, photoId: number) => `/api/asset-write-offs/${id}/decommission-photos/${photoId}`,
 
   removePhoto: (id: number, photoId: number) =>
     apiFetch<void>(`/asset-write-offs/${id}/photos/${photoId}`, { method: "DELETE" }),
