@@ -18,6 +18,50 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (14) — Plan 013: foto al dar de baja y baja contable individual o por lote (aprobado)
+
+### Hecho
+- Plan aprobado y copiado a [`planes/013-foto-baja-y-baja-contable-por-lote.html`](planes/013-foto-baja-y-baja-contable-por-lote.html).
+
+### Decisiones
+- **Foto obligatoria al dar de baja:** en Dar de Baja Activos, y queda guardada por activo.
+- **Estados:**
+  - `DECOMMISSIONED` se muestra como «Pendiente de baja contable».
+  - Estado nuevo `WRITTEN_OFF` «De baja», que se asigna al confirmar la Baja Contable.
+- **Baja Contable:**
+  - individual (1 activo, 1 certificado) o por lote (todos los pendientes, 1 certificado);
+  - reutiliza la foto tomada al dar de baja;
+  - a lo que dio de baja la Toma de Inventario (sin foto) se le pide la foto ahí.
+
+### Implementación
+- **Migración:**
+  - estado `WRITTEN_OFF` «De baja»; `DECOMMISSIONED` pasa a llamarse «Pendiente de baja contable»;
+  - tipo de movimiento `WRITTEN_OFF`;
+  - tabla `asset_decommission_photos`, con los archivos en `uploads/bajas-operativas/<activo>`;
+  - backfill: los activos que ya tenían baja contable pasan a `WRITTEN_OFF`.
+- **API, Dar de Baja:**
+  - `POST /asset-movements/decommission` es multipart, con la foto obligatoria (`uploadSingle` de imagen, 5 MB);
+  - el archivo se guarda en la misma transacción y se borra si la transacción falla;
+  - `GET /asset-movements/decommission/:assetId/photo`.
+- **API, Baja Contable:**
+  - `POST /asset-write-offs` con `{ allPending: true }` arma la baja por lote: todos los pendientes que no estén en otro borrador, hasta 200;
+  - el detalle trae `decommissionPhotos`, servidas por `GET /asset-write-offs/:id/decommission-photos/:photoId`, que exige que el activo sea una línea de esa baja;
+  - al confirmar, cuentan también las fotos de la baja operativa, y cada activo pasa a `WRITTEN_OFF` con su movimiento «Baja contable N° X».
+- **`WRITTEN_OFF` se trata igual que `DECOMMISSIONED`:**
+  - en contabilidad, depreciación, valorización y faltantes de inventario;
+  - en la toma de inventario: si se encuentra en uso, queda devaluado;
+  - si un activo con baja contable se vuelve a dar de baja, queda `WRITTEN_OFF` y no vuelve a quedar pendiente;
+  - ningún otro movimiento sale de `WRITTEN_OFF`.
+- **Front:**
+  - Dar de Baja: campo de foto (cámara en móvil) con vista previa; es obligatorio para confirmar;
+  - Baja Contable: botón «Baja individual» por fila, «Baja por lote (todos los pendientes: N)» y «Baja de los seleccionados»;
+  - el borrador muestra la foto de la baja operativa y solo pide foto a las líneas que no tienen.
+- **Pruebas:**
+  - API: 140 unitarias; 115 de integración contra Testing (dar de baja, baja contable, inventario, depreciación, valorización, contabilidad, movimientos y devoluciones);
+  - front: `tsc`, lint y 69 pruebas.
+
+---
+
 ## 2026-09-28 (13) — Devoluciones: solo Sistemas (1110) recibe
 
 ### Decisión
