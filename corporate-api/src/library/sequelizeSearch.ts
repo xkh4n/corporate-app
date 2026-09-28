@@ -6,7 +6,7 @@ import { Op, type OrderItem, type WhereOptions } from "sequelize";
 // Postgres usa la barra invertida como escape por defecto: sin esto, un search con % o _
 // actuaria como comodin ("%" listaria todo). En MSSQL (Op.like) no hay escape por
 // defecto, ahi se deja tal cual.
-function escapeLikePattern(value: string): string {
+export function escapeLikePattern(value: string): string {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 

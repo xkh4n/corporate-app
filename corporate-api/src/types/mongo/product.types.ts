@@ -6,6 +6,8 @@ export interface ProductAttributes {
   description: string | null;
   productType: ProductType;
   categoryId: string | null;
+  brand: string | null;
+  productModel: string | null;
   image: string | null;
   isActive: boolean;
   createdAt: Date;
@@ -13,8 +15,8 @@ export interface ProductAttributes {
 }
 
 export type ProductCreationAttributes = Pick<ProductAttributes, "name" | "productType"> &
-  Partial<Pick<ProductAttributes, "description" | "categoryId" | "isActive">>;
+  Partial<Pick<ProductAttributes, "description" | "categoryId" | "brand" | "productModel" | "isActive">>;
 
 export type ProductUpdateAttributes = Partial<
-  Pick<ProductAttributes, "name" | "description" | "productType" | "categoryId" | "isActive">
+  Pick<ProductAttributes, "name" | "description" | "productType" | "categoryId" | "brand" | "productModel" | "isActive">
 >;

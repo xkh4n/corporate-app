@@ -21,6 +21,21 @@ assetMovementRouter.post(
   validateBody(assetMovementController.assignAssetSchema),
   assetMovementController.assign,
 );
+// Movimiento de Activos (plan 011).
+assetMovementRouter.post(
+  "/reassign",
+  authorize("asset-movements", "create"),
+  validateBody(assetMovementController.reassignAssetSchema),
+  assetMovementController.reassign,
+);
+// Lista tenedores (solo nombre): exige ver activos Y movimientos.
+assetMovementRouter.get(
+  "/assignments",
+  authorize("assets", "read"),
+  authorize("asset-movements", "read"),
+  assetMovementController.listAssignments,
+);
+assetMovementRouter.get("/current/:assetId", authorize("asset-movements", "read"), assetMovementController.current);
 assetMovementRouter.get(
   "/:id/handover.pdf",
   authorize("asset-movements", "read"),
