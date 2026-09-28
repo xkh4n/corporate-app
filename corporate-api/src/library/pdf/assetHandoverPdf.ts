@@ -10,6 +10,8 @@ export interface AssetHandoverPdfData {
   assetTag: string;
   serialNumber: string | null;
   productName: string | null;
+  // assets.value (DECIMAL como string). null = activo sin valorizar.
+  assetValue: string | null;
   supplierName: string | null;
   storageCapacity: string | null;
   ramCapacity: string | null;
@@ -30,14 +32,24 @@ const COMPANY_DEPARTMENT = "Departamento de Tecnología";
 const NAVY = "#003764";
 const PAGE_MARGIN = 50;
 const CONTENT_WIDTH = 612 - PAGE_MARGIN * 2;
+// El contenedor corre en UTC: sin zona fija, una entrega hecha de noche en Chile
+// saldria con el dia siguiente.
+const TIME_ZONE = "America/Santiago";
+const CLP = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP" });
+
+function formatAssetValue(value: string | null): string {
+  if (value === null) return "Sin valorizar";
+  const amount = Number(value);
+  return Number.isFinite(amount) ? CLP.format(amount) : "Sin valorizar";
+}
 
 export function renderAssetHandoverPdf(data: AssetHandoverPdfData): PDFKit.PDFDocument {
   const doc = new PDFDocument({ margin: PAGE_MARGIN, size: "LETTER" });
 
   renderLetterhead(doc);
   renderEmployeeBox(doc, data);
+  renderDeclaration(doc, data.assignedAt);
   renderAssetBox(doc, data);
-  renderDeclaration(doc);
   renderSignatures(doc);
 
   doc.end();
@@ -140,6 +152,7 @@ function renderAssetBox(doc: PDFKit.PDFDocument, data: AssetHandoverPdfData): vo
     { label: "Tag", value: data.assetTag },
     ...(data.productName ? [{ label: "Producto", value: data.productName }] : []),
     ...(data.serialNumber ? [{ label: "N° de serie", value: data.serialNumber }] : []),
+    { label: "Valor", value: formatAssetValue(data.assetValue) },
     ...(data.supplierName ? [{ label: "Proveedor", value: data.supplierName }] : []),
     ...(data.storageCapacity ? [{ label: "Capacidad de Almacenamiento", value: data.storageCapacity }] : []),
     ...(data.ramCapacity ? [{ label: "Capacidad de Memoria", value: data.ramCapacity }] : []),
@@ -160,18 +173,27 @@ function renderAssetBox(doc: PDFKit.PDFDocument, data: AssetHandoverPdfData): vo
   doc.y = y + 15;
 }
 
-function renderDeclaration(doc: PDFKit.PDFDocument): void {
-  const dateLabel = new Date().toLocaleDateString("es-CL", { year: "numeric", month: "long", day: "numeric" });
+// La fecha es la de la asignacion (no la de generacion del PDF): al reimprimir
+// el acta desde Formulario Asignacion debe seguir diciendo cuando se entrego.
+function renderDeclaration(doc: PDFKit.PDFDocument, assignedAt: Date): void {
+  const dateLabel = new Date(assignedAt).toLocaleDateString("es-CL", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: TIME_ZONE,
+  });
   doc
     .font("Helvetica")
     .fontSize(10)
+    .fillColor("black")
+    .text("Con fecha ", PAGE_MARGIN, doc.y, { width: CONTENT_WIDTH, align: "justify", continued: true })
+    .font("Helvetica-Bold")
+    .text(dateLabel, { continued: true })
+    .font("Helvetica")
     .text(
-      `Con fecha ${dateLabel}, se hace entrega del equipamiento detallado en el presente documento, el cual queda ` +
+      ", se hace entrega del equipamiento detallado en el presente documento, el cual queda " +
         "bajo la responsabilidad y cuidado del colaborador individualizado, comprometiéndose a su buen uso y " +
         "resguardo, así como a la restitución del mismo en caso de desvinculación o cambio de asignación.",
-      PAGE_MARGIN,
-      doc.y,
-      { width: CONTENT_WIDTH, align: "justify" },
     );
   doc.moveDown(2);
 }

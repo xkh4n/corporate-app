@@ -302,6 +302,7 @@ export async function getAssetHandoverData(movementId: number): Promise<AssetHan
     assetTag: asset.tag,
     serialNumber: asset.serialNumber,
     productName: product?.name ?? null,
+    assetValue: asset.value,
     supplierName: businessPartner?.legalName ?? null,
     storageCapacity: movement.storageCapacity,
     ramCapacity: movement.ramCapacity,
