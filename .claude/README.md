@@ -18,6 +18,51 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (12) — Plan 012: Dar de Baja Activos y valorización habilitada (aprobado)
+
+### Hecho
+- Plan aprobado y copiado a [`planes/012-dar-de-baja-activos.html`](planes/012-dar-de-baja-activos.html).
+
+### Decisiones
+- **Estados que se pueden dar de baja:** los que están en TI (`RETURNED`, `SUPPORT` sin ticket, `DAMAGED`, `AVAILABLE`, `RECEIVED`).
+- **Clasificación contable exigida.**
+- **Motivo obligatorio** de una lista más un detalle.
+- **Excepción a la regla lectura/edición:** «Pantalla: Valorización de Activos» incluye también `asset-valuation:update`. Los analistas veían la pantalla pero no podían ingresar el valor.
+
+### Implementación
+- **API:**
+  - Permiso base `asset-decommissions:create`, sin `grantToUser`.
+  - `getDecommissionCheck` devuelve estado, centro de costo, clasificación, ticket abierto, `eligible` y `blockReason`.
+  - `decommissionAsset`: una transacción; bajo el bloqueo de la fila repite la validación de estado y de clasificación, y luego llama a `createAssetMovement(DECOMMISSIONED)`, con el motivo en el movimiento y en el asiento `WRITE_OFF` (`recordWriteOff` ahora recibe `notes`).
+  - Rutas: `GET /asset-movements/decommission/:assetId` y `POST /asset-movements/decommission`.
+  - El POST genérico `/asset-movements` ya no acepta `DECOMMISSIONED`.
+- **Permisos y menú:**
+  - Agrupador `asset-decommission`, con `assets:read` y `asset-decommissions:create`.
+  - Hoja «Dar de Baja Activos» en Movimiento Activos.
+  - `asset-valuation-view` incluye `:update`; `asset-valuation-edit` queda redundante («edición, incluida en la pantalla»).
+- **Front:** pantalla `DecommissionAsset.tsx`:
+  - búsqueda con aviso por estado;
+  - revisión previa, con un `Alert` si algo bloquea la baja;
+  - motivo y detalle;
+  - modal de confirmación que advierte que la baja es definitiva.
+
+### Verificación
+- **API:** `tsc` limpio y 137 tests unitarios. Nuevo `assetDecommission.service.integration.test.ts` (4 tests), que cubre:
+  - un activo devuelto y clasificado queda de baja, con el motivo en el Kardex, y aparece en Baja Contable;
+  - sin clasificar, 409;
+  - asignado, 409;
+  - «Otro» sin detalle, 400.
+  Las suites de movimientos, inventario, baja contable, kardex, contabilidad, valorización, permisos y menú suman 103 tests OK.
+- **Front:** `tsc`, lint y 69 tests OK.
+- **Development:** reiniciado.
+  - La hoja nueva está en su lugar y el agrupador de valorización ya incluye `update`.
+  - Los roles con esa pantalla son `1072-analista-contable`, `1110-analista-adquisiciones`, `1110-jefe-soporte` y admin, y todos pueden ingresar el valor.
+
+### Pendiente
+- Asignar «Pantalla: Dar de Baja Activos» a los roles que corresponda.
+- Probar en el navegador.
+- Revisión de seguridad antes de promover.
+
 ## 2026-09-28 (11) — Revisión de seguridad del delta acc720c..74d82cb (plan 011 y acta) y promoción
 
 ### Hecho
