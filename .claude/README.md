@@ -30,6 +30,12 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
     - Reasignar usa `asset-movements:create` (el mismo que ya permitía `REASSIGNED`), bloquea la fila y rechaza usuarios inactivos.
     - `/current/:assetId` expone lo mismo que el acta, con el mismo permiso.
     - Marca y modelo tienen largo máximo y se muestran escapados.
+- **PR #35** con CI verde, mergeado a `testing` (`e59120e`). Gate marcado sobre `7275cdc`.
+- **PR #36** `release/master → master`: se excluyeron 2 tests nuevos y la guardia pasó. `master` quedó en `71bc4ec`.
+
+### Pendiente
+- Redesplegar Testing y producción: la siembra mueve el menú, crea los 3 agrupadores y la API trae el acta nueva.
+- Completar marca y modelo de los productos; asignar los agrupadores nuevos a los roles; probar en el navegador.
 
 ## 2026-09-28 (10) — Acta de entrega con el formato del formulario de TI
 
