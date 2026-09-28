@@ -123,3 +123,28 @@ export interface AssignmentRow {
   movementId: number | null;
   assignedAt: Date | null;
 }
+
+// Dar de baja (plan 012). Motivo de una lista; el detalle es obligatorio con OTHER.
+export type DecommissionReason = "OBSOLESCENCE" | "IRREPARABLE_DAMAGE" | "THEFT_LOSS" | "OTHER";
+
+export interface DecommissionAssetInput {
+  assetId: number;
+  reason: DecommissionReason;
+  detail?: string | null;
+  createdBy?: number | null;
+}
+
+// Lo que la pantalla necesita para decidir si se puede dar de baja y por que no.
+export interface DecommissionCheck {
+  assetId: number;
+  tag: string;
+  serialNumber: string | null;
+  statusCode: string;
+  statusName: string;
+  costCenter: AssignmentCostCenter | null;
+  classified: boolean;
+  classification: string | null;
+  openTicketNumber: string | null;
+  eligible: boolean;
+  blockReason: string | null;
+}

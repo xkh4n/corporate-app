@@ -28,6 +28,9 @@ import type {
   AssignmentRow,
   CreateAssetMovementInput,
   CurrentAssignment,
+  DecommissionAssetInput,
+  DecommissionCheck,
+  DecommissionReason,
   ReassignAssetInput,
 } from "../../types/postgres/assetMovement.types";
 import type { AssetHandoverPdfData } from "../../library/pdf/assetHandoverPdf";
@@ -224,7 +227,10 @@ export async function createAssetMovement(
     // NO escribe al Kardex a proposito -mover un activo entre personas no
     // cambia su valorizacion.
     if (input.movementType === "DECOMMISSIONED") {
-      await recordWriteOff({ assetId: input.assetId, reference: asset.tag }, transaction);
+      await recordWriteOff(
+        { assetId: input.assetId, reference: asset.tag, notes: input.notes ?? null, createdBy: input.createdBy ?? null },
+        transaction,
+      );
     }
 
     return created;
@@ -608,4 +614,99 @@ export async function listAssignments(
     };
   });
   return { items, total: Number(countRows[0]?.total ?? 0) };
+}
+
+// ---------------------------------------------------------------------------
+// Dar de baja (plan 012): baja operativa centralizada, con motivo y exigiendo
+// clasificacion contable (sin ella el activo nunca podria ir a Baja Contable:
+// Clasificacion Contable rechaza activos dados de baja).
+// ---------------------------------------------------------------------------
+
+export const DECOMMISSION_REASON_LABELS: Record<DecommissionReason, string> = {
+  OBSOLESCENCE: "Obsolescencia",
+  IRREPARABLE_DAMAGE: "Daño irreparable",
+  THEFT_LOSS: "Robo / Pérdida",
+  OTHER: "Otro",
+};
+
+// Activos que estan en TI (decision del usuario). ASSIGNED/DEVALUATED primero se
+// devuelven con su guia; MOVE_TO_RETURNED esta en transito.
+const DECOMMISSIONABLE_STATUS_CODES = ["RETURNED", "SUPPORT", "DAMAGED", "AVAILABLE", "RECEIVED"];
+
+function statusBlockReason(tag: string, statusCode: string, statusName: string): string | null {
+  if (DECOMMISSIONABLE_STATUS_CODES.includes(statusCode)) return null;
+  if (HELD_STATUS_CODES.includes(statusCode)) {
+    return `El activo ${tag} esta en manos de un usuario: primero registre su devolucion en Devoluciones de Activos`;
+  }
+  return `El activo ${tag} no se puede dar de baja en su estado actual (${statusName})`;
+}
+
+async function findClassification(assetId: number, transaction?: Transaction): Promise<string | null> {
+  const [row] = await postgres.query<{ classification: string }>(
+    "SELECT classification FROM asset_accounting WHERE asset_id = :assetId",
+    { replacements: { assetId }, type: QueryTypes.SELECT, transaction },
+  );
+  return row?.classification ?? null;
+}
+
+const NOT_CLASSIFIED_REASON = (tag: string) =>
+  `El activo ${tag} no esta clasificado: clasifiquelo primero en Clasificacion Contable (sin eso no podra ir a Baja Contable)`;
+
+export async function getDecommissionCheck(assetId: number): Promise<DecommissionCheck> {
+  const asset = await getAssetByIdOrThrow(assetId);
+  const statusCode = asset.status?.code ?? "";
+  const statusName = asset.status?.name ?? statusCode;
+  const [classification, openTicketNumber, costCenters] = await Promise.all([
+    findClassification(asset.id),
+    statusCode === "SUPPORT" ? findOpenSupportTicketNumber(asset.id) : Promise.resolve(null),
+    loadCostCenters(asset.costCenterId !== null ? [asset.costCenterId] : []),
+  ]);
+  const blockReason =
+    statusBlockReason(asset.tag, statusCode, statusName) ??
+    (openTicketNumber ? `El activo ${asset.tag} esta en soporte por el ticket ${openTicketNumber}: devuelvalo desde el ticket` : null) ??
+    (classification === null ? NOT_CLASSIFIED_REASON(asset.tag) : null);
+  return {
+    assetId: asset.id,
+    tag: asset.tag,
+    serialNumber: asset.serialNumber,
+    statusCode,
+    statusName,
+    costCenter: asset.costCenterId !== null ? (costCenters.get(asset.costCenterId) ?? null) : null,
+    classified: classification !== null,
+    classification,
+    openTicketNumber,
+    eligible: blockReason === null,
+    blockReason,
+  };
+}
+
+// Deja el activo DECOMMISSIONED en UNA transaccion: movimiento con el motivo y
+// asiento WRITE_OFF del Kardex (createAssetMovement). Los guards se repiten bajo
+// el bloqueo de la fila: lo que mostro la pantalla puede haber cambiado. El ticket
+// abierto en soporte lo sigue rechazando createAssetMovement.
+export async function decommissionAsset(input: DecommissionAssetInput): Promise<AssetMovementModel> {
+  const detail = input.detail?.trim() || null;
+  if (input.reason === "OTHER" && !detail) {
+    throw new BadRequestError("Indique el detalle del motivo de la baja");
+  }
+  return postgres.transaction(async (transaction) => {
+    await lockAssetRow(input.assetId, transaction);
+    const asset = await getAssetByIdOrThrow(input.assetId, transaction);
+    const statusCode = asset.status?.code ?? "";
+    const blocked = statusBlockReason(asset.tag, statusCode, asset.status?.name ?? statusCode);
+    if (blocked) throw new ConflictError(blocked);
+    if ((await findClassification(asset.id, transaction)) === null) {
+      throw new ConflictError(NOT_CLASSIFIED_REASON(asset.tag));
+    }
+    const notes = [`Baja: ${DECOMMISSION_REASON_LABELS[input.reason]}`, detail].filter(Boolean).join(". ");
+    return createAssetMovement(
+      {
+        assetId: asset.id,
+        movementType: "DECOMMISSIONED",
+        notes: notes.slice(0, NOTES_MAX_LENGTH),
+        createdBy: input.createdBy,
+      },
+      transaction,
+    );
+  });
 }

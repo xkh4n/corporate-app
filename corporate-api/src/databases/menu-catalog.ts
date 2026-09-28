@@ -344,6 +344,15 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     permissionKey: "asset-handover-form:access",
     sortOrder: 40,
   },
+  // Plan 012: baja operativa centralizada (antes solo por la toma de inventario).
+  {
+    label: "Dar de Baja Activos",
+    icon: "IoTrashBinOutline",
+    link: "/assets/decommission",
+    parentLabel: "Movimiento Activos",
+    permissionKey: "asset-decommission:access",
+    sortOrder: 50,
+  },
   { label: "Categoria Productos", icon: "IoLibrary", parentLabel: "Adquisiciones", sortOrder: 30 },
   {
     label: "Nueva Categoria",

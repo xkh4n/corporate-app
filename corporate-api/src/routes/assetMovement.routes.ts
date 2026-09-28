@@ -36,6 +36,18 @@ assetMovementRouter.get(
   assetMovementController.listAssignments,
 );
 assetMovementRouter.get("/current/:assetId", authorize("asset-movements", "read"), assetMovementController.current);
+// Dar de baja (plan 012): permiso propio, aparte de asignar.
+assetMovementRouter.get(
+  "/decommission/:assetId",
+  authorize("asset-decommissions", "create"),
+  assetMovementController.decommissionCheck,
+);
+assetMovementRouter.post(
+  "/decommission",
+  authorize("asset-decommissions", "create"),
+  validateBody(assetMovementController.decommissionAssetSchema),
+  assetMovementController.decommission,
+);
 assetMovementRouter.get(
   "/:id/handover.pdf",
   authorize("asset-movements", "read"),
