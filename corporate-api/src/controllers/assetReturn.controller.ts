@@ -4,6 +4,7 @@ import * as assetReturnService from "../services/postgres/assetReturn.service";
 import type { AssetReturnActor } from "../types/postgres/assetReturn.types";
 import { BadRequestError, UnauthorizedError } from "../library/errors";
 import { buildPaginationMeta, parsePaginationParams } from "../library/pagination";
+import { isSystemsRole } from "../library/roleCostCenter";
 import { sendList, sendOk } from "../library/response";
 
 const MAX_ASSETS_PER_RETURN = 100;
@@ -53,7 +54,8 @@ function requireUserId(req: Request): number {
 
 // El rol sale de la sesion autenticada, nunca del cuerpo de la request.
 function requireActor(req: Request): AssetReturnActor {
-  return { userId: requireUserId(req), isAdmin: req.user?.roleName === "admin" };
+  const roleName = req.user?.roleName;
+  return { userId: requireUserId(req), isAdmin: roleName === "admin", isSystems: isSystemsRole(roleName) };
 }
 
 export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {

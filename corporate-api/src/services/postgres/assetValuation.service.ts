@@ -19,7 +19,7 @@ import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/se
 
 // Sin valor pendiente: DECOMMISSIONED ya paso por su baja (WRITE_OFF) y
 // DEVALUATED tiene valor 0 a proposito; asignarles costo reviviria un saldo.
-const NOT_VALUABLE_STATUS_CODES = ["DECOMMISSIONED", "DEVALUATED"];
+const NOT_VALUABLE_STATUS_CODES = ["DECOMMISSIONED", "WRITTEN_OFF", "DEVALUATED"];
 
 const SEARCH_FIELDS = ["tag", "serialNumber"];
 

@@ -71,7 +71,7 @@ export async function updateProductCategory(
 }
 
 // Categorias reales del negocio (dadas por el usuario), sembradas una sola
-// vez en el primer arranque -mismo criterio que seedProducts.
+// vez en el primer arranque. Los productos no se siembran: el catalogo nace vacio.
 const INITIAL_CATEGORIES = [
   { name: "IMPRESORAS LASER", description: "Impresoras laser de oficina" },
   { name: "IMPRESORAS TERMALES 80MM", description: "Impresoras termicas de rollo 80mm (boletas/tickets)" },

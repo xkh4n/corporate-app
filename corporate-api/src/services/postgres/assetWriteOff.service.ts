@@ -16,6 +16,13 @@ import { getOffset } from "../../library/pagination";
 import { lockAssetRow } from "./asset.service";
 import { withProductNames, type AccountingStage, type Classification } from "./assetAccounting.service";
 import { ACCUMULATED_SQL } from "./assetDepreciation.service";
+import {
+  createAssetMovement,
+  getDecommissionPhotoFile,
+  LATEST_DECOMMISSION_MOVEMENT_SQL,
+  listDecommissionPhotos,
+  type DecommissionPhoto,
+} from "./assetMovement.service";
 
 // Baja contable de activos (plan 008). Solo entran activos ya dados de baja
 // operativamente (DECOMMISSIONED: el Kardex ya quedo en cero) y clasificados
@@ -24,6 +31,9 @@ import { ACCUMULATED_SQL } from "./assetDepreciation.service";
 // y al confirmar es DEFINITIVA: los activos pasan a WRITTEN_OFF y cada linea
 // guarda el valor libro contable de ese momento (la perdida por baja). No
 // escribe en el Kardex.
+// Plan 013: la foto de cada activo normalmente ya viene de Dar de Baja Activos
+// (decommissionPhotos); las fotos del borrador quedan para lo que dio de baja la
+// toma de inventario. Al confirmar, cada activo pasa a WRITTEN_OFF («De baja»).
 
 export type WriteOffStatus = "DRAFT" | "CONFIRMED";
 
@@ -69,6 +79,8 @@ export interface WriteOffLine {
   stage: AccountingStage;
   bookValue: string;
   photos: WriteOffPhoto[];
+  // Fotos tomadas al dar de baja el activo (plan 013).
+  decommissionPhotos: DecommissionPhoto[];
 }
 
 export interface WriteOffDetail extends WriteOffSummary {
@@ -197,9 +209,14 @@ export async function getWriteOffOrThrow(id: number, transaction?: Transaction):
        FROM asset_write_off_photos WHERE write_off_id = :id ORDER BY id`,
     { replacements: { id }, type: QueryTypes.SELECT, transaction },
   );
+  const decommissionPhotos = await listDecommissionPhotos(
+    rows.map((row) => row.assetId),
+    transaction,
+  );
   const lines = (await withProductNames(rows)).map((line) => ({
     ...line,
     photos: photos.filter((photo) => photo.assetId === line.assetId),
+    decommissionPhotos: decommissionPhotos.filter((photo) => photo.assetId === line.assetId),
   }));
   return { ...summary, lines };
 }
@@ -265,6 +282,25 @@ export async function createWriteOff(assetIds: number[], userId: number): Promis
     );
     return getWriteOffOrThrow(id, transaction);
   });
+}
+
+// Baja por lote (plan 013): un borrador con todos los pendientes que no estan ya en otro
+// borrador, hasta MAX_ASSETS_PER_WRITE_OFF. notIncluded: los que quedaron fuera por el tope.
+export async function createAllPendingWriteOff(
+  userId: number,
+): Promise<{ detail: WriteOffDetail; notIncluded: number }> {
+  const rows = await postgres.query<{ assetId: number }>(
+    `SELECT a.id AS "assetId" ${ELIGIBLE_FROM}
+        AND NOT EXISTS (SELECT 1 FROM asset_write_off_lines l JOIN asset_write_offs w ON w.id = l.write_off_id
+                         WHERE l.asset_id = a.id AND w.status = 'DRAFT')
+      ORDER BY a.id`,
+    { type: QueryTypes.SELECT },
+  );
+  if (rows.length === 0) {
+    throw new BadRequestError("No hay activos pendientes de baja contable fuera de otros borradores");
+  }
+  const ids = rows.slice(0, MAX_ASSETS_PER_WRITE_OFF).map((row) => row.assetId);
+  return { detail: await createWriteOff(ids, userId), notIncluded: rows.length - ids.length };
 }
 
 export interface WriteOffUpdate {
@@ -475,6 +511,22 @@ export async function getPhotoFile(id: number, photoId: number): Promise<{ fileP
   };
 }
 
+// Foto de la baja operativa de un activo que es linea de esta baja (plan 013).
+export async function getLineDecommissionPhotoFile(
+  id: number,
+  photoId: number,
+): Promise<{ filePath: string; mimeType: string }> {
+  const [row] = await postgres.query<{ assetId: number }>(
+    `SELECT d.asset_id AS "assetId"
+       FROM asset_decommission_photos d
+       JOIN asset_write_off_lines l ON l.asset_id = d.asset_id AND l.write_off_id = :id
+      WHERE d.id = :photoId AND d.movement_id = ${LATEST_DECOMMISSION_MOVEMENT_SQL}`,
+    { replacements: { id, photoId }, type: QueryTypes.SELECT },
+  );
+  if (!row) throw new NotFoundError(`La foto ${photoId} no existe en la baja ${id}`);
+  return getDecommissionPhotoFile(photoId, row.assetId);
+}
+
 // ---------------------------------------------------------------------------
 // Confirmacion (definitiva)
 // ---------------------------------------------------------------------------
@@ -509,7 +561,9 @@ export async function confirmWriteOff(id: number, userId: number): Promise<Write
       `SELECT a.id AS "assetId", a.tag, s.code AS "statusCode", aa.stage,
               (${BOOK_VALUE_SQL})::numeric(18,2)::text AS "bookValue",
               (SELECT COUNT(*)::int FROM asset_write_off_photos p
-                WHERE p.write_off_id = :id AND p.asset_id = a.id) AS "photoCount"
+                WHERE p.write_off_id = :id AND p.asset_id = a.id)
+              + (SELECT COUNT(*)::int FROM asset_decommission_photos d
+                  WHERE d.asset_id = a.id AND d.movement_id = ${LATEST_DECOMMISSION_MOVEMENT_SQL}) AS "photoCount"
          FROM asset_accounting aa
          JOIN assets a ON a.id = aa.asset_id
          JOIN asset_statuses s ON s.id = a.status_id
@@ -550,6 +604,14 @@ export async function confirmWriteOff(id: number, userId: number): Promise<Write
         WHERE asset_id IN (:assetIds)`,
       { replacements: { id, assetIds }, transaction },
     );
+    // Plan 013: el activo pasa de «Pendiente de baja contable» a «De baja» (sin asiento en el
+    // Kardex: ya quedo en cero al darlo de baja).
+    for (const row of current) {
+      await createAssetMovement(
+        { assetId: row.assetId, movementType: "WRITTEN_OFF", notes: `Baja contable N° ${id}`, createdBy: userId },
+        transaction,
+      );
+    }
     await postgres.query(
       `UPDATE asset_write_offs
           SET status = 'CONFIRMED', asset_count = :count, total_book_value = :total,

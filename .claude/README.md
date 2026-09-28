@@ -18,6 +18,149 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (16) — Revisión de seguridad del delta 7275cdc..2aec9e3 (planes 012 y 013, devoluciones, siembra)
+
+### Hecho
+- Revisión con los dos agentes, **cybersecurity-orchestrator** y **security-engineer**, en paralelo e independientes. Ambos dan **GO**, sin hallazgos críticos ni altos.
+- **M1 (Media), corregido.** Lo reportaron los dos. El privilegio «recibir devoluciones» sale del prefijo `1110-` del nombre del rol, y `PUT /roles/:id` no controlaba quién renombraba, ni siquiera el propio rol.
+  - Ahora un no-admin no edita su propio rol ni el de admin, la misma regla que ya aplicaba a los permisos de un rol.
+  - Solo un admin crea un rol `1110-…`, o pone o quita ese prefijo al renombrar.
+  - El prefijo se compara como texto: `01110-x` ya no cuenta como Sistemas.
+- **M2 (Media, previo pero expuesto por el plan 012), corregido.** Solo lo reportó security-engineer.
+  - El problema: un `POST /asset-movements` con `SUPPORT` (permiso `asset-movements:create`, que tiene grantToUser) sacaba de la baja un activo «Pendiente de baja contable», con el Kardex en 0.
+  - Ahora ese activo solo sale como `WRITTEN_OFF` (baja contable) o `DEVALUATED` (encontrado en uso en una toma).
+- **B1 (Baja), corregido.** Solo lo reportó security-engineer. La baja contable aceptaba la foto de una baja anterior del mismo activo. Ahora solo cuenta, se muestra y se sirve la foto del último movimiento `DECOMMISSIONED`.
+- **Informativos, sin cambio:**
+  - I1: al desplegar, todo rol con «Valorización de Activos» recibe `asset-valuation:update`, por decisión del usuario. Conviene revisar qué roles la tienen.
+  - I2: un activo `WRITTEN_OFF` puede volver a usarse devaluado, con valor 0 y sin vía de revalorización.
+- **Pruebas:**
+  - regresión nueva para M1, M2 y B1;
+  - 140 unitarias; integración contra Testing en dar de baja, baja contable, escalamiento de permisos, inventario, movimientos, devoluciones, depreciación, valorización, contabilidad y roles: 123 OK;
+  - front: `tsc` y lint.
+- Como en run-2, el orquestador solo no vio M2 ni B1: la revisión cruzada sigue siendo necesaria.
+
+---
+
+## 2026-09-28 (15) — Instalación limpia: sin productos de ejemplo
+
+### Hecho
+- Se quitó `seedProducts()` (`services/mongo/product.service.ts` y su llamada en `index.ts`). Sembraba en el primer arranque 3 productos de ejemplo (un notebook Dell, una impresora en arriendo y un soporte de servidores), uno por tipo de producto. Ahora el catálogo de productos nace vacío.
+- Se mantiene la siembra de las categorías de producto, que son las reales del negocio.
+- Las bases que ya tienen esos productos no cambian; si sobran, se desactivan desde la pantalla.
+
+---
+
+## 2026-09-28 (14) — Plan 013: foto al dar de baja y baja contable individual o por lote (aprobado)
+
+### Hecho
+- Plan aprobado y copiado a [`planes/013-foto-baja-y-baja-contable-por-lote.html`](planes/013-foto-baja-y-baja-contable-por-lote.html).
+
+### Decisiones
+- **Foto obligatoria al dar de baja:** en Dar de Baja Activos, y queda guardada por activo.
+- **Estados:**
+  - `DECOMMISSIONED` se muestra como «Pendiente de baja contable».
+  - Estado nuevo `WRITTEN_OFF` «De baja», que se asigna al confirmar la Baja Contable.
+- **Baja Contable:**
+  - individual (1 activo, 1 certificado) o por lote (todos los pendientes, 1 certificado);
+  - reutiliza la foto tomada al dar de baja;
+  - a lo que dio de baja la Toma de Inventario (sin foto) se le pide la foto ahí.
+
+### Implementación
+- **Migración:**
+  - estado `WRITTEN_OFF` «De baja»; `DECOMMISSIONED` pasa a llamarse «Pendiente de baja contable»;
+  - tipo de movimiento `WRITTEN_OFF`;
+  - tabla `asset_decommission_photos`, con los archivos en `uploads/bajas-operativas/<activo>`;
+  - backfill: los activos que ya tenían baja contable pasan a `WRITTEN_OFF`.
+- **API, Dar de Baja:**
+  - `POST /asset-movements/decommission` es multipart, con la foto obligatoria (`uploadSingle` de imagen, 5 MB);
+  - el archivo se guarda en la misma transacción y se borra si la transacción falla;
+  - `GET /asset-movements/decommission/:assetId/photo`.
+- **API, Baja Contable:**
+  - `POST /asset-write-offs` con `{ allPending: true }` arma la baja por lote: todos los pendientes que no estén en otro borrador, hasta 200;
+  - el detalle trae `decommissionPhotos`, servidas por `GET /asset-write-offs/:id/decommission-photos/:photoId`, que exige que el activo sea una línea de esa baja;
+  - al confirmar, cuentan también las fotos de la baja operativa, y cada activo pasa a `WRITTEN_OFF` con su movimiento «Baja contable N° X».
+- **`WRITTEN_OFF` se trata igual que `DECOMMISSIONED`:**
+  - en contabilidad, depreciación, valorización y faltantes de inventario;
+  - en la toma de inventario: si se encuentra en uso, queda devaluado;
+  - si un activo con baja contable se vuelve a dar de baja, queda `WRITTEN_OFF` y no vuelve a quedar pendiente;
+  - ningún otro movimiento sale de `WRITTEN_OFF`.
+- **Front:**
+  - Dar de Baja: campo de foto (cámara en móvil) con vista previa; es obligatorio para confirmar;
+  - Baja Contable: botón «Baja individual» por fila, «Baja por lote (todos los pendientes: N)» y «Baja de los seleccionados»;
+  - el borrador muestra la foto de la baja operativa y solo pide foto a las líneas que no tienen.
+- **Pruebas:**
+  - API: 140 unitarias; 115 de integración contra Testing (dar de baja, baja contable, inventario, depreciación, valorización, contabilidad, movimientos y devoluciones);
+  - front: `tsc`, lint y 69 pruebas.
+
+---
+
+## 2026-09-28 (13) — Devoluciones: solo Sistemas (1110) recibe
+
+### Decisión
+- **Antes:** quien solicitó o envió una devolución no podía recibirla, salvo un admin. Esto bloqueaba al analista que hace la toma, pide el despacho a la tienda y luego lo recepciona, o cuando no está el analista de Adquisiciones.
+- **Ahora:** recibe solo quien tiene un rol del centro de costo **1110** (Sistemas), o un admin, aunque haya solicitado o enviado la devolución. Los demás centros de costo solo solicitan. Se sigue exigiendo `asset-returns:update`.
+- **Cómo se sabe el centro de costo:** por el prefijo del rol. Nuevo Rol arma el nombre como `<código>-<nombre>`, y el usuario recibe el rol por su cargo.
+
+### Implementación
+- **API:**
+  - `library/roleCostCenter.ts` con `isSystemsRole`, más su prueba unitaria.
+  - `AssetReturnActor.isSystems` se toma del rol de la sesión.
+  - `receiveAssetReturn` responde 403 si el usuario no es de Sistemas ni admin.
+- **Front:**
+  - `lib/roleCostCenter.ts` aplica la misma regla.
+  - El detalle muestra «Pendiente de recepción por Sistemas» a quien no puede recibir.
+- **Pruebas:** integración de devoluciones 32/32 contra Testing.
+
+### Ojo
+- La API no valida el prefijo al crear o renombrar roles; hoy solo lo arma el front. Quien tenga `roles:create`/`roles:update` podría crear un rol `1110-…`, pero para eso ya administra roles.
+
+---
+
+## 2026-09-28 (12) — Plan 012: Dar de Baja Activos y valorización habilitada (aprobado)
+
+### Hecho
+- Plan aprobado y copiado a [`planes/012-dar-de-baja-activos.html`](planes/012-dar-de-baja-activos.html).
+
+### Decisiones
+- **Estados que se pueden dar de baja:** los que están en TI (`RETURNED`, `SUPPORT` sin ticket, `DAMAGED`, `AVAILABLE`, `RECEIVED`).
+- **Clasificación contable exigida.**
+- **Motivo obligatorio** de una lista más un detalle.
+- **Excepción a la regla lectura/edición:** «Pantalla: Valorización de Activos» incluye también `asset-valuation:update`. Los analistas veían la pantalla pero no podían ingresar el valor.
+
+### Implementación
+- **API:**
+  - Permiso base `asset-decommissions:create`, sin `grantToUser`.
+  - `getDecommissionCheck` devuelve estado, centro de costo, clasificación, ticket abierto, `eligible` y `blockReason`.
+  - `decommissionAsset`: una transacción; bajo el bloqueo de la fila repite la validación de estado y de clasificación, y luego llama a `createAssetMovement(DECOMMISSIONED)`, con el motivo en el movimiento y en el asiento `WRITE_OFF` (`recordWriteOff` ahora recibe `notes`).
+  - Rutas: `GET /asset-movements/decommission/:assetId` y `POST /asset-movements/decommission`.
+  - El POST genérico `/asset-movements` ya no acepta `DECOMMISSIONED`.
+- **Permisos y menú:**
+  - Agrupador `asset-decommission`, con `assets:read` y `asset-decommissions:create`.
+  - Hoja «Dar de Baja Activos» en Movimiento Activos.
+  - `asset-valuation-view` incluye `:update`; `asset-valuation-edit` queda redundante («edición, incluida en la pantalla»).
+- **Front:** pantalla `DecommissionAsset.tsx`:
+  - búsqueda con aviso por estado;
+  - revisión previa, con un `Alert` si algo bloquea la baja;
+  - motivo y detalle;
+  - modal de confirmación que advierte que la baja es definitiva.
+
+### Verificación
+- **API:** `tsc` limpio y 137 tests unitarios. Nuevo `assetDecommission.service.integration.test.ts` (4 tests), que cubre:
+  - un activo devuelto y clasificado queda de baja, con el motivo en el Kardex, y aparece en Baja Contable;
+  - sin clasificar, 409;
+  - asignado, 409;
+  - «Otro» sin detalle, 400.
+  Las suites de movimientos, inventario, baja contable, kardex, contabilidad, valorización, permisos y menú suman 103 tests OK.
+- **Front:** `tsc`, lint y 69 tests OK.
+- **Development:** reiniciado.
+  - La hoja nueva está en su lugar y el agrupador de valorización ya incluye `update`.
+  - Los roles con esa pantalla son `1072-analista-contable`, `1110-analista-adquisiciones`, `1110-jefe-soporte` y admin, y todos pueden ingresar el valor.
+
+### Pendiente
+- Asignar «Pantalla: Dar de Baja Activos» a los roles que corresponda.
+- Probar en el navegador.
+- Revisión de seguridad antes de promover.
+
 ## 2026-09-28 (11) — Revisión de seguridad del delta acc720c..74d82cb (plan 011 y acta) y promoción
 
 ### Hecho
@@ -30,6 +173,12 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
     - Reasignar usa `asset-movements:create` (el mismo que ya permitía `REASSIGNED`), bloquea la fila y rechaza usuarios inactivos.
     - `/current/:assetId` expone lo mismo que el acta, con el mismo permiso.
     - Marca y modelo tienen largo máximo y se muestran escapados.
+- **PR #35** con CI verde, mergeado a `testing` (`e59120e`). Gate marcado sobre `7275cdc`.
+- **PR #36** `release/master → master`: se excluyeron 2 tests nuevos y la guardia pasó. `master` quedó en `71bc4ec`.
+
+### Pendiente
+- Redesplegar Testing y producción: la siembra mueve el menú, crea los 3 agrupadores y la API trae el acta nueva.
+- Completar marca y modelo de los productos; asignar los agrupadores nuevos a los roles; probar en el navegador.
 
 ## 2026-09-28 (10) — Acta de entrega con el formato del formulario de TI
 
