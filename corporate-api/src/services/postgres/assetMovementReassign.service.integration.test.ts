@@ -149,6 +149,34 @@ describe("Movimiento de Activos (plan 011, integracion)", () => {
     });
   });
 
+  describe("acta de entrega", () => {
+    it("toma marca y modelo del producto y el tipo de equipo de su categoria", async () => {
+      const costCenter = await createCostCenterFixture("CC RA acta");
+      const desktops = await createProductCategory({ name: `DESKTOPS RA${++seq}` });
+      const product = await createProduct({
+        name: `Producto acta RA${++seq}`,
+        productType: "COMPRA",
+        categoryId: String(desktops._id),
+        brand: "LENOVO",
+        productModel: "THINKCENTRE M79",
+      });
+      const [asset] = await createAssetsFromReceipt({
+        goodsReceiptId: 779_000 + ++seq,
+        productId: String(product._id),
+        quantity: 1,
+        costCenterId: costCenter.id,
+        finalStatusCode: "AVAILABLE",
+      });
+      const holder = await createEmployee();
+      const movement = await assignAssetToUser({ assetId: asset!.id, userId: holder.id });
+
+      const data = await getAssetHandoverData(movement.id);
+      expect(data.productBrand).toBe("LENOVO");
+      expect(data.productModel).toBe("THINKCENTRE M79");
+      expect(data.equipmentKind).toBe("DESKTOP");
+    });
+  });
+
   describe("getCurrentAssignment", () => {
     it("404 si el activo no esta en manos de nadie", async () => {
       const costCenter = await createCostCenterFixture("CC RA sin tenedor");

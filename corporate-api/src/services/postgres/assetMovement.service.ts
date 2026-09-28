@@ -15,7 +15,8 @@ import { getCostCenterById, getCostCenterByIdOrThrow } from "./costCenter.servic
 import { CostCenterModel } from "../../models/postgres/costCenter.model";
 import { getPositionById } from "../mongo/position.service";
 import { getProductById, getProductsByIds, listProductIdsByCategory } from "../mongo/product.service";
-import { getProductCategoriesByIds } from "../mongo/productCategory.service";
+import { getProductCategoriesByIds, getProductCategoryById } from "../mongo/productCategory.service";
+import { classifyEquipment } from "../../library/equipmentKind";
 import { BadRequestError, ConflictError, NotFoundError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
@@ -291,7 +292,10 @@ export async function getAssetHandoverData(movementId: number): Promise<AssetHan
     asset.productId ? getProductById(asset.productId) : Promise.resolve(null),
     goodsReceipt ? getSupplierByIdOrThrow(goodsReceipt.supplierId) : Promise.resolve(null),
   ]);
-  const businessPartner = supplier ? await getBusinessPartnerByIdOrThrow(supplier.businessPartnerId) : null;
+  const [businessPartner, category] = await Promise.all([
+    supplier ? getBusinessPartnerByIdOrThrow(supplier.businessPartnerId) : Promise.resolve(null),
+    product?.categoryId ? getProductCategoryById(String(product.categoryId)) : Promise.resolve(null),
+  ]);
 
   return {
     employeeName: `${person.firstName} ${person.lastName}`,
@@ -302,6 +306,9 @@ export async function getAssetHandoverData(movementId: number): Promise<AssetHan
     assetTag: asset.tag,
     serialNumber: asset.serialNumber,
     productName: product?.name ?? null,
+    productBrand: product?.brand ?? null,
+    productModel: product?.productModel ?? null,
+    equipmentKind: classifyEquipment(category?.name),
     assetValue: asset.value,
     supplierName: businessPartner?.legalName ?? null,
     storageCapacity: movement.storageCapacity,

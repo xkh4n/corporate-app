@@ -18,6 +18,11 @@ export interface ProductDocument extends Document {
   // fuerza un backfill. Sin FK real (misma coleccion, pero Mongoose no valida
   // referencias) -si se necesita, validar contra productCategory.service.ts.
   categoryId: string | null;
+  // Marca y modelo del equipo: los muestra el acta de entrega (plan 011). Opcionales:
+  // los productos anteriores no los tienen hasta que se completan en Ver Productos.
+  // productModel y no "model": choca con Document.model() de Mongoose.
+  brand: string | null;
+  productModel: string | null;
   // Path relativo servido por GET /products/:id/image (ej.
   // "uploads/images/products/<id>.jpg") -null hasta la primera subida via
   // POST /products/:id/image. Nunca se setea en el create/update generico,
@@ -35,6 +40,8 @@ const productSchema = new Schema<ProductDocument>(
     description: { type: String, default: null },
     productType: { type: String, required: true, enum: ["ARRIENDO", "SERVICIO", "COMPRA"] },
     categoryId: { type: Schema.Types.ObjectId, ref: "ProductCategory", default: null },
+    brand: { type: String, default: null, trim: true, maxlength: 100 },
+    productModel: { type: String, default: null, trim: true, maxlength: 100 },
     image: { type: String, default: null },
     isActive: { type: Boolean, required: true, default: true },
   },

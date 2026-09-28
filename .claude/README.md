@@ -18,6 +18,33 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (10) — Acta de entrega con el formato del formulario de TI
+
+### Hecho
+- **Formato:**
+  - márgenes de 0,5 cm;
+  - membrete solo con el logo y párrafo de objetivo (cambios del usuario);
+  - tablas de 2 columnas: «Identificación del empleado» y «Equipamiento | Especificaciones», con encabezado sombreado y valores centrados.
+- **Fecha:** la de la asignación (antes, la de generación del PDF; al reimprimir salía la fecha del día), en hora de Chile y en negrita.
+- **Valor del activo** en CLP («Sin valorizar» si no tiene).
+- **Filas fijas del equipamiento:** Marca, Modelo, Número de Serie, Número de Tag, Proveedor, Almacenamiento, Memoria (RAM), Bolso / Mochila, Candado / Seguro, Cargador, MAC Address y Valor (al final, decisión del usuario).
+- **«No Aplica» según el tipo de equipo** (`library/equipmentKind.ts`, por el nombre de la categoría del producto):
+  - bolso y candado solo en notebook;
+  - cargador en notebook o monitor;
+  - MAC en notebook o desktop.
+- **Marca y modelo en el catálogo** (decisión del usuario): nuevos `brand` y `productModel` en Producto (`model` choca con `Document.model()` de Mongoose).
+  - Se cargan en Nuevo Producto.
+  - En Ver Productos se ven como columnas y se editan con «Editar marca/modelo», visible solo con `products:update`.
+
+### Verificación
+- `tsc` limpio en API y front, más lint del front.
+- Tests: 137 unitarios (incluye `equipmentKind.unit.test.ts`), 7 de integración de reasignación y acta, y 69 del front.
+- Actas de prueba revisadas visualmente para notebook y desktop.
+
+### Pendiente
+- Completar marca y modelo de los productos existentes desde Ver Productos.
+- Crear la categoría de monitores cuando corresponda: la regla la reconoce por el nombre («MONITOR…»).
+
 ## 2026-09-28 (9) — Plan 011: Movimiento de Activos (aprobado)
 
 ### Hecho

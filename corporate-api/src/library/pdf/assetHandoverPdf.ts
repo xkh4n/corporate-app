@@ -1,5 +1,6 @@
 import path from "node:path";
 import PDFDocument from "pdfkit";
+import { handoverFieldApplies, type EquipmentKind } from "../equipmentKind";
 
 export interface AssetHandoverPdfData {
   employeeName: string;
@@ -10,6 +11,10 @@ export interface AssetHandoverPdfData {
   assetTag: string;
   serialNumber: string | null;
   productName: string | null;
+  productBrand: string | null;
+  productModel: string | null;
+  // Define que campos del acta van como "No Aplica" (ver library/equipmentKind.ts).
+  equipmentKind: EquipmentKind;
   // assets.value (DECIMAL como string). null = activo sin valorizar.
   assetValue: string | null;
   supplierName: string | null;
@@ -134,35 +139,35 @@ function renderEmployeeBox(doc: PDFKit.PDFDocument, data: AssetHandoverPdfData):
   ]);
 }
 
-function yesNo(value: boolean | null): string | null {
-  return value === null ? null : value ? "Sí" : "No";
+const NOT_APPLICABLE = "No Aplica";
+
+function yesNo(value: boolean | null): string {
+  return value === null ? "" : value ? "Sí" : "No";
 }
 
-// Tabla "Equipamiento / Especificaciones" -una fila por dato del acta
-// (Marca/Modelo/N° serie/N° tag/Proveedor/Almacenamiento/Memoria/Bolso/
-// Candado/Cargador/MAC). Marca y Modelo se
-// omiten a proposito: el Product de corporate-app no tiene esos campos (solo
-// nombre/descripcion/tipo) -no hay de donde derivarlos sin agregar columnas
-// nuevas al catalogo de productos, que no se pidio. Cada fila con valor nulo
-// se omite en vez de mostrarse vacia -el set de campos varia segun si el
-// activo tiene producto/proveedor resuelto y si el formulario cargo
-// especificaciones de notebook.
+// Tabla "Equipamiento / Especificaciones" con filas FIJAS (pedido del usuario):
+// siempre las mismas, en el mismo orden; un dato que falta queda en blanco. Bolso,
+// candado, cargador y MAC dicen "No Aplica" segun el tipo de equipo (la categoria
+// del producto, ver library/equipmentKind.ts). El valor va al final.
 function renderAssetBox(doc: PDFKit.PDFDocument, data: AssetHandoverPdfData): void {
-  const rows: { label: string; value: string }[] = [
-    { label: "Tag", value: data.assetTag },
-    ...(data.productName ? [{ label: "Producto", value: data.productName }] : []),
-    ...(data.serialNumber ? [{ label: "N° de serie", value: data.serialNumber }] : []),
-    { label: "Valor", value: formatAssetValue(data.assetValue) },
-    ...(data.supplierName ? [{ label: "Proveedor", value: data.supplierName }] : []),
-    ...(data.storageCapacity ? [{ label: "Capacidad de Almacenamiento", value: data.storageCapacity }] : []),
-    ...(data.ramCapacity ? [{ label: "Capacidad de Memoria", value: data.ramCapacity }] : []),
-    ...(data.hasBag !== null ? [{ label: "Bolso", value: yesNo(data.hasBag)! }] : []),
-    ...(data.hasLock !== null ? [{ label: "Candado", value: yesNo(data.hasLock)! }] : []),
-    ...(data.hasCharger !== null ? [{ label: "Cargador", value: yesNo(data.hasCharger)! }] : []),
-    ...(data.macAddress ? [{ label: "MAC Address", value: data.macAddress }] : []),
-  ];
+  const kind = data.equipmentKind;
+  const ifApplies = (field: "bag" | "lock" | "charger" | "mac", value: string): string =>
+    handoverFieldApplies(kind, field) ? value : NOT_APPLICABLE;
 
-  drawTwoColumnTable(doc, ["Equipamiento", "Especificaciones"], rows);
+  drawTwoColumnTable(doc, ["Equipamiento", "Especificaciones"], [
+    { label: "Marca", value: data.productBrand ?? "" },
+    { label: "Modelo", value: data.productModel ?? "" },
+    { label: "Número de Serie", value: data.serialNumber ?? "" },
+    { label: "Número de Tag", value: data.assetTag },
+    { label: "Proveedor", value: data.supplierName ?? "" },
+    { label: "Almacenamiento", value: data.storageCapacity ?? "" },
+    { label: "Memoria (RAM)", value: data.ramCapacity ?? "" },
+    { label: "Bolso / Mochila", value: ifApplies("bag", yesNo(data.hasBag)) },
+    { label: "Candado / Seguro", value: ifApplies("lock", yesNo(data.hasLock)) },
+    { label: "Cargador", value: ifApplies("charger", yesNo(data.hasCharger)) },
+    { label: "MAC Address", value: ifApplies("mac", data.macAddress ?? "") },
+    { label: "Valor", value: formatAssetValue(data.assetValue) },
+  ]);
 }
 
 // La fecha es la de la asignacion (no la de generacion del PDF): al reimprimir
