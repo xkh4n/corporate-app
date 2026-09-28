@@ -18,6 +18,22 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (17) — Promoción de los planes 012 y 013 a master (PR #37, #38)
+
+### Hecho
+- **PR #37** `develop → testing` (delta `7275cdc..6a1b0d9`) con CI verde, mergeado (`b3ad2a5`). Gate de seguridad marcado sobre `6a1b0d9`.
+- **PR #38** `release/master → master`: se excluyeron 6 archivos de prueba y la guardia de rutas prohibidas pasó. `master` quedó en `512028b`.
+
+### Pendiente
+- **Redesplegar Testing y producción.** La migración crea el estado `WRITTEN_OFF`, renombra `DECOMMISSIONED`, crea la tabla de fotos y hace el backfill. La siembra agrega el permiso y la pantalla de Dar de Baja, y `update` a Valorización.
+- **Asignar permisos:**
+  - «Pantalla: Dar de Baja Activos» a los roles que correspondan;
+  - «Devoluciones de Activos (edición)» a los roles 1110 que deban recibir.
+- **Revisar** qué roles tienen «Valorización de Activos» (I1).
+- **Probar en el navegador** el ciclo devolución → dar de baja con foto → baja contable individual y por lote.
+
+---
+
 ## 2026-09-28 (16) — Revisión de seguridad del delta 7275cdc..2aec9e3 (planes 012 y 013, devoluciones, siembra)
 
 ### Hecho
