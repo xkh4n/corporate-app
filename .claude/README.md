@@ -18,6 +18,19 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (11) — Revisión de seguridad del delta acc720c..74d82cb (plan 011 y acta) y promoción
+
+### Hecho
+- **PR #35** `develop → testing`.
+- **Revisión de seguridad del delta:** reasignar, asignación vigente, listado de asignaciones, marca/modelo en productos y acta.
+  - **F1, Baja/Media, corregido:** el filtro «usuario» del listado (`findUserIdsBySearch`) buscaba el RUT con `LIKE` parcial. Con pantallas de solo lectura («Visualizar Asignaciones», «Formulario Asignación») se podía reconstruir el RUT de un colaborador por tramos, viendo qué nombre aparecía. Antes, ligar RUT y nombre exigía `persons:read` o `asset-movements:create`. Ahora el RUT se busca solo completo (con o sin puntos) y el nombre sigue siendo parcial. El test cubre que un RUT parcial no encuentra nada.
+  - **Sin hallazgos:**
+    - SQL parametrizado; la serie se escapa y el centro de costo se valida como entero.
+    - La categoría se valida como ObjectId, así que no hay inyección de operadores en Mongo.
+    - Reasignar usa `asset-movements:create` (el mismo que ya permitía `REASSIGNED`), bloquea la fila y rechaza usuarios inactivos.
+    - `/current/:assetId` expone lo mismo que el acta, con el mismo permiso.
+    - Marca y modelo tienen largo máximo y se muestran escapados.
+
 ## 2026-09-28 (10) — Acta de entrega con el formato del formulario de TI
 
 ### Hecho

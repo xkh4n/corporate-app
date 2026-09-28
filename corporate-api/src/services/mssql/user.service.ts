@@ -262,12 +262,16 @@ export async function listAssignableUsers(search: string): Promise<SafeUser[]> {
 }
 
 // Ids de usuarios (activos o no: un activo puede seguir en manos de alguien que
-// ya no esta) cuyo RUT o nombre contiene el texto. Solo ids, para filtrar
-// Visualizar Asignaciones (plan 011) por tenedor; el nombre se muestra con
-// getUserDirectory. Sin escape en MSSQL: se quitan los comodines del texto.
+// ya no esta) por RUT EXACTO o nombre/apellido que contiene el texto. Solo ids,
+// para filtrar Visualizar Asignaciones (plan 011) por tenedor; el nombre se
+// muestra con getUserDirectory. El RUT no se busca parcial: la pantalla es de
+// solo lectura y un LIKE sobre el RUT dejaba reconstruirlo por tramos viendo que
+// nombre aparecia (revision de seguridad 2026-09-28). Sin escape en MSSQL: se
+// quitan los comodines del texto.
 export async function findUserIdsBySearch(search: string, limit = 200): Promise<number[]> {
   const trimmed = search.replace(/[%_[\]]/g, "").trim();
   if (!trimmed) return [];
+  const documentId = trimmed.replace(/\./g, "");
   const users = await UserModel.findAll({
     attributes: ["id"],
     include: [
@@ -278,7 +282,7 @@ export async function findUserIdsBySearch(search: string, limit = 200): Promise<
         attributes: [],
         where: {
           [Op.or]: [
-            { documentId: { [Op.like]: `%${trimmed}%` } },
+            { documentId },
             { firstName: { [Op.like]: `%${trimmed}%` } },
             { lastName: { [Op.like]: `%${trimmed}%` } },
           ],

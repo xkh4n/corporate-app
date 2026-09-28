@@ -92,7 +92,7 @@ export default function AssetHandoverForm() {
                 className="bg-zinc-100 focus:bg-indigo-100"
               />
             </Field>
-            <Field label="Usuario (nombre o RUT)" htmlFor="handoverUser">
+            <Field label="Usuario (nombre o RUT completo)" htmlFor="handoverUser">
               <Input
                 id="handoverUser"
                 value={user}

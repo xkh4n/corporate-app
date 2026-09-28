@@ -46,7 +46,8 @@ async function createEmployee(lastName = `Reasigna${++seq}`) {
     documentId: `TESTDOC-RA${id}`,
     email: `test-ra-${id}@example.com`,
   });
-  return createUser({ personId: person.id, roleId: userRole.id, username: `testra${id}` });
+  const user = await createUser({ personId: person.id, roleId: userRole.id, username: `testra${id}` });
+  return { ...user, documentId: person.documentId };
 }
 
 async function createCostCenterFixture(name: string) {
@@ -217,6 +218,12 @@ describe("Movimiento de Activos (plan 011, integracion)", () => {
       expect(await ids({ categoryId: String(monitors._id) })).toEqual([assetB.id]);
       expect(await ids({ user: "Anabella" })).toEqual([assetA.id]);
       expect(await ids({ user: "NadieConEsteNombre" })).toEqual([]);
+      // El RUT se busca completo, nunca por tramos (no debe servir para reconstruirlo).
+      const anaDocumentId = ana.documentId;
+      expect(anaDocumentId).not.toBe("");
+      expect(await ids({ user: anaDocumentId })).toEqual([assetA.id]);
+      expect(await ids({ user: anaDocumentId.slice(0, -2) })).toEqual([]);
+      expect(await ids({ user: "TESTDOC-RA" })).toEqual([]);
       expect(await ids({ serial: "%" })).toEqual([]);
     });
   });

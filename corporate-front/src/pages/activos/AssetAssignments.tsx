@@ -128,7 +128,7 @@ export default function AssetAssignments() {
                 ))}
               </Select>
             </Field>
-            <Field label="Usuario (nombre o RUT)" htmlFor="filterUser">
+            <Field label="Usuario (nombre o RUT completo)" htmlFor="filterUser">
               <Input
                 id="filterUser"
                 value={draft.user}
