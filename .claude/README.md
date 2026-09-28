@@ -18,6 +18,15 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (15) — Instalación limpia: sin productos de ejemplo
+
+### Hecho
+- Se quitó `seedProducts()` (`services/mongo/product.service.ts` y su llamada en `index.ts`). Sembraba en el primer arranque 3 productos de ejemplo (un notebook Dell, una impresora en arriendo y un soporte de servidores), uno por tipo de producto. Ahora el catálogo de productos nace vacío.
+- Se mantiene la siembra de las categorías de producto, que son las reales del negocio.
+- Las bases que ya tienen esos productos no cambian; si sobran, se desactivan desde la pantalla.
+
+---
+
 ## 2026-09-28 (14) — Plan 013: foto al dar de baja y baja contable individual o por lote (aprobado)
 
 ### Hecho
