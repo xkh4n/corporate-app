@@ -18,6 +18,91 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (7) — Revisión de seguridad del delta b23e80d..c629028 (PR #32) y corrección F1
+
+### Hecho
+- **PR #32** `develop → testing` mergeado (`c629028`), con CI verde.
+- **Revisión de seguridad del delta** (agrupadores, folio IT, aviso en Asignar Activos, setup de integración):
+  - **F1, Baja/Media, corregido:** «Nuevo Producto» había recibido `products:update` para subir la imagen, pero eso deja editar cualquier producto con `PUT /products/:id`. Ahora `POST /products/:id/image` acepta `products:create` o `products:update`, y el agrupador vuelve a `products:create` + `product-categories:read`. El vínculo sembrado se borró a mano en Development y Testing.
+  - **F2, Baja, aceptado:** con `addresses:create`, «Crear Proveedor» también podría agregar una dirección a una persona por `personId`. Solo escribe y no expone datos.
+  - **F3, informativo:** con `asset-movements:read`, «Asignar Activos» ve movimientos y actas de otros. Aceptado; es necesario para el acta.
+  - **Sin hallazgos:** folio, toast (texto escapado por React) y `setupIntegration.ts` (solo pruebas).
+
+### Verificación
+- `tsc` limpio, 132 tests unitarios, tests de integración de permisos y menú (17) en verde. Development reiniciado; `product-creation` queda con `products:create` y `product-categories:read`.
+
+## 2026-09-28 (6) — Asignar Activos explica por qué un activo no se puede asignar
+
+### Hecho
+- **Reporte:** un equipo dado de alta en una toma de inventario (`ARR000000002`) no aparecía en Asignar Activos. La búsqueda sí lo encontraba (por tag o serie), pero la pantalla descarta lo que no está `AVAILABLE`, y el alta de la toma lo deja `ASSIGNED` al tenedor. El mensaje decía «no se encontró».
+- **Cambio:** si la búsqueda encuentra activos pero ninguno está disponible, el toast dice «El activo X ya se encuentra asignado» o muestra el estado en que está. «No se encontró» queda solo para cuando no existe ninguno.
+
+### Verificación
+- `tsc -p tsconfig.app.json` y eslint del archivo, limpios.
+
+## 2026-09-28 (5) — Folio de toma de inventario sin guiones
+
+### Hecho
+- `generateInventoryCountNumber` genera `IT2026000001`: prefijo, año y correlativo de 6 dígitos (el mismo contador por año). Las tomas anteriores conservan `IT-AAAA-NNNNNN`, igual que los tickets.
+- Actualizado el test de integración que espera el formato.
+
+### Verificación
+- `tsc` limpio. Tests de integración de toma de inventario contra Testing: 47 OK.
+
+## 2026-09-28 (4) — Permisos faltantes en pantallas y agrupadores de edición
+
+### Hecho
+- **Auditoría de todas las pantallas implementadas:** un script cruzó, para cada hoja del menú, los permisos que su página exige (endpoints que llama más `can()` y `RequirePermissions`) con los includes de su agrupador.
+- **Permisos que la propia pantalla necesitaba** (la acción fallaba con 403):
+  - Asignar Activos: `asset-movements:read`, para el acta de entrega que se descarga al asignar (el caso reportado con pburgos).
+  - Crear Proveedor: `addresses:create` y `supplier-contacts:create`.
+  - Nuevo Producto: `products:update` (imagen) y `product-categories:read`.
+  - Ver Productos y Actualizar Categorías: `product-categories:read`.
+  - Autorizar Solicitud y Aprobar Cotización: `products:read`.
+- **Agrupadores de edición nuevos**, sin hoja de menú. El de la pantalla sigue siendo de solo lectura y abre el menú; el rol necesita los dos:
+  - «Toma de Inventario (edición)»: `inventory-counts:create/update`, productos y categorías.
+  - «Valorización de Activos (edición)».
+  - «Devoluciones de Activos (edición)».
+  - «Carga Masiva de Activos (edición)».
+  - «Depreciación (anular cierre)».
+
+### Decisiones
+- **Lectura y edición separadas** (usuario): no se amplía el agrupador de lectura; la edición se otorga con su propio agrupador. En la primera versión se había ampliado «Toma de Inventario», y se borraron a mano esos 4 vínculos en Development y Testing, porque la siembra solo agrega.
+- **Por diseño:** las pestañas opcionales (Service Desk, historial de servicio en el Kardex, datos de remuneraciones en Nuevo Ingreso) se ven según sus propios permisos y ya se consultan con `can()`.
+
+### Verificación
+- `tsc` limpio, 132 tests unitarios y los tests de integración de permisos y menú (17) en verde.
+- Development reiniciado; los agrupadores quedan en la BD y los nuevos solo los tiene admin.
+
+### Pendiente
+- Al rol de pburgos, darle «Toma de Inventario (edición)». Después debe cerrar sesión y volver a entrar.
+
+## 2026-09-28 (3) — Tests de integración contra Testing y hosts desde ALLOCATED_IP
+
+### Hecho
+- **Causa del timeout:** Testing estaba construido desde una rama local `testing` desactualizada (`92493e1`, 34 commits atrás). Su Redis no tenía el usuario ACL `pristest` (llegó en PR #27) y los tests quedaban reintentando con `WRONGPASS`. Se avanzó la rama local a `origin/testing` y el usuario recreó el stack.
+- **`ALLOCATED_IP`:** `test/setupIntegration.ts` lee solo `ALLOCATED_IP` de `corporate-secrets/Environment/.env` y la usa en los `*_HOST` de `.env.test` que valen `${ALLOCATED_IP}` o están vacíos (un host explícito gana). `.env.test.example` y `TESTING.md` lo explican. Así no se vuelve a copiar una IP vieja.
+- **Folios:** dos asserts viejos (`/^REQ-/`, `/^PRB-/`) pasaron al formato nuevo.
+
+### Verificación
+- Suite de integración completa contra Testing: 28 archivos, 264 tests OK, 4 saltados, incluido `purchaseLink.service.integration.test.ts` (11 tests). `tsc --noEmit` limpio.
+
+### Pendiente
+- Redespliegue de producción, prueba en navegador y promoción de este commit.
+
+## 2026-09-28 (2) — Promoción del plan 010 y de los folios con código de grupo a master (PR #30, #31)
+
+### Hecho
+- **Commits en `develop`:** `0317ea2` (API), `b9d8a93` (front) y `b23e80d` (docs).
+- **Revisión de seguridad** (skill `security-review` sobre todo el delta): sin hallazgos. Gate marcado sobre `b23e80d`.
+- **PR #30** `develop → testing`: CI verde (API y Web).
+- **PR #31** `release/master → master`: `promote-to-master` excluyó 4 archivos de prueba y la guardia de rutas prohibidas pasó. `master` quedó en `d2175ce`.
+
+### Pendiente
+- **Tests de integración:** `purchaseLink.service.integration.test.ts` y el test ajustado de folios no se corrieron. El build de Testing falló con `ERR_SSL_CIPHER_OPERATION_FAILED` en `npm install` (red) y `.env.test` apunta a la IP vieja (.4 en vez de .5).
+- **Redespliegue:** Testing y producción. La migración asigna los códigos de grupo, convierte «Solicitud de equipo», retira «Nueva Solicitud» y da «Generar Ticket» a los roles que la tenían.
+- **Navegador:** probar el ciclo completo.
+
 ## 2026-09-28 (1) — Folios del Service Desk sin guiones y con código de grupo (sin commitear)
 
 ### Hecho

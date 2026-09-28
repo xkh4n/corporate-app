@@ -61,7 +61,8 @@ const SEARCH_FIELDS = ["number", "name"];
 // Estados en los que el activo esta en manos de un usuario (tiene tenedor vigente).
 const HOLDER_STATUSES = new Set(["ASSIGNED", "DEVALUATED"]);
 
-// Folio legible por anio (IT-AAAA-NNNNNN). El upsert con RETURNING es el
+// Folio legible por anio (ITAAAANNNNNN, sin guiones; las tomas anteriores
+// conservan IT-AAAA-NNNNNN). El upsert con RETURNING es el
 // incremento atomico -mismo criterio que generateAssetTag-, y dentro de la
 // transaccion de quien llama: si esa transaccion se revierte, el folio no se
 // consume.
@@ -75,7 +76,7 @@ async function generateInventoryCountNumber(transaction: Transaction): Promise<s
   );
   const nextSeq = rows[0]?.next_seq;
   if (nextSeq === undefined) throw new Error(`No se pudo generar el folio de toma de inventario ${year}`);
-  return `IT-${year}-${String(nextSeq).padStart(COUNT_NUMBER_PAD, "0")}`;
+  return `IT${year}${String(nextSeq).padStart(COUNT_NUMBER_PAD, "0")}`;
 }
 
 export async function getInventoryCountById(id: number, transaction?: Transaction): Promise<InventoryCountModel | null> {

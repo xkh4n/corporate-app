@@ -1,4 +1,5 @@
-import { config as loadEnv } from "dotenv";
+import { config as loadEnv, parse as parseEnv } from "dotenv";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterAll, beforeAll } from "vitest";
 
@@ -10,6 +11,24 @@ import { afterAll, beforeAll } from "vitest";
 // abajo con import() DINAMICO (dentro de setup()), no con import estatico:
 // asi corre en el orden real del codigo, no en el orden de hoisting.
 loadEnv({ path: resolve(__dirname, "../.env.test"), override: true });
+
+// La IP del anfitrion sale de la misma fuente que usan los stacks
+// (compose --env-file corporate-secrets/Environment/.env): los *_HOST de
+// .env.test que digan "${ALLOCATED_IP}" (o esten vacios) toman ese valor. Antes
+// se copiaba la IP a mano y quedaba vieja cada vez que cambiaba la del equipo.
+// Solo se lee ALLOCATED_IP: el resto de ese archivo trae los hostnames de los
+// contenedores, que no sirven desde fuera de Docker. Un host explicito gana.
+const HOST_VARIABLES = ["POSTGRES_HOST", "MSSQL_HOST", "REDIS_HOST", "MONGO_HOST"];
+const environmentFile = resolve(__dirname, "../../corporate-secrets/Environment/.env");
+const allocatedIp = existsSync(environmentFile) ? parseEnv(readFileSync(environmentFile)).ALLOCATED_IP?.trim() : undefined;
+for (const name of HOST_VARIABLES) {
+  const value = process.env[name]?.trim();
+  if (value && value !== "${ALLOCATED_IP}") continue;
+  if (!allocatedIp) {
+    throw new Error(`${name} pide ALLOCATED_IP, pero no esta definida en ${environmentFile}`);
+  }
+  process.env[name] = allocatedIp;
+}
 
 type Deps = {
   postgres: typeof import("../src/databases/postgres/connection.js")["postgres"];
