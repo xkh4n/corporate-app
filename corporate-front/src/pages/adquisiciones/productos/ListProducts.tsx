@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { RequirePermissions } from "../../../components/RequirePermissions";
-import { Spinner, Input, EmptyState, ImagePreviewThumbnail } from "../../../components/ui";
+import { Spinner, Input, EmptyState, ImagePreviewThumbnail, Button, Field, Modal } from "../../../components/ui";
+import { showSuccessToast } from "../../../components/Toast";
+import { useAuth } from "../../../auth/useAuth";
 import { handleError } from "../../../lib/Errors";
 import { productCategoryService, productService } from "../../../services";
 import type { Product, ProductCategory } from "../../../types";
@@ -14,8 +16,20 @@ const PRODUCT_TYPE_LABEL: Record<Product["productType"], string> = {
   SERVICIO: "Servicio",
 };
 
+interface BrandModelDraft {
+  product: Product;
+  brand: string;
+  productModel: string;
+}
+
 export default function ListProducts() {
   const navigate = useNavigate();
+  const { can } = useAuth();
+  // Editar marca/modelo (los muestra el acta de entrega) es opcional en esta
+  // pantalla de consulta: solo aparece si el rol ademas tiene products:update.
+  const canEdit = can("products:update");
+  const [draft, setDraft] = useState<BrandModelDraft | null>(null);
+  const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Record<string, ProductCategory>>({});
@@ -46,6 +60,24 @@ export default function ListProducts() {
     };
   }, [navigate, search]);
 
+  async function saveBrandModel(): Promise<void> {
+    if (!draft) return;
+    setSaving(true);
+    try {
+      const updated = await productService.update(draft.product.id, {
+        brand: draft.brand.trim() || null,
+        productModel: draft.productModel.trim() || null,
+      });
+      setProducts((prev) => prev.map((product) => (product.id === updated.id ? updated : product)));
+      showSuccessToast(`Producto ${updated.name} actualizado`);
+      setDraft(null);
+    } catch (error) {
+      handleError(error, navigate);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
       <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
@@ -75,9 +107,12 @@ export default function ListProducts() {
                     <th className="px-4 py-2 text-left font-semibold text-slate-600">Imagen</th>
                     <th className="px-4 py-2 text-left font-semibold text-slate-600">Nombre</th>
                     <th className="px-4 py-2 text-left font-semibold text-slate-600">Categoria</th>
+                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Marca</th>
+                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Modelo</th>
                     <th className="px-4 py-2 text-left font-semibold text-slate-600">Tipo</th>
                     <th className="px-4 py-2 text-left font-semibold text-slate-600">Descripcion</th>
                     <th className="px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
+                    {canEdit && <th className="px-4 py-2" />}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -100,6 +135,8 @@ export default function ListProducts() {
                       <td className="px-4 py-2 text-slate-600">
                         {product.categoryId ? (categories[product.categoryId]?.name ?? "-") : "-"}
                       </td>
+                      <td className="px-4 py-2 text-slate-600">{product.brand ?? "-"}</td>
+                      <td className="px-4 py-2 text-slate-600">{product.productModel ?? "-"}</td>
                       <td className="px-4 py-2 text-slate-600">{PRODUCT_TYPE_LABEL[product.productType]}</td>
                       <td className="px-4 py-2 text-slate-600">{product.description ?? "-"}</td>
                       <td className="px-4 py-2">
@@ -111,6 +148,19 @@ export default function ListProducts() {
                           {product.isActive ? "Activo" : "Inactivo"}
                         </span>
                       </td>
+                      {canEdit && (
+                        <td className="px-4 py-2 text-right">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() =>
+                              setDraft({ product, brand: product.brand ?? "", productModel: product.productModel ?? "" })
+                            }
+                          >
+                            Editar marca/modelo
+                          </Button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -118,6 +168,45 @@ export default function ListProducts() {
             </div>
           )}
         </div>
+
+        <Modal
+          open={draft !== null}
+          title={draft ? `Marca y modelo: ${draft.product.name}` : ""}
+          onClose={() => setDraft(null)}
+          footer={
+            <>
+              <Button type="button" variant="secondary" onClick={() => setDraft(null)}>
+                Cancelar
+              </Button>
+              <Button type="button" loading={saving} onClick={() => void saveBrandModel()}>
+                Guardar
+              </Button>
+            </>
+          }
+        >
+          {draft && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Marca" htmlFor="editBrand">
+                <Input
+                  id="editBrand"
+                  value={draft.brand}
+                  maxLength={100}
+                  onChange={(e) => setDraft({ ...draft, brand: e.target.value.toUpperCase() })}
+                  className="bg-zinc-100 focus:bg-indigo-100"
+                />
+              </Field>
+              <Field label="Modelo" htmlFor="editModel">
+                <Input
+                  id="editModel"
+                  value={draft.productModel}
+                  maxLength={100}
+                  onChange={(e) => setDraft({ ...draft, productModel: e.target.value.toUpperCase() })}
+                  className="bg-zinc-100 focus:bg-indigo-100"
+                />
+              </Field>
+            </div>
+          )}
+        </Modal>
       </div>
     </RequirePermissions>
   );
