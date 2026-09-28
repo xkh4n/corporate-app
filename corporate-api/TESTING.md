@@ -38,7 +38,7 @@ docker ps --format "{{.Names}}\t{{.Status}}" | grep test
 cp .env.test.example .env.test
 ```
 
-Completar `<ALLOCATED_IP>` y los puertos (`POSTGRE_PORT`/`MSSQL_PORT`/`MONGO_PORT`/`REDIS_PORT`) con los valores de `corporate-secrets/Environment/.env` y `corporate-secrets/Testing/.env`, y los usuarios de aplicación (`PG_APP_USER`/`MSSQL_APP_USER`/`MONGO_USER`, cada uno + `test`) con los de `corporate-secrets/Testing/.env`. Los `*_PASSWORD_FILE` ya apuntan por defecto a los secrets de Testing (mismas contraseñas que usaría `corporate-api` si corriera contra ese stack).
+Los `*_HOST` quedan como `${ALLOCATED_IP}`: `test/setupIntegration.ts` los completa con `ALLOCATED_IP` de `corporate-secrets/Environment/.env`, la misma IP que usan los stacks, así que no hay que tocarlos cuando cambia la IP del equipo. Completar los puertos (`POSTGRE_PORT`/`MSSQL_PORT`/`MONGO_PORT`/`REDIS_PORT`) con los valores de `corporate-secrets/Environment/.env` y `corporate-secrets/Testing/.env`, y los usuarios de aplicación (`PG_APP_USER`/`MSSQL_APP_USER`/`MONGO_USER`, cada uno + `test`) con los de `corporate-secrets/Testing/.env`. Los `*_PASSWORD_FILE` ya apuntan por defecto a los secrets de Testing (mismas contraseñas que usaría `corporate-api` si corriera contra ese stack).
 
 `.env.test` está en `.gitignore` — nunca se versiona (aunque no contiene secretos en texto plano, sí referencia rutas a `corporate-secrets/`, que tampoco se versiona).
 
