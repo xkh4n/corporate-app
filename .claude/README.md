@@ -18,6 +18,64 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (1) — Folios del Service Desk sin guiones y con código de grupo (sin commitear)
+
+### Hecho
+- **Formato nuevo:** `REQ202601000001` = prefijo + año + código del grupo que recibe el registro al crearse + correlativo de 6 dígitos, común por prefijo y año. Se aplica a INC, REQ, PRB y CHG. KB no tiene grupo y queda como `KB2026000001`. Sin grupo, el código es `00`.
+- **Código de grupo:** `support_groups.code`, de 2 dígitos (01 a 99), único y fijo. `createGroup` asigna el siguiente libre bajo un advisory lock. La migración asignó los códigos a los grupos existentes por orden de id. En Configuración Service Desk se ve como «Código NN».
+- **Integración:** el test ajustado espera el formato nuevo.
+- **Fix:** el test unitario que usaba `import()` dinámico no compilaba con `tsc`; pasó a import estático.
+
+### Decisiones
+- **Número fijo:** el código es el del grupo que recibió el registro al crearse. Si después se escala, el número no cambia.
+- **Registros existentes:** conservan su folio con guiones (en dev, `REQ-2026-000001`, `INC-2026-000001` e `INC-2026-000002`).
+
+### Verificación
+- `tsc` de la API y del front y ESLint: OK.
+- **Unit:** 132 correctos.
+- **Dev:** códigos 01 Mesa de Ayuda N1, 02 Soporte N2, 03 Infraestructura, 04 Mesa Funcional, 05 Soporte Terreno y 06 Adquisiciones TI.
+
+## 2026-09-25 (2) — Plan 010 implementado (sin commitear)
+
+### Hecho
+- **API** (`corporate-api`):
+  - `service_catalog_items.fulfillment` y `service_tickets.purchase_request_{id,number,status}`. Una migración única, en la misma transacción que crea la columna, convierte el ítem «Solicitud de equipo» (sin grupo aprobador ni campo `equipo`) y da `generate-ticket:access` a todo rol que tenía `purchase-request-creation:access`.
+  - `POST /service-portal/tickets` acepta `purchaseRequest`. Orden: se abre la transacción MSSQL (cabecera + líneas, `createPurchaseRequestWithLines`), se crea el ticket en Postgres con su commit y después se hace commit de MSSQL. Si falla el ticket, rollback de MSSQL. Si falla el último commit, el ticket se anula.
+  - `POST /service-portal/beneficiary`: devuelve solo `{personId, fullName}`, con rate limit. Ya no exige `persons:read`.
+  - Sincronización (`purchaseLink.service.ts`): cada cambio de estado de la compra se avisa por `library/purchaseRequestEvents.ts` y `applyPurchaseRequestState` lo aplica en forma idempotente. El barrido del SLA reconcilia lo pendiente.
+  - Guardas: el agente no puede resolver ni anular a mano mientras la compra siga viva. El solicitante anula solo en `DRAFT`/`SUBMITTED`, y eso retira la compra.
+- **Front:** bloque «Datos de la compra» (`EquipmentRequestFields.tsx` + `equipmentDraft.ts`) en Generar Ticket. `?service=equipment` preselecciona el ítem. El detalle del portal y el workspace muestran la SOL y su estado. Nuevo checkbox «Genera solicitud de compra» en la configuración. `/tickets/create` redirige al portal. Se borró `CreateRequest.tsx`.
+
+### Verificación
+- `tsc` de la API y del front (`-p tsconfig.app.json`) y ESLint del front: OK.
+- **Unit:** 132 correctos (2 nuevos de `purchaseSyncEffect` y de los textos de estado).
+- **Dev:** la API migró sin errores. En la base:
+  - el ítem tiene `fulfillment=PURCHASE_REQUEST`;
+  - «Generar Ticket» incluye los 6 permisos;
+  - «Nueva Solicitud» quedó inactiva;
+  - los roles `admin` y `user` recibieron «Generar Ticket».
+
+### Pendiente
+- **Integración:** `purchaseLink.service.integration.test.ts` (10 casos) sin correr. Testing está apagado y `.env.test` tiene la IP vieja (192.168.10.4; la actual es .5).
+- **Navegador:** falta la prueba manual del ciclo completo.
+- **Seguridad:** `/security-review` antes de promover.
+
+## 2026-09-25 (1) — Plan 010: Solicitud de equipo desde Generar Ticket (aprobado)
+
+### Contexto
+- «Necesito algo › Solicitud de equipo» debe crear la solicitud de compra (SOL) y el ticket (REQ) juntos, vinculados, para seguir la compra con el SLA del Service Desk.
+- Plan en [`planes/010-solicitud-equipo-desde-ticket.html`](planes/010-solicitud-equipo-desde-ticket.html).
+
+### Decisiones
+- **Sincronización:** la compra mueve el ticket. OC generada → en espera (proveedor) con el SLA pausado; entregada → resuelto; rechazada o anulada → ticket anulado.
+- **Aprobación:** una sola, la del aprobador de la compra. El ítem no usa grupo aprobador.
+- **«Nueva Solicitud»:** se retira del menú y `/tickets/create` redirige al portal.
+- **Acceso:** `generate-ticket:access` suma los permisos de compra. Cualquiera que use el portal puede pedir equipo.
+- **Beneficiario:** endpoint propio que devuelve solo el nombre. Se deja de exigir `persons:read`, que faltaba en la pantalla vieja.
+
+### Pendiente
+- Implementar el plan, probar y pasar la revisión de seguridad.
+
 ## 2026-09-24 (8) — Promoción del Service Desk a master (PR #28, #29)
 
 ### Hecho
