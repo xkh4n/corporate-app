@@ -18,6 +18,17 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (8) — Promoción a master (PR #33, #34)
+
+### Hecho
+- **PR #33** `develop → testing` (fix F1), CI verde, mergeado (`85b1101`).
+- **Gate de seguridad** marcado sobre `acc720c`.
+- **PR #34** `release/master → master`: `promote-to-master` excluyó los 2 tests de integración modificados y la guardia de rutas prohibidas pasó. `master` quedó en `79ee420`.
+
+### Pendiente
+- **Redesplegar Testing y producción:** al arrancar, la API siembra los agrupadores «(edición)» y los permisos agregados.
+- **Asignar agrupadores:** el admin da «Toma de Inventario (edición)» (y los demás que correspondan) a los roles que operan esas pantallas.
+
 ## 2026-09-28 (7) — Revisión de seguridad del delta b23e80d..c629028 (PR #32) y corrección F1
 
 ### Hecho
