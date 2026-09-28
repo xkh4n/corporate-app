@@ -64,3 +64,60 @@ export interface AssignAssetInput extends AssetHandoverFields {
   userId: number;
   notes?: string;
 }
+
+// Movimiento de Activos (plan 011). Espejo de corporate-api/src/types/postgres/assetMovement.types.ts.
+export interface ReassignAssetInput extends AssetHandoverFields {
+  assetId: number;
+  userId?: number;
+  costCenterId?: number;
+  notes?: string;
+}
+
+export interface AssignmentCostCenter {
+  id: number;
+  code: number;
+  name: string;
+}
+
+export interface CurrentAssignment {
+  assetId: number;
+  tag: string;
+  serialNumber: string | null;
+  statusCode: string;
+  statusName: string;
+  movementId: number;
+  movementType: AssetMovementType;
+  movementDate: string;
+  holder: { userId: number; fullName: string };
+  costCenter: AssignmentCostCenter | null;
+  handover: {
+    supervisorName: string | null;
+    macAddress: string | null;
+    storageCapacity: string | null;
+    ramCapacity: string | null;
+    hasBag: boolean | null;
+    hasLock: boolean | null;
+    hasCharger: boolean | null;
+  };
+}
+
+export interface AssignmentFilters {
+  costCenterId?: number;
+  categoryId?: string;
+  user?: string;
+  serial?: string;
+}
+
+export interface AssignmentRow {
+  assetId: number;
+  tag: string;
+  serialNumber: string | null;
+  statusCode: string;
+  statusName: string;
+  productName: string | null;
+  categoryName: string | null;
+  holder: { userId: number; fullName: string } | null;
+  costCenter: AssignmentCostCenter | null;
+  movementId: number | null;
+  assignedAt: string | null;
+}

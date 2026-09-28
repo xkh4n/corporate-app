@@ -1,7 +1,15 @@
 import { apiFetch, apiFetchBlob } from "../lib/apiClient";
 import { toQuery } from "../lib/query";
 import type { ListParams, Paginated } from "../types/api";
-import type { AssetMovement, AssetMovementCreateInput, AssignAssetInput } from "../types/assetMovement";
+import type {
+  AssetMovement,
+  AssetMovementCreateInput,
+  AssignAssetInput,
+  AssignmentFilters,
+  AssignmentRow,
+  CurrentAssignment,
+  ReassignAssetInput,
+} from "../types/assetMovement";
 import type { SafeUser } from "../types/user";
 
 export const assetMovementService = {
@@ -23,4 +31,11 @@ export const assetMovementService = {
   // Acta de entrega en PDF (Fase E enriquecida): archivo directo, no el
   // sobre {codigo,message,data} -mismo criterio que downloadQuoteDocument.
   downloadHandover: (movementId: number) => apiFetchBlob(`/asset-movements/${movementId}/handover.pdf`),
+
+  // Movimiento de Activos (plan 011).
+  reassign: (body: ReassignAssetInput) => apiFetch<AssetMovement>("/asset-movements/reassign", { method: "POST", body }),
+  // Asignacion vigente (tenedor, centro de costo y datos del acta). 404 si nadie lo tiene.
+  current: (assetId: number) => apiFetch<CurrentAssignment>(`/asset-movements/current/${assetId}`),
+  listAssignments: (params: ListParams & AssignmentFilters) =>
+    apiFetch<Paginated<AssignmentRow>>(`/asset-movements/assignments${toQuery(params)}`),
 };

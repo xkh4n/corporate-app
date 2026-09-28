@@ -18,6 +18,9 @@ import SendPurchaseOrder from "../pages/solicitudes/SendPurchaseOrder";
 import ReceiveGoods from "../pages/solicitudes/ReceiveGoods";
 import RequestAssetStatus from "../pages/solicitudes/RequestAssetStatus";
 import AssignAsset from "../pages/activos/AssignAsset";
+import ReassignAsset from "../pages/activos/ReassignAsset";
+import AssetAssignments from "../pages/activos/AssetAssignments";
+import AssetHandoverForm from "../pages/activos/AssetHandoverForm";
 import AssetKardex from "../pages/activos/AssetKardex";
 import PrintAssetLabels from "../pages/activos/PrintAssetLabels";
 import AssetValuation from "../pages/activos/AssetValuation";
@@ -88,6 +91,9 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/purchase-orders/send": () => <SendPurchaseOrder />,
   "/goods-receipts/create": () => <ReceiveGoods />,
   "/assets/assign": () => <AssignAsset />,
+  "/assets/reassign": () => <ReassignAsset />,
+  "/assets/assignments": () => <AssetAssignments />,
+  "/assets/handover-form": () => <AssetHandoverForm />,
   "/solicitudes/estado-activos": () => <RequestAssetStatus />,
   "/assets/kardex": () => <AssetKardex />,
   "/assets/labels": () => <PrintAssetLabels />,
