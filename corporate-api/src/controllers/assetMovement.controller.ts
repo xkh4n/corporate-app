@@ -44,6 +44,27 @@ export const assignAssetSchema = z
   })
   .merge(handoverFieldsSchema);
 
+// Reasignar (plan 011): nuevo usuario, nuevo centro de costo o ambos, mas los
+// datos del acta (se genera una nueva).
+export const reassignAssetSchema = z
+  .object({
+    assetId: z.number().int().positive(),
+    userId: z.number().int().positive().optional(),
+    costCenterId: z.number().int().positive().optional(),
+    notes: z.string().max(200).optional(),
+  })
+  .merge(handoverFieldsSchema)
+  .refine((data) => data.userId !== undefined || data.costCenterId !== undefined, {
+    message: "Indique un nuevo usuario, un nuevo centro de costo o ambos",
+  });
+
+const assignmentFiltersSchema = z.object({
+  costCenterId: z.coerce.number().int().positive().optional(),
+  categoryId: z.string().max(24).optional(),
+  user: z.string().max(100).optional(),
+  serial: z.string().max(100).optional(),
+});
+
 export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     if (!req.query.assetId) throw new BadRequestError("Debe indicar assetId como query param");
@@ -97,6 +118,39 @@ export async function downloadHandover(req: Request, res: Response, next: NextFu
     res.setHeader("Content-Disposition", `attachment; filename="acta-${data.assetTag}.pdf"`);
     const doc = renderAssetHandoverPdf(data);
     doc.pipe(res);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function reassign(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = req.body as z.infer<typeof reassignAssetSchema>;
+    const movement = await assetMovementService.reassignAsset({ ...body, createdBy: req.user?.userId });
+    sendOk(res, movement, "Activo reasignado exitosamente", 201);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function current(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const assetId = Number(req.params.assetId);
+    if (!Number.isInteger(assetId) || assetId <= 0) throw new BadRequestError("assetId invalido");
+    const assignment = await assetMovementService.getCurrentAssignment(assetId);
+    sendOk(res, assignment, "Asignacion vigente obtenida exitosamente");
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function listAssignments(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const filters = assignmentFiltersSchema.safeParse(req.query);
+    if (!filters.success) throw new BadRequestError("Filtros de asignaciones invalidos");
+    const params = parsePaginationParams({ ...req.query }, "tag", "asc");
+    const { items, total } = await assetMovementService.listAssignments(params, filters.data);
+    sendList(res, items, buildPaginationMeta(params, total), "Asignaciones obtenidas exitosamente");
   } catch (err) {
     next(err);
   }
