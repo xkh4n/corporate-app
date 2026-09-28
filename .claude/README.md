@@ -18,6 +18,15 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (5) — Folio de toma de inventario sin guiones
+
+### Hecho
+- `generateInventoryCountNumber` genera `IT2026000001`: prefijo, año y correlativo de 6 dígitos (el mismo contador por año). Las tomas anteriores conservan `IT-AAAA-NNNNNN`, igual que los tickets.
+- Actualizado el test de integración que espera el formato.
+
+### Verificación
+- `tsc` limpio. Tests de integración de toma de inventario contra Testing: 47 OK.
+
 ## 2026-09-28 (4) — Permisos faltantes en pantallas y agrupadores de edición
 
 ### Hecho

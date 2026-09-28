@@ -147,7 +147,7 @@ describe("startInventoryCount", () => {
     const first = await startInventoryCount({ createdBy: auditor.id });
     expect(first.resumed).toBe(false);
     expect(first.count.status).toBe("OPEN");
-    expect(first.count.number).toMatch(/^IT-\d{4}-000001$/);
+    expect(first.count.number).toMatch(/^IT\d{4}000001$/);
 
     const second = await startInventoryCount({ createdBy: auditor.id });
     expect(second.resumed).toBe(true);
