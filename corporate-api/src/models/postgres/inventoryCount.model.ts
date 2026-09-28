@@ -6,7 +6,7 @@ export type InventoryCountStatus = "OPEN" | "CLOSED";
 
 // Cabecera de una toma de inventario fisica (levantamiento por un auditor).
 // "Inicio de Inventario" la crea en OPEN; "Fin Inventario" la pasa a CLOSED y
-// deja de aceptar lineas. number es el folio legible (IT-AAAA-NNNNNN), ver
+// deja de aceptar lineas. number es el folio legible (ITAAAANNNNNN; las anteriores IT-AAAA-NNNNNN), ver
 // generateInventoryCountNumber en inventoryCount.service.ts.
 export class InventoryCountModel extends Model<
   InferAttributes<InventoryCountModel>,

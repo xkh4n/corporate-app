@@ -26,6 +26,22 @@ function formatMacAddress(value: string): string {
   return hex.match(/.{1,2}/g)?.join(":") ?? hex;
 }
 
+// Si la busqueda encontro activos pero ninguno esta AVAILABLE, se dice por que
+// (p. ej. un equipo dado de alta en una toma de inventario nace ya asignado);
+// "no se encontro" queda solo para cuando no existe ninguno.
+function unavailableMessage(found: Asset[]): string {
+  if (found.length === 0) return "No se encontró ningún activo con ese criterio";
+  const describe = (asset: Asset) =>
+    asset.status.code === "ASSIGNED"
+      ? `El activo ${asset.tag} ya se encuentra asignado`
+      : `El activo ${asset.tag} no está disponible (estado: ${asset.status.name})`;
+  if (found.length === 1 && found[0]) return describe(found[0]);
+  return `Ningún activo con ese criterio está disponible: ${found
+    .slice(0, 3)
+    .map((asset) => `${asset.tag} (${asset.status.name})`)
+    .join(", ")}${found.length > 3 ? "…" : ""}`;
+}
+
 const EMPTY_FORM = {
   documentId: "",
   userId: null as number | null,
@@ -75,7 +91,7 @@ export default function AssignAsset() {
       // el listado que antes mostraba RequestAssetStatus.tsx.
       const available = res.items.filter((asset) => asset.status.code === "AVAILABLE");
       if (available.length === 0) {
-        showErrorToast("No se encontró ningún activo disponible con ese criterio");
+        showErrorToast(unavailableMessage(res.items));
         setCandidates([]);
         return;
       }
