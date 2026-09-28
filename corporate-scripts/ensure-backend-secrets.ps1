@@ -109,6 +109,17 @@ foreach ($secret in $backendSecrets) {
     $created++
 }
 
+# Datos de prueba (plan 014): compose.dev/test montan seed_test_data.json. Si falta, se deja vacio para
+# que el stack levante; vacio = sin datos de prueba. El archivo con los datos reales se copia a mano
+# (no se genera ni se versiona). Produccion no lo usa.
+if ($Environment -ne 'prod') {
+    $seedPath = Join-Path $secretsDir 'seed_test_data.json'
+    if (-not (Test-Path $seedPath)) {
+        New-Item -ItemType File -Path $seedPath | Out-Null
+        Write-Host "  + seed_test_data.json creado vacio (sin datos de prueba)." -ForegroundColor Yellow
+    }
+}
+
 if ($created -eq 0) {
     Write-Host "Todos los secretos de backend ya existian, nada que generar." -ForegroundColor Green
 } else {
