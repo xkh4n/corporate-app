@@ -63,6 +63,17 @@ export async function getPersonByIdOrThrow(id: number): Promise<PersonModel> {
   return person;
 }
 
+// Beneficiario de una solicitud de equipo (plan 010): solo el id y el nombre de
+// una persona activa, por RUT exacto. Es todo lo que el portal necesita para
+// confirmar a quien va el equipo, sin exponer el resto de la ficha (persons:read).
+export async function findBeneficiaryByDocumentId(documentId: string): Promise<{ personId: number; fullName: string } | null> {
+  const person = await PersonModel.findOne({
+    where: { documentId: documentId.trim(), isActive: true },
+    attributes: ["id", "firstName", "lastName"],
+  });
+  return person ? { personId: person.id, fullName: `${person.firstName} ${person.lastName}`.trim() } : null;
+}
+
 async function assertUnique(
   documentId: string,
   email: string,

@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { Op } from "sequelize";
+import { Op, type Transaction } from "sequelize";
 import { mssql } from "../../databases/mssql/connection";
 import { PurchaseRequestModel } from "../../models/mssql/purchaseRequest.model";
+import { PurchaseRequestLineModel } from "../../models/mssql/purchaseRequestLine.model";
 import { PersonModel } from "../../models/mssql/person.model";
 import { UserModel } from "../../models/mssql/user.model";
 import { QuoteModel } from "../../models/mssql/quote.model";
@@ -20,7 +21,8 @@ import { generateDocumentNumber } from "../../library/documentNumbering";
 import { getQuoteRequestFolder, sanitizeFilenameSegment } from "../../library/documentStorage";
 import { sendMailViaMailer } from "../../library/mailerClient";
 import { notifyPendingQuoteApproval, notifyPendingRequestApproval } from "../../library/realtime/notify";
-import { NotFoundError, BadRequestError, ForbiddenError } from "../../library/errors";
+import { NotFoundError, BadRequestError, ConflictError, ForbiddenError } from "../../library/errors";
+import { emitPurchaseRequestStatusChanged } from "../../library/purchaseRequestEvents";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
 import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/sequelizeSearch";
@@ -121,13 +123,9 @@ export async function getPurchaseRequestByIdOrThrow(id: number): Promise<Purchas
   return request;
 }
 
-// requestNumber (SOL000000001...) se genera dentro de la MISMA transaccion
-// que el insert de la cabecera: si algo despues falla y se hace rollback,
-// el numero tambien se revierte -no queda "quemado". Ver
-// library/documentNumbering.ts.
-export async function createPurchaseRequest(
-  data: PurchaseRequestCreationAttributes,
-): Promise<PurchaseRequestModel> {
+// Validaciones del alta, compartidas por "Nueva Solicitud" y por la solicitud
+// de equipo del portal (createPurchaseRequestWithLines).
+async function assertPurchaseRequestParties(data: PurchaseRequestCreationAttributes): Promise<void> {
   await getPersonByIdOrThrow(data.requesterId);
   await getPersonByIdOrThrow(data.beneficiaryId);
   if (data.beneficiaryUserId !== undefined && data.beneficiaryUserId !== null) {
@@ -147,6 +145,16 @@ export async function createPurchaseRequest(
       `El usuario ${data.approverId} no tiene permiso para aprobar solicitudes de compra`,
     );
   }
+}
+
+// requestNumber (SOL000000001...) se genera dentro de la MISMA transaccion
+// que el insert de la cabecera: si algo despues falla y se hace rollback,
+// el numero tambien se revierte -no queda "quemado". Ver
+// library/documentNumbering.ts.
+export async function createPurchaseRequest(
+  data: PurchaseRequestCreationAttributes,
+): Promise<PurchaseRequestModel> {
+  await assertPurchaseRequestParties(data);
 
   const request = await mssql.transaction(async (transaction) => {
     const requestNumber = await generateDocumentNumber("SOL", transaction);
@@ -156,6 +164,84 @@ export async function createPurchaseRequest(
   const created = await getPurchaseRequestByIdOrThrow(request.id);
   notifyPendingRequestApproval(data.approverId, created);
   return created;
+}
+
+export interface PurchaseRequestLineDraft {
+  productId: string;
+  quantity: number;
+}
+
+// Solicitud de equipo desde el portal (plan 010): cabecera y TODAS sus lineas
+// en la transaccion del llamador -o queda la solicitud completa o no queda
+// nada, a diferencia de "Nueva Solicitud", que mandaba una linea por request.
+// El llamador hace el commit y recien despues avisa al aprobador con
+// notifyPurchaseRequestCreated. equipmentType = nombre de la categoria del
+// producto, igual que en "Nueva Solicitud".
+export async function createPurchaseRequestWithLines(
+  data: PurchaseRequestCreationAttributes,
+  lines: PurchaseRequestLineDraft[],
+  transaction: Transaction,
+): Promise<PurchaseRequestModel> {
+  if (lines.length === 0) throw new BadRequestError("La solicitud debe llevar al menos un producto");
+  await assertPurchaseRequestParties(data);
+
+  const productIds = [...new Set(lines.map((line) => line.productId))];
+  const products = await getProductsByIds(productIds);
+  const productsById = new Map(products.map((product) => [String(product._id), product]));
+  for (const productId of productIds) {
+    if (!productsById.get(productId)?.isActive) throw new BadRequestError(`El producto ${productId} no existe o esta inactivo`);
+  }
+  const categoryIds = products.flatMap((product) => (product.categoryId ? [String(product.categoryId)] : []));
+  const categories = await getProductCategoriesByIds(categoryIds);
+  const categoryNames = new Map(categories.map((category) => [String(category._id), category.name]));
+
+  const requestNumber = await generateDocumentNumber("SOL", transaction);
+  const request = await PurchaseRequestModel.create({ ...data, requestNumber }, { transaction });
+  await PurchaseRequestLineModel.bulkCreate(
+    lines.map((line) => {
+      const categoryId = productsById.get(line.productId)!.categoryId;
+      return {
+        requestId: request.id,
+        productId: line.productId,
+        quantity: line.quantity,
+        equipmentType: categoryId ? (categoryNames.get(String(categoryId)) ?? null) : null,
+        createdBy: data.createdBy ?? null,
+      };
+    }),
+    { transaction },
+  );
+  return request;
+}
+
+export function notifyPurchaseRequestCreated(request: PurchaseRequestModel): void {
+  if (request.approverId !== null) notifyPendingRequestApproval(request.approverId, request);
+}
+
+// El solicitante retira su propia solicitud antes de que alguien la apruebe
+// (plan 010, al anular el ticket de la solicitud de equipo). No pasa por la
+// regla del aprobador asignado: no decide sobre la compra, la desiste. El
+// UPDATE condicionado evita la carrera con una aprobacion en curso.
+export async function withdrawPurchaseRequest(id: number, updatedBy: number): Promise<void> {
+  const [affected] = await PurchaseRequestModel.update(
+    { status: "CANCELLED", updatedBy },
+    { where: { id, status: { [Op.in]: ["DRAFT", "SUBMITTED"] } } },
+  );
+  if (affected === 0) {
+    throw new ConflictError("La solicitud de compra ya se esta tramitando: pida la anulacion en un comentario");
+  }
+  emitPurchaseRequestStatusChanged(id);
+}
+
+// Estado actual de varias solicitudes (sincronizacion con los tickets del Service Desk).
+export async function getPurchaseRequestStatuses(
+  ids: number[],
+): Promise<Map<number, { requestNumber: string; status: string; updatedBy: number | null }>> {
+  if (ids.length === 0) return new Map();
+  const rows = await PurchaseRequestModel.findAll({
+    where: { id: { [Op.in]: [...new Set(ids)] } },
+    attributes: ["id", "requestNumber", "status", "updatedBy"],
+  });
+  return new Map(rows.map((row) => [row.id, { requestNumber: row.requestNumber, status: row.status, updatedBy: row.updatedBy }]));
 }
 
 export async function updatePurchaseRequest(
@@ -196,7 +282,9 @@ export async function updatePurchaseRequestStatus(
     if (updatedBy === undefined) throw new ForbiddenError("No se pudo identificar al usuario que realiza la accion");
     assertIsAssignedApprover(request, updatedBy);
   }
+  const changed = request.status !== status;
   await request.update({ status, updatedBy });
+  if (changed) emitPurchaseRequestStatusChanged(id);
   return request;
 }
 
@@ -206,6 +294,7 @@ export async function requestQuotation(requestId: number, updatedBy: number): Pr
   const request = await getPurchaseRequestByIdOrThrow(requestId);
   assertPurchaseRequestTransition(request.status as PurchaseRequestStatus, "IN_QUOTATION");
   await request.update({ status: "IN_QUOTATION", updatedBy });
+  emitPurchaseRequestStatusChanged(requestId);
   return request;
 }
 
@@ -221,6 +310,7 @@ export async function requestQuoteApproval(requestId: number, updatedBy: number)
     throw new BadRequestError("La solicitud no tiene ninguna cotizacion cargada todavia");
   }
   await request.update({ status: "APPROVE_QUOTE", updatedBy });
+  emitPurchaseRequestStatusChanged(requestId);
   if (request.approverId !== null) {
     notifyPendingQuoteApproval(request.approverId, request);
   }

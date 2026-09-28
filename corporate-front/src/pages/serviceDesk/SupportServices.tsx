@@ -481,7 +481,8 @@ function AgentCreateModal({
           <Field label="Servicio del catálogo" htmlFor="agent-item">
             <Select id="agent-item" value={catalogItemId === "" ? "" : String(catalogItemId)} onChange={(e) => { setCatalogItemId(e.target.value ? Number(e.target.value) : ""); setVariables({}); }}>
               <option value="">Sin servicio (solicitud general)</option>
-              {catalogItems.map((candidate) => (
+              {/* La solicitud de equipo la registra el propio solicitante en Generar Ticket (plan 010). */}
+              {catalogItems.filter((candidate) => !candidate.fulfillment).map((candidate) => (
                 <option key={candidate.id} value={candidate.id}>
                   {candidate.name}
                 </option>

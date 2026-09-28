@@ -58,9 +58,10 @@ const IsIata = (iata: string) => {
 };
 
 const IsEmail = (email: string) => {
-    // Expresión regular para validar un correo electrónico
+    // Expresión regular para validar un correo electrónico. La parte local admite
+    // "+" para subdirecciones (micorreo+alias@gmail.com), igual que z.email() en la API.
     const regex =
-        /^[a-zA-Z0-9](?:[a-zA-Z0-9._-]*[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+$/;
+        /^[a-zA-Z0-9](?:[a-zA-Z0-9._+-]*[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+$/;
     // Verificar si el valor no es una cadena o no cumple con la expresión regular
     if (typeof email !== "string" || !regex.test(email)) {
         console.warn("The input is not a valid E-Mail");

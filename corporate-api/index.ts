@@ -15,6 +15,7 @@ import { seedProductCategories } from "./src/services/mongo/productCategory.serv
 import { initSocketServer } from "./src/library/realtime/socketServer";
 import { startImportSweeper, stopImportWorkers } from "./src/services/redis/assetImportJob.service";
 import { startServiceDeskSlaSweeper, stopServiceDeskSlaSweeper } from "./src/services/postgres/serviceDesk/slaSweeper";
+import { registerPurchaseTicketSync } from "./src/services/postgres/serviceDesk/purchaseLink.service";
 import "./src/databases/registerModels";
 
 async function bootstrap(): Promise<void> {
@@ -47,7 +48,9 @@ async function bootstrap(): Promise<void> {
   // Cargas masivas de activos (plan 005): retoma las que quedaron en curso sin worker (una replica que murio o se
   // reinicio) y, al recibir la senal de cierre, deja terminar la fila en curso antes de salir.
   startImportSweeper();
-  // Service Desk (plan 009): avisos e incumplimientos de SLA y cierre automatico de resueltos.
+  // Service Desk (plan 009): avisos e incumplimientos de SLA y cierre automatico de resueltos. Las solicitudes de
+  // equipo (plan 010) siguen a su compra: aviso inmediato en cada replica + reconciliacion en el barrido.
+  registerPurchaseTicketSync();
   startServiceDeskSlaSweeper();
   registerShutdownHandlers(server);
 }

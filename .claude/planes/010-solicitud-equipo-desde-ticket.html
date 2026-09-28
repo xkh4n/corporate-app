@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>010 — Solicitud de equipo desde Generar Ticket</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:900px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.5rem; font-size:1.25rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  h3 { margin-top:1.6rem; font-size:1.05rem; }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }
+  th, td { border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 010</span>
+  <h1>«Solicitud de equipo» en Generar Ticket: crea la solicitud de compra y el ticket de seguimiento con SLA</h1>
+  <div class="meta">corporate-app · corporate-api + corporate-front · Estado: aprobado · 2026-09-25</div>
+</header>
+
+<h2>Contexto</h2>
+<p>Hoy una solicitud de compra se crea en «Nueva Solicitud» (<code>/tickets/create</code>, <code>CreateRequest.tsx</code>) y no tiene ticket ni SLA. El portal «Generar Ticket › Necesito algo › Solicitud de equipo» crea un ticket <code>REQ</code> que no está conectado con compras. El objetivo es centralizar todo en el portal: al elegir «Solicitud de equipo», un solo envío crea la solicitud de compra (SOL…) y el ticket (REQ…), vinculados, y el ticket refleja el avance de la compra.</p>
+
+<h3>Decisiones del usuario</h3>
+<ol>
+  <li><strong>Sincronizado:</strong> cada cambio de estado de la solicitud queda en la línea de tiempo del ticket. Desde <code>OC_GENERATED</code> el ticket pasa solo a <code>ON_HOLD / AWAITING_VENDOR</code> (el SLA se pausa). Con <code>DELIVERED</code> se resuelve solo (<code>FULFILLED</code>). Con <code>REJECTED</code> o <code>CANCELLED</code>, el ticket se anula.</li>
+  <li><strong>Una sola aprobación:</strong> la del aprobador de la compra («Autorizar Solicitud»). Un ítem que genera compra nunca pasa por <code>PENDING_APPROVAL</code>.</li>
+  <li><strong>Retirar «Nueva Solicitud»:</strong> se desactiva su opción de menú y la ruta redirige al portal.</li>
+  <li><strong>Todos los del portal pueden pedir equipo:</strong> los permisos de compra entran al agrupador <code>generate-ticket:access</code>.</li>
+</ol>
+
+<h3>Hallazgos que cambian el diseño</h3>
+<ul>
+  <li><strong>Dos motores:</strong> las solicitudes están en MSSQL y los tickets en Postgres. No hay una transacción común.</li>
+  <li><strong>Alta no atómica:</strong> hoy el front crea la cabecera y después hace un POST por línea. Si falla una línea, queda una solicitud a medias.</li>
+  <li><strong>Falta un permiso:</strong> «Nueva Solicitud» valida el RUT del beneficiario con <code>POST /persons/bydocumentId</code>, que exige <code>persons:read</code> (PII, solo admin). Además la pantalla usa <code>products:read</code> y <code>product-categories:read</code>, que no están en su agrupador.</li>
+</ul>
+
+<h2>1. Datos (Postgres, aditivo e idempotente)</h2>
+<ul>
+  <li><code>service_catalog_items.fulfillment VARCHAR(30) NULL CHECK (fulfillment IN ('PURCHASE_REQUEST'))</code>.</li>
+  <li><code>service_tickets.purchase_request_id INTEGER NULL</code> (id de MSSQL, sin FK) con índice único parcial.</li>
+  <li><code>service_tickets.purchase_request_status VARCHAR(20) NULL</code>: último estado de compra ya aplicado al ticket. Hace que la sincronización sea idempotente.</li>
+  <li>Migración única sobre «Solicitud de equipo» (solo si <code>fulfillment IS NULL</code>): <code>fulfillment='PURCHASE_REQUEST'</code>, sin grupo aprobador y sin el campo <code>equipo</code> (lo reemplazan las líneas de producto). Se conserva <code>justificacion</code>.</li>
+  <li><code>serviceDesk-defaults.ts</code>: el ítem por defecto nace así en volúmenes limpios. MSSQL no cambia.</li>
+</ul>
+
+<h2>2. Alta combinada (API)</h2>
+<ul>
+  <li><code>POST /service-portal/tickets</code> acepta un bloque <code>purchaseRequest</code> con beneficiario, centro de costo, aprobador, contacto, observaciones y de 1 a 50 líneas <code>{productId, quantity}</code>. Es obligatorio si el ítem tiene <code>fulfillment</code> y está prohibido en cualquier otro caso.</li>
+  <li>El servicio vuelve a verificar <code>purchase-requests:create</code> y <code>purchase-request-lines:create</code> (defensa en profundidad).</li>
+  <li><code>createPurchaseRequestWithLines</code>: cabecera y líneas en una sola transacción MSSQL, con las mismas validaciones de hoy.</li>
+  <li>Orden entre motores:
+    <ol>
+      <li>Se abre la transacción MSSQL y se crean la solicitud y sus líneas (sin commit).</li>
+      <li>Transacción Postgres: se crea el ticket (<code>NEW</code>, SLA iniciado, vínculo y evento <code>PURCHASE_REQUEST_LINKED</code>) y se hace commit.</li>
+      <li>Commit de MSSQL. Si falla, se compensa anulando el ticket como sistema.</li>
+    </ol>
+    Si falla el paso 2, MSSQL hace rollback y el número SOL no se quema.</li>
+  <li>Los avisos salen después de los dos commits. Un ítem con <code>fulfillment</code> no puede tener grupo aprobador.</li>
+</ul>
+
+<h2>3. Beneficiario sin exponer PII</h2>
+<ul>
+  <li><code>POST /service-portal/beneficiary {documentId}</code>, con <code>purchase-requests:create</code> y rate limit. Devuelve solo <code>{personId, fullName}</code>.</li>
+  <li>Por defecto el beneficiario es el propio solicitante (checkbox «Es para otra persona»).</li>
+</ul>
+
+<h2>4. Sincronización compra → ticket</h2>
+<table>
+  <tr><th>Estado de compra</th><th>Efecto en el ticket</th></tr>
+  <tr><td>APPROVED, IN_QUOTATION, APPROVE_QUOTE, QUOTE_APPROVED, PENDING_DELIVERY, AVAILABLE</td><td>Evento público con el estado</td></tr>
+  <tr><td>OC_GENERATED</td><td><code>ON_HOLD / AWAITING_VENDOR</code> (el SLA se pausa)</td></tr>
+  <tr><td>DELIVERED</td><td><code>RESOLVED</code> con <code>FULFILLED</code> (corre el auto-cierre; el solicitante confirma o reabre)</td></tr>
+  <tr><td>CLOSED</td><td>Si sigue <code>RESOLVED</code>, pasa a <code>CLOSED</code></td></tr>
+  <tr><td>REJECTED, CANCELLED</td><td><code>CANCELLED</code> con el motivo</td></tr>
+</table>
+<ul>
+  <li><strong>Disparo:</strong> después del commit en <code>updatePurchaseRequestStatus</code>, <code>requestQuotation</code> y <code>requestQuoteApproval</code>, en segundo plano.</li>
+  <li><strong>Red de seguridad:</strong> el barrido de SLA reconcilia en cada tick los tickets abiertos que tienen compra vinculada.</li>
+  <li><strong>Guardas:</strong> el agente no puede resolver ni anular un ticket vinculado mientras la compra siga viva. El solicitante puede anular solo con la compra en <code>DRAFT</code>/<code>SUBMITTED</code>, y eso anula también la solicitud.</li>
+</ul>
+
+<h2>5. Detalle del ticket</h2>
+<p><code>TicketDetail.purchaseRequest: {id, number, status}</code>, leído en vivo de MSSQL y, si no responde, desde el estado guardado. Se ve en el portal y en el workspace del agente.</p>
+
+<h2>6. Front</h2>
+<ul>
+  <li>En <code>GenerateTicket.tsx</code>, si el ítem genera compra, aparece el bloque «Datos de la compra» (<code>EquipmentRequestFields.tsx</code>, extraído de <code>CreateRequest.tsx</code>). Un solo botón «Enviar ticket».</li>
+  <li><code>?service=equipment</code> preselecciona el ítem. <code>/tickets/create</code> redirige ahí.</li>
+  <li>Configuración Service Desk: checkbox «Genera solicitud de compra».</li>
+</ul>
+
+<h2>7. Permisos y menú</h2>
+<ul>
+  <li><code>generate-ticket:access</code> suma <code>purchase-requests:create</code>, <code>purchase-request-lines:create</code>, <code>products:read</code> y <code>product-categories:read</code>.</li>
+  <li><code>purchase-request-creation:access</code> se mantiene como «(retirada)». Todo rol que lo tenga recibe también <code>generate-ticket:access</code>.</li>
+  <li>«Nueva Solicitud» entra en <code>RETIRED_MENU_LABELS</code>.</li>
+</ul>
+
+<h2>Verificación</h2>
+<ul>
+  <li><strong>API:</strong> <code>tsc</code> e integración:
+    <ul>
+      <li>alta combinada y rollback;</li>
+      <li>OC → en espera, entrega → resuelto, rechazo → anulado;</li>
+      <li>sincronización idempotente;</li>
+      <li>guardas del agente y del solicitante;</li>
+      <li>un rol con solo <code>generate-ticket:access</code> completa el alta sin 403;</li>
+      <li>el endpoint de beneficiario devuelve solo lo mínimo.</li>
+    </ul>
+  </li>
+  <li><strong>Front:</strong> <code>tsc -p tsconfig.app.json --noEmit</code> y lint.</li>
+  <li><strong>Manual en dev:</strong> el ciclo completo con un rol de prueba.</li>
+  <li><strong>Seguridad:</strong> <code>/security-review</code> antes de promover.</li>
+</ul>
+
+<footer class="doc-footer">Plan 010 · corporate-app · guardado en .claude/planes/</footer>
+</div>
+</body>
+</html>
