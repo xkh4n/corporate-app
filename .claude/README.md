@@ -18,6 +18,45 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (9) — Plan 011: Movimiento de Activos (aprobado)
+
+### Hecho
+- Plan aprobado y copiado a [`planes/011-movimiento-activos.html`](planes/011-movimiento-activos.html).
+- **Carpeta nueva** «Movimiento Activos» bajo Adquisiciones, con 4 pantallas:
+  - Asignar Activos (se mueve desde «Productos»);
+  - Reasignar Activos;
+  - Visualizar Asignaciones;
+  - Formulario Asignación.
+
+### Decisiones
+- **Formulario Asignación:** reimprime el acta de la asignación vigente.
+- **Cambio de centro de costo:** también es un movimiento `REASSIGNED` (mismo usuario más una nota) y genera acta nueva.
+- **Reasignar a otro usuario:** pide los datos de entrega, precargados con los de la asignación anterior, y descarga el acta.
+
+### Implementación
+- **API:**
+  - `reassignAsset`: una sola transacción que bloquea el activo; acepta `ASSIGNED` o `DEVALUATED` (este último sigue `DEVALUATED`, valor 0). Tenedor por defecto: el vigente. 400 sin cambios; 409 si el activo no está asignado o el usuario destino está inactivo. Si cambia el centro de costo usa `updateAssetLocation`. La nota automática dice qué cambió.
+  - `getCurrentAssignment`: tenedor vigente y último movimiento con acta (`ASSIGNED`/`REASSIGNED`/`DEVALUATED`).
+  - `listAssignments`: SQL con `LATERAL` sobre el último movimiento. Los filtros de categoría (Mongo) y de usuario (MSSQL, `findUserIdsBySearch`) se resuelven primero a ids. Devuelve solo el nombre del tenedor.
+  - Rutas: `POST /asset-movements/reassign` (`asset-movements:create`), `GET /asset-movements/current/:assetId` (`:read`) y `GET /asset-movements/assignments` (`assets:read` y `asset-movements:read`).
+- **Permisos y menú:**
+  - Agrupadores `asset-reassignment`, `asset-assignment-list` y `asset-handover-form`.
+  - Carpeta «Movimiento Activos»; «Asignar Activos» se movió ahí.
+- **Front:**
+  - Pantallas nuevas `ReassignAsset`, `AssetAssignments` y `AssetHandoverForm`.
+  - Piezas compartidas: `HandoverFields`, `handover.ts` y `AssignmentsTable`. `AssignAsset` reutiliza las dos primeras (el jefe directo pasó a la grilla de datos de entrega).
+
+### Verificación
+- **API:** `tsc` limpio y 132 tests unitarios. Nuevo `assetMovementReassign.service.integration.test.ts` (6 tests). Las suites de movimientos, inventario, devoluciones, permisos, menú y Service Desk suman 150 tests OK contra Testing.
+- **Front:** `tsc -p tsconfig.app.json`, lint y 69 tests OK.
+- **Development:** reiniciado; el menú muestra la carpeta con sus 4 hojas.
+  - Los agrupadores nuevos los tiene admin.
+  - «Formulario Asignación» además lo recibió `1110-analista-adquisiciones`: la primera siembra lo da a quien ya tenía sus permisos base.
+
+### Pendiente
+- Probar las 3 pantallas en el navegador.
+- Revisión de seguridad antes de promover: endpoint nuevo que lista tenedores y escribe movimientos.
+
 ## 2026-09-28 (8) — Promoción a master (PR #33, #34)
 
 ### Hecho
