@@ -22,6 +22,8 @@ export default function CreateProducts() {
     const [selectedCategory, setSelectedCategory] = useState("");
     const [productName, setProductName] = useState("");
     const [descriptionProduct, setDescriptionProduct] = useState("");
+    const [brand, setBrand] = useState("");
+    const [productModel, setProductModel] = useState("");
     const [selectedTypeProduct, setSelectedTypeProduct] = useState("");
     const [imageFile, setImageFile] = useState<File | null>(null);
     // <input type="file"> mantiene su propio valor en el DOM, no controlado
@@ -59,6 +61,8 @@ export default function CreateProducts() {
         setSelectedCategory("");
         setProductName("");
         setDescriptionProduct("");
+        setBrand("");
+        setProductModel("");
         setSelectedTypeProduct("");
         setImageFile(null);
         setProductId(null);
@@ -109,6 +113,8 @@ export default function CreateProducts() {
                     categoryId: selectedCategory.trim(),
                     name: productName.trim(),
                     description: descriptionProduct.trim(),
+                    brand: brand.trim() || undefined,
+                    productModel: productModel.trim() || undefined,
                     productType: selectedTypeProduct.trim() as ProductType,
                 };
                 const product = await productService.create(newProd);
@@ -186,6 +192,30 @@ export default function CreateProducts() {
                                         value={productName}
                                         maxLength={100}
                                         onChange={(e) => setProductName(e.target.value.toUpperCase())}
+                                        className="bg-zinc-100 focus:bg-indigo-100"
+                                    />
+                                    </Field>
+                                </div>
+                                {/* MARCA */}
+                                <div className="w-full max-[799px]:w-full min-[800px]:col-span-3 min-[1000px]:col-span-4 min-[1200px]:col-span-5 min-[1400px]:col-span-6">
+                                    <Field label="Marca (opcional)" htmlFor="brandProduct">
+                                    <Input
+                                        id="brandProduct"
+                                        value={brand}
+                                        maxLength={100}
+                                        onChange={(e) => setBrand(e.target.value.toUpperCase())}
+                                        className="bg-zinc-100 focus:bg-indigo-100"
+                                    />
+                                    </Field>
+                                </div>
+                                {/* MODELO */}
+                                <div className="w-full max-[799px]:w-full min-[800px]:col-span-3 min-[1000px]:col-span-4 min-[1200px]:col-span-5 min-[1400px]:col-span-6">
+                                    <Field label="Modelo (opcional)" htmlFor="modelProduct">
+                                    <Input
+                                        id="modelProduct"
+                                        value={productModel}
+                                        maxLength={100}
+                                        onChange={(e) => setProductModel(e.target.value.toUpperCase())}
                                         className="bg-zinc-100 focus:bg-indigo-100"
                                     />
                                     </Field>

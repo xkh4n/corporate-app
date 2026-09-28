@@ -18,6 +18,96 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (11) — Revisión de seguridad del delta acc720c..74d82cb (plan 011 y acta) y promoción
+
+### Hecho
+- **PR #35** `develop → testing`.
+- **Revisión de seguridad del delta:** reasignar, asignación vigente, listado de asignaciones, marca/modelo en productos y acta.
+  - **F1, Baja/Media, corregido:** el filtro «usuario» del listado (`findUserIdsBySearch`) buscaba el RUT con `LIKE` parcial. Con pantallas de solo lectura («Visualizar Asignaciones», «Formulario Asignación») se podía reconstruir el RUT de un colaborador por tramos, viendo qué nombre aparecía. Antes, ligar RUT y nombre exigía `persons:read` o `asset-movements:create`. Ahora el RUT se busca solo completo (con o sin puntos) y el nombre sigue siendo parcial. El test cubre que un RUT parcial no encuentra nada.
+  - **Sin hallazgos:**
+    - SQL parametrizado; la serie se escapa y el centro de costo se valida como entero.
+    - La categoría se valida como ObjectId, así que no hay inyección de operadores en Mongo.
+    - Reasignar usa `asset-movements:create` (el mismo que ya permitía `REASSIGNED`), bloquea la fila y rechaza usuarios inactivos.
+    - `/current/:assetId` expone lo mismo que el acta, con el mismo permiso.
+    - Marca y modelo tienen largo máximo y se muestran escapados.
+
+## 2026-09-28 (10) — Acta de entrega con el formato del formulario de TI
+
+### Hecho
+- **Formato:**
+  - márgenes de 0,5 cm;
+  - membrete solo con el logo y párrafo de objetivo (cambios del usuario);
+  - tablas de 2 columnas: «Identificación del empleado» y «Equipamiento | Especificaciones», con encabezado sombreado y valores centrados.
+- **Fecha:** la de la asignación (antes, la de generación del PDF; al reimprimir salía la fecha del día), en hora de Chile y en negrita.
+- **Valor del activo** en CLP («Sin valorizar» si no tiene).
+- **Filas fijas del equipamiento:** Marca, Modelo, Número de Serie, Número de Tag, Proveedor, Almacenamiento, Memoria (RAM), Bolso / Mochila, Candado / Seguro, Cargador, MAC Address y Valor (al final, decisión del usuario).
+- **«No Aplica» según el tipo de equipo** (`library/equipmentKind.ts`, por el nombre de la categoría del producto):
+  - bolso y candado solo en notebook;
+  - cargador en notebook o monitor;
+  - MAC en notebook o desktop.
+- **Marca y modelo en el catálogo** (decisión del usuario): nuevos `brand` y `productModel` en Producto (`model` choca con `Document.model()` de Mongoose).
+  - Se cargan en Nuevo Producto.
+  - En Ver Productos se ven como columnas y se editan con «Editar marca/modelo», visible solo con `products:update`.
+
+### Verificación
+- `tsc` limpio en API y front, más lint del front.
+- Tests: 137 unitarios (incluye `equipmentKind.unit.test.ts`), 7 de integración de reasignación y acta, y 69 del front.
+- Actas de prueba revisadas visualmente para notebook y desktop.
+
+### Pendiente
+- Completar marca y modelo de los productos existentes desde Ver Productos.
+- Crear la categoría de monitores cuando corresponda: la regla la reconoce por el nombre («MONITOR…»).
+
+## 2026-09-28 (9) — Plan 011: Movimiento de Activos (aprobado)
+
+### Hecho
+- Plan aprobado y copiado a [`planes/011-movimiento-activos.html`](planes/011-movimiento-activos.html).
+- **Carpeta nueva** «Movimiento Activos» bajo Adquisiciones, con 4 pantallas:
+  - Asignar Activos (se mueve desde «Productos»);
+  - Reasignar Activos;
+  - Visualizar Asignaciones;
+  - Formulario Asignación.
+
+### Decisiones
+- **Formulario Asignación:** reimprime el acta de la asignación vigente.
+- **Cambio de centro de costo:** también es un movimiento `REASSIGNED` (mismo usuario más una nota) y genera acta nueva.
+- **Reasignar a otro usuario:** pide los datos de entrega, precargados con los de la asignación anterior, y descarga el acta.
+
+### Implementación
+- **API:**
+  - `reassignAsset`: una sola transacción que bloquea el activo; acepta `ASSIGNED` o `DEVALUATED` (este último sigue `DEVALUATED`, valor 0). Tenedor por defecto: el vigente. 400 sin cambios; 409 si el activo no está asignado o el usuario destino está inactivo. Si cambia el centro de costo usa `updateAssetLocation`. La nota automática dice qué cambió.
+  - `getCurrentAssignment`: tenedor vigente y último movimiento con acta (`ASSIGNED`/`REASSIGNED`/`DEVALUATED`).
+  - `listAssignments`: SQL con `LATERAL` sobre el último movimiento. Los filtros de categoría (Mongo) y de usuario (MSSQL, `findUserIdsBySearch`) se resuelven primero a ids. Devuelve solo el nombre del tenedor.
+  - Rutas: `POST /asset-movements/reassign` (`asset-movements:create`), `GET /asset-movements/current/:assetId` (`:read`) y `GET /asset-movements/assignments` (`assets:read` y `asset-movements:read`).
+- **Permisos y menú:**
+  - Agrupadores `asset-reassignment`, `asset-assignment-list` y `asset-handover-form`.
+  - Carpeta «Movimiento Activos»; «Asignar Activos» se movió ahí.
+- **Front:**
+  - Pantallas nuevas `ReassignAsset`, `AssetAssignments` y `AssetHandoverForm`.
+  - Piezas compartidas: `HandoverFields`, `handover.ts` y `AssignmentsTable`. `AssignAsset` reutiliza las dos primeras (el jefe directo pasó a la grilla de datos de entrega).
+
+### Verificación
+- **API:** `tsc` limpio y 132 tests unitarios. Nuevo `assetMovementReassign.service.integration.test.ts` (6 tests). Las suites de movimientos, inventario, devoluciones, permisos, menú y Service Desk suman 150 tests OK contra Testing.
+- **Front:** `tsc -p tsconfig.app.json`, lint y 69 tests OK.
+- **Development:** reiniciado; el menú muestra la carpeta con sus 4 hojas.
+  - Los agrupadores nuevos los tiene admin.
+  - «Formulario Asignación» además lo recibió `1110-analista-adquisiciones`: la primera siembra lo da a quien ya tenía sus permisos base.
+
+### Pendiente
+- Probar las 3 pantallas en el navegador.
+- Revisión de seguridad antes de promover: endpoint nuevo que lista tenedores y escribe movimientos.
+
+## 2026-09-28 (8) — Promoción a master (PR #33, #34)
+
+### Hecho
+- **PR #33** `develop → testing` (fix F1), CI verde, mergeado (`85b1101`).
+- **Gate de seguridad** marcado sobre `acc720c`.
+- **PR #34** `release/master → master`: `promote-to-master` excluyó los 2 tests de integración modificados y la guardia de rutas prohibidas pasó. `master` quedó en `79ee420`.
+
+### Pendiente
+- **Redesplegar Testing y producción:** al arrancar, la API siembra los agrupadores «(edición)» y los permisos agregados.
+- **Asignar agrupadores:** el admin da «Toma de Inventario (edición)» (y los demás que correspondan) a los roles que operan esas pantallas.
+
 ## 2026-09-28 (7) — Revisión de seguridad del delta b23e80d..c629028 (PR #32) y corrección F1
 
 ### Hecho

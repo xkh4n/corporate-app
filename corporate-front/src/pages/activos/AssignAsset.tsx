@@ -1,16 +1,14 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { RequirePermissions } from "../../components/RequirePermissions";
-import { Field, Button, Input, Select, EmptyState } from "../../components/ui";
+import { Field, Button, Input, EmptyState } from "../../components/ui";
 import { showSuccessToast, showErrorToast } from "../../components/Toast";
 import { handleError } from "../../lib/Errors";
 import { IsRut } from "../../lib/Validations";
 import { assetMovementService, assetService } from "../../services";
 import type { Asset } from "../../types";
-import type { AssetRamCapacity, AssetStorageCapacity } from "../../types/assetMovement";
-
-const STORAGE_OPTIONS: AssetStorageCapacity[] = ["512 GB", "1 TB"];
-const RAM_OPTIONS: AssetRamCapacity[] = ["8 GB", "16 GB", "32 GB"];
+import { HandoverFields } from "./HandoverFields";
+import { EMPTY_HANDOVER, downloadHandover, toHandoverPayload } from "./handover";
 
 // Pantalla independiente de asignacion (reemplaza el recorrido anterior
 // "solicitud -> unidades -> asignar", ver RequestAssetStatus.tsx para el
@@ -19,12 +17,6 @@ const RAM_OPTIONS: AssetRamCapacity[] = ["8 GB", "16 GB", "32 GB"];
 // la asignacion es independiente del flujo de compras, con los campos que
 // corporate-app realmente tiene.
 const REQUIRED_PERMISSIONS = ["assets:read", "asset-movements:create"] as const;
-
-// Formatea en vivo mientras se tipea: deja solo hex, agrupa de a 2 con ":".
-function formatMacAddress(value: string): string {
-  const hex = value.replace(/[^0-9a-fA-F]/g, "").toUpperCase().slice(0, 12);
-  return hex.match(/.{1,2}/g)?.join(":") ?? hex;
-}
 
 // Si la busqueda encontro activos pero ninguno esta AVAILABLE, se dice por que
 // (p. ej. un equipo dado de alta en una toma de inventario nace ya asignado);
@@ -46,13 +38,7 @@ const EMPTY_FORM = {
   documentId: "",
   userId: null as number | null,
   userName: "",
-  supervisorName: "",
-  macAddress: "",
-  storageCapacity: "" as AssetStorageCapacity | "",
-  ramCapacity: "" as AssetRamCapacity | "",
-  hasBag: false,
-  hasLock: false,
-  hasCharger: false,
+  ...EMPTY_HANDOVER,
 };
 
 export default function AssignAsset() {
@@ -143,26 +129,14 @@ export default function AssignAsset() {
       const movement = await assetMovementService.assign({
         assetId: selectedAsset.id,
         userId: form.userId,
-        supervisorName: form.supervisorName.trim() || undefined,
-        macAddress: form.macAddress.trim() || undefined,
-        storageCapacity: form.storageCapacity || undefined,
-        ramCapacity: form.ramCapacity || undefined,
-        hasBag: form.hasBag,
-        hasLock: form.hasLock,
-        hasCharger: form.hasCharger,
+        ...toHandoverPayload(form),
       });
       showSuccessToast(`Activo ${selectedAsset.tag} asignado a ${form.userName}`);
 
       // Descarga automatica del acta de entrega: un blob que se baja solo,
       // sin bloquear el resto del flujo si falla (la asignacion ya se hizo).
       try {
-        const blob = await assetMovementService.downloadHandover(movement.id);
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `acta-${selectedAsset.tag}.pdf`;
-        link.click();
-        URL.revokeObjectURL(url);
+        await downloadHandover(movement.id, selectedAsset.tag);
       } catch (pdfError) {
         handleError(pdfError, navigate);
       }
@@ -248,7 +222,7 @@ export default function AssignAsset() {
                   </Button>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 min-[800px]:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 min-[800px]:grid-cols-2">
                   <Field label="RUT del empleado" htmlFor="documentId">
                     <div className="flex gap-2">
                       <Input
@@ -273,82 +247,10 @@ export default function AssignAsset() {
                       className="bg-zinc-200 text-zinc-500"
                     />
                   </Field>
-                  <Field label="Jefe directo (opcional)" htmlFor="supervisorName">
-                    <Input
-                      id="supervisorName"
-                      value={form.supervisorName}
-                      maxLength={150}
-                      onChange={(e) => setForm((prev) => ({ ...prev, supervisorName: e.target.value }))}
-                      className="bg-zinc-100 focus:bg-indigo-100"
-                    />
-                  </Field>
                 </div>
 
-                <div className="mt-4 grid grid-cols-1 gap-4 min-[800px]:grid-cols-3">
-                  <Field label="MAC del equipo (opcional)" htmlFor="macAddress">
-                    <Input
-                      id="macAddress"
-                      value={form.macAddress}
-                      placeholder="AA:BB:CC:DD:EE:FF"
-                      onChange={(e) => setForm((prev) => ({ ...prev, macAddress: formatMacAddress(e.target.value) }))}
-                      className="bg-zinc-100 focus:bg-indigo-100"
-                    />
-                  </Field>
-                  <Field label="Almacenamiento (opcional)" htmlFor="storageCapacity">
-                    <Select
-                      id="storageCapacity"
-                      value={form.storageCapacity}
-                      onChange={(e) => setForm((prev) => ({ ...prev, storageCapacity: e.target.value as AssetStorageCapacity | "" }))}
-                    >
-                      <option value="">Seleccione almacenamiento</option>
-                      {STORAGE_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                  <Field label="Memoria RAM (opcional)" htmlFor="ramCapacity">
-                    <Select
-                      id="ramCapacity"
-                      value={form.ramCapacity}
-                      onChange={(e) => setForm((prev) => ({ ...prev, ramCapacity: e.target.value as AssetRamCapacity | "" }))}
-                    >
-                      <option value="">Seleccione memoria</option>
-                      {RAM_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                </div>
-
-                <div className="mt-4 flex flex-wrap gap-6">
-                  <label className="flex items-center gap-1.5 text-sm text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={form.hasBag}
-                      onChange={(e) => setForm((prev) => ({ ...prev, hasBag: e.target.checked }))}
-                    />
-                    ¿Incluye bolso?
-                  </label>
-                  <label className="flex items-center gap-1.5 text-sm text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={form.hasLock}
-                      onChange={(e) => setForm((prev) => ({ ...prev, hasLock: e.target.checked }))}
-                    />
-                    ¿Incluye candado?
-                  </label>
-                  <label className="flex items-center gap-1.5 text-sm text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={form.hasCharger}
-                      onChange={(e) => setForm((prev) => ({ ...prev, hasCharger: e.target.checked }))}
-                    />
-                    ¿Incluye cargador?
-                  </label>
+                <div className="mt-4">
+                  <HandoverFields value={form} onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))} />
                 </div>
 
                 <div className="mt-6 flex justify-end gap-2">

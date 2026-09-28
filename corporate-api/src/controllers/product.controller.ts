@@ -9,11 +9,22 @@ import { BadRequestError, NotFoundError } from "../library/errors";
 import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
 import { sendList, sendOk, sendNoContent } from "../library/response";
 
+// Marca/modelo vacios o null se guardan como null (se pueden borrar desde Ver Productos).
+const optionalLabel = z
+  .string()
+  .trim()
+  .max(100)
+  .nullable()
+  .optional()
+  .transform((value) => (value === "" ? null : value));
+
 export const createProductSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(1000).optional(),
   productType: z.enum(["ARRIENDO", "SERVICIO", "COMPRA"]),
   categoryId: z.string().length(24).optional(),
+  brand: optionalLabel,
+  productModel: optionalLabel,
 });
 
 export const updateProductSchema = z.object({
@@ -21,6 +32,8 @@ export const updateProductSchema = z.object({
   description: z.string().max(1000).optional(),
   productType: z.enum(["ARRIENDO", "SERVICIO", "COMPRA"]).optional(),
   categoryId: z.string().length(24).optional(),
+  brand: optionalLabel,
+  productModel: optionalLabel,
 });
 
 export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {

@@ -8,6 +8,9 @@ export interface Product {
   description: string | null;
   productType: ProductType;
   categoryId: string | null;
+  // Marca y modelo: los muestra el acta de entrega de activos.
+  brand: string | null;
+  productModel: string | null;
   // Path relativo ("uploads/images/products/<id>.jpg") o null hasta la
   // primera subida -ver productService.uploadImage/imageUrl. Nunca se manda
   // en create/update, solo lo setea el backend via POST /products/:id/image.
@@ -22,6 +25,8 @@ export interface ProductCreateInput {
   description?: string;
   productType: ProductType;
   categoryId?: string;
+  brand?: string;
+  productModel?: string;
 }
 
 export interface ProductUpdateInput {
@@ -29,4 +34,7 @@ export interface ProductUpdateInput {
   description?: string;
   productType?: ProductType;
   categoryId?: string;
+  // null borra el dato.
+  brand?: string | null;
+  productModel?: string | null;
 }

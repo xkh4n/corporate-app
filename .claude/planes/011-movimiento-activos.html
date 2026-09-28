@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>011 — Movimiento de Activos: reasignar, visualizar asignaciones y reimprimir acta</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:900px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.5rem; font-size:1.25rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  h3 { margin-top:1.6rem; font-size:1.05rem; }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }
+  th, td { border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 011</span>
+  <h1>Movimiento de Activos: reasignar, visualizar asignaciones y reimprimir acta</h1>
+  <div class="meta">corporate-app · corporate-api + corporate-front · Estado: aprobado · 2026-09-28</div>
+</header>
+
+<h2>Contexto</h2>
+<p>Hoy «Asignar Activos» cuelga de <em>Gerencia de TI › Serv. Productivos › Adquisiciones › Productos</em>, y solo asigna activos <code>AVAILABLE</code>. No hay forma de cambiar de usuario o de centro de costo un activo ya asignado, ni de ver en un solo lugar quién tiene qué, ni de volver a imprimir el acta. El usuario quiere una carpeta nueva <strong>«Movimiento Activos»</strong> bajo Adquisiciones con 4 pantallas:</p>
+<ol>
+<li><strong>Asignar Activos</strong>: la actual, solo cambia de carpeta.
+</li>
+<li><strong>Reasignar Activos</strong>: a otro usuario, a otro centro de costo o ambos.
+</li>
+<li><strong>Visualizar Asignaciones</strong>: tabla de todos los activos asignados, con búsqueda por centro de costo, usuario, serie y categoría.
+</li>
+<li><strong>Formulario Asignación</strong>: reimprimir el acta de entrega.
+</li></ol>
+<p>Decisiones del usuario (2026-09-28):</p>
+<ul>
+<li><strong>Formulario Asignación</strong> = reimprimir el acta de la asignación vigente (mismo PDF de Asignar Activos), no un formulario en blanco.
+</li>
+<li><strong>Solo centro de costo</strong> = también es un movimiento <code>REASSIGNED</code> (mismo usuario + nota del cambio). Queda en el historial y genera acta nueva.
+</li>
+<li><strong>Reasignar a otro usuario</strong> = pide los mismos datos de entrega que Asignar (precargados con los de la asignación anterior) y descarga el acta al confirmar.
+</li></ul>
+<h2>Lo que ya existe y se reutiliza</h2>
+<ul>
+<li><code>createAssetMovement</code> (<code>corporate-api/src/services/postgres/assetMovement.service.ts</code>):
+<ul>
+<li>soporta <code>REASSIGNED</code> (guard: el activo debe estar <code>ASSIGNED</code>) y <code>DEVALUATED</code> → <code>DEVALUATED</code>;
+</li>
+<li>bloquea la fila con <code>lockAssetRow</code>;
+</li>
+<li>acepta <code>externalTransaction</code>.
+</li></ul>
+</li>
+<li><code>updateAssetLocation</code> (<code>services/postgres/asset.service.ts</code>): cambia <code>assets.cost_center_id</code>. La toma de inventario ya lo usa y no toca el Kardex.
+</li>
+<li><code>listCurrentHoldersByAssetIds</code>: SQL <code>DISTINCT ON</code> sobre el último movimiento, para obtener el tenedor vigente.
+</li>
+<li><code>getAssetHandoverData</code> y <code>renderAssetHandoverPdf</code>, más <code>GET /asset-movements/:id/handover.pdf</code> (<code>asset-movements:read</code>). El acta toma el centro de costo del activo, así que refleja el nuevo.
+</li>
+<li>Nombres en lote para mostrar los datos que viven en otros motores:
+<ul>
+<li><code>getUserDirectory(userIds)</code> (<code>services/mssql/user.service.ts</code>);
+</li>
+<li><code>getProductsByIds</code> (<code>services/mongo/product.service.ts</code>);
+</li>
+<li><code>getCostCenterByIdOrThrow</code>.
+</li></ul>
+</li>
+<li>Front:
+<ul>
+<li><code>AssignAsset.tsx</code>: búsqueda por tag o serie, validación del RUT con <code>listAssignableUsers</code>, campos del acta y descarga del PDF;
+</li>
+<li>tablas con el mismo estilo que <code>ListProducts.tsx</code> y <code>AssetKardex.tsx</code>;
+</li>
+<li><code>components/ui</code> (Field, Input, Select, Button, EmptyState, Modal).
+</li></ul>
+</li>
+<li><code>seedMenuItems</code> hace upsert por <code>label</code>: al cambiar el <code>parentLabel</code> de «Asignar Activos», la hoja se mueve sola en cada BD, sin migración.
+</li></ul>
+<h2>Diseño</h2>
+<h3>API</h3>
+<ol>
+<li><strong>Reasignar:</strong> nuevo <code>reassignAsset(input)</code> en <code>assetMovement.service.ts</code>, todo en <strong>una</strong> transacción Postgres.
+<ul>
+<li>Bloquea el activo; debe estar <code>ASSIGNED</code> o <code>DEVALUATED</code> (409 si no).
+</li>
+<li><code>userId</code> destino: el indicado, o el tenedor vigente si solo cambia el centro de costo. Se valida con <code>getUserByIdOrThrow</code>.
+</li>
+<li><code>costCenterId</code> destino (opcional, validado). Si ni el usuario ni el centro de costo cambian, responde 400 «no hay cambios».
+</li>
+<li>Si cambia el centro de costo, llama a <code>updateAssetLocation</code>.
+</li>
+<li>Crea el movimiento con <code>createAssetMovement(..., transaction)</code>: <code>REASSIGNED</code> si estaba <code>ASSIGNED</code> y <code>DEVALUATED</code> si estaba devaluado (conserva valor 0). Lleva los campos del acta, <code>userIds: [destino]</code> y una nota automática del tipo «Cambio de usuario X → Y / centro de costo A → B», más la nota libre.
+</li>
+<li>Ruta <code>POST /asset-movements/reassign</code>, con <code>authorize("asset-movements","create")</code> y un schema Zod en el controller, reutilizando <code>handoverFieldsSchema</code>.
+</li></ul>
+</li>
+<li><strong>Asignación vigente de un activo:</strong> <code>getCurrentAssignment(assetId)</code>.
+<ul>
+<li>Devuelve <code>{ movementId, movementType, holder: {userId, fullName}, costCenter, datos del acta }</code>, o 404 si el activo no tiene tenedor.
+</li>
+<li>Sirve para precargar Reasignar y para reimprimir.
+</li>
+<li>Ruta <code>GET /asset-movements/current/:assetId</code>, con <code>authorize("asset-movements","read")</code>, declarada antes de <code>/:id</code>.
+</li></ul>
+</li>
+<li><strong>Listado de asignaciones:</strong> <code>listAssignments(params, filters)</code>.
+<ul>
+<li>SQL sobre <code>assets</code> con estado <code>ASSIGNED</code>/<code>DEVALUATED</code>, unido con un <code>LATERAL</code> a su último movimiento y su usuario (mismo criterio que <code>listCurrentHoldersByAssetIds</code>). Paginado en el servidor.
+</li>
+<li>Filtros:
+<ul>
+<li><code>costCenterId</code>;
+</li>
+<li><code>serial</code> (<code>ILIKE</code> sobre tag o serie);
+</li>
+<li><code>categoryId</code>: ids de producto de esa categoría en Mongo (<code>listProducts</code>/find por <code>categoryId</code>) → <code>assets.product_id IN (...)</code>;
+</li>
+<li><code>user</code> (nombre o RUT): nuevo <code>findUserIdsBySearch(search, limit 200)</code> en <code>user.service.ts</code>, activos e inactivos, mismo <code>LIKE</code> que <code>listAssignableUsers</code> → <code>holder IN (...)</code>.
+</li></ul>
+</li>
+<li>Decora cada fila con <code>getUserDirectory</code>, los nombres de producto y categoría (Mongo, en lote) y el centro de costo.
+</li>
+<li>Ruta <code>GET /asset-movements/assignments</code>, que exige <code>assets:read</code> <strong>y</strong> <code>asset-movements:read</code> (dos <code>authorize</code> encadenados).
+</li>
+<li>No expone RUT ni correo: solo nombre.
+</li></ul>
+</li></ol>
+<h3>Permisos y menú (<code>permission-catalog.ts</code>, <code>menu-catalog.ts</code>)</h3>
+<ul>
+<li>Carpeta nueva <code>{ label: "Movimiento Activos", icon: "IoSwapHorizontal", parentLabel: "Adquisiciones" }</code>, antes de sus hijas.
+</li>
+<li>«Asignar Activos»: pasa a <code>parentLabel: "Movimiento Activos"</code> y conserva su link y permiso.
+</li>
+<li>Hojas nuevas, cada una con su agrupador:
+</li></ul>
+<table><tr><th>Hoja</th><th>Link</th><th>Agrupador</th><th>Incluye</th></tr>
+<tr><td>Reasignar Activos</td><td><code>/assets/reassign</code></td><td><code>asset-reassignment:access</code></td><td><code>assets:read</code>, <code>asset-movements:read</code>, <code>asset-movements:create</code></td></tr>
+<tr><td>Visualizar Asignaciones</td><td><code>/assets/assignments</code></td><td><code>asset-assignment-list:access</code></td><td><code>assets:read</code>, <code>asset-movements:read</code>, <code>product-categories:read</code></td></tr>
+<tr><td>Formulario Asignación</td><td><code>/assets/handover-form</code></td><td><code>asset-handover-form:access</code></td><td><code>assets:read</code>, <code>asset-movements:read</code></td></tr>
+</table>
+<ul>
+<li><strong>Regla lectura/edición</strong> (decisión previa del usuario): Visualizar y Formulario son solo lectura. Reasignar es en sí una pantalla de acción, igual que Asignar, así que lleva un solo agrupador.
+</li></ul>
+<h3>Front (<code>corporate-front/src</code>)</h3>
+<ul>
+<li><strong>Extraer de <code>AssignAsset.tsx</code>:</strong>
+<ul>
+<li><code>pages/activos/HandoverFields.tsx</code>: jefatura, MAC, almacenamiento, RAM, bolso, candado y cargador;
+</li>
+<li><code>pages/activos/handover.ts</code>: <code>downloadHandover(movementId, tag)</code>.
+ <code>AssignAsset</code> los reutiliza sin cambiar su comportamiento.
+</li></ul>
+</li>
+<li><strong><code>ReassignAsset.tsx</code>:</strong>
+<ol>
+<li>Busca por tag o serie; solo acepta activos <code>ASSIGNED</code>/<code>DEVALUATED</code>, y si no, un toast con el estado.
+</li>
+<li>Muestra el tenedor y el centro de costo actuales (<code>getCurrentAssignment</code>).
+</li>
+<li>Nuevo usuario opcional (RUT validado con <code>listAssignableUsers</code>) y nuevo centro de costo opcional (combo de <code>costCenterService.list</code>).
+</li>
+<li><code>HandoverFields</code> precargado con los datos del acta anterior.
+</li>
+<li>Confirmar → <code>reassign</code> → descarga el acta.
+</li></ol>
+</li>
+<li><strong><code>AssetAssignments.tsx</code>:</strong> filtros (centro de costo, categoría, usuario, serie o tag) y tabla paginada con Tag · Producto · Categoría · Serie · Usuario · Centro de costo · Estado · Fecha de asignación.
+</li>
+<li><strong><code>AssetHandoverForm.tsx</code>:</strong> busca por tag, serie o usuario (reutiliza <code>listAssignments</code> con <code>search</code>) y cada fila tiene un botón «Descargar acta» (<code>downloadHandover</code> del <code>movementId</code> vigente).
+</li>
+<li>Servicios y tipos: <code>assetMovementService.reassign</code>, <code>.current</code>, <code>.listAssignments</code>; tipos en <code>types/assetMovement.ts</code>.
+</li>
+<li><code>routes/AppRoutes.tsx</code>: agregar los 3 links a <code>MODULE_PAGES</code>.
+</li></ul>
+<h2>Paso 0</h2>
+<p>Copiar este plan aprobado a <code>.claude/planes/011-movimiento-activos.html</code> y agregar la entrada en la bitácora <code>.claude/README.md</code>.</p>
+<h2>Archivos críticos</h2>
+<ul>
+<li>API:
+<ul>
+<li><code>services/postgres/assetMovement.service.ts</code>
+</li>
+<li><code>controllers/assetMovement.controller.ts</code>
+</li>
+<li><code>routes/assetMovement.routes.ts</code>
+</li>
+<li><code>services/mssql/user.service.ts</code> (<code>findUserIdsBySearch</code>)
+</li>
+<li><code>services/mongo/product.service.ts</code> (ids por categoría)
+</li>
+<li><code>types/postgres/assetMovement.types.ts</code>
+</li>
+<li><code>databases/permission-catalog.ts</code>
+</li>
+<li><code>databases/menu-catalog.ts</code>
+</li></ul>
+</li>
+<li>Front:
+<ul>
+<li><code>pages/activos/AssignAsset.tsx</code> (extracción)
+</li>
+<li>nuevos <code>ReassignAsset.tsx</code>, <code>AssetAssignments.tsx</code>, <code>AssetHandoverForm.tsx</code>, <code>HandoverFields.tsx</code>, <code>handover.ts</code>
+</li>
+<li><code>services/assetMovementService.ts</code>
+</li>
+<li><code>types/assetMovement.ts</code>
+</li>
+<li><code>routes/AppRoutes.tsx</code>
+</li></ul>
+</li></ul>
+<h2>Verificación</h2>
+<ol>
+<li><strong>API:</strong> <code>tsc --noEmit</code> y tests unitarios. En <code>assetMovement.service.integration.test.ts</code>, contra Testing:
+<ul>
+<li>reasignar a otro usuario → <code>REASSIGNED</code>, nuevo tenedor, estado <code>ASSIGNED</code>, acta con el nuevo nombre;
+</li>
+<li>solo centro de costo → movimiento con el mismo usuario, <code>cost_center_id</code> actualizado y nota;
+</li>
+<li>sin cambios → 400; activo <code>AVAILABLE</code> → 409;
+</li>
+<li>activo <code>DEVALUATED</code> → sigue <code>DEVALUATED</code> con valor 0;
+</li>
+<li><code>listAssignments</code> filtra por centro de costo, serie, categoría y usuario, y no lista <code>AVAILABLE</code>.
+ Además, correr los tests de permisos y menú (la siembra valida los agrupadores y las hojas).
+</li></ul>
+</li>
+<li><strong>Front:</strong> <code>tsc -p tsconfig.app.json --noEmit</code> y <code>npm run lint</code>.
+</li>
+<li><strong>Manual en Development</strong> (reiniciar la API: el menú se mueve con la siembra):
+<ul>
+<li>ver la carpeta «Movimiento Activos» con sus 4 hojas;
+</li>
+<li>reasignar <code>ARR000000002</code> a otro usuario y bajar el acta;
+</li>
+<li>cambiarle solo el centro de costo;
+</li>
+<li>verlo en Visualizar Asignaciones con cada filtro;
+</li>
+<li>reimprimir el acta desde Formulario Asignación;
+</li>
+<li>un rol con solo <code>asset-assignment-list:access</code> ve la tabla pero no reasigna.
+</li></ul>
+</li>
+<li><code>/security-review</code> antes de promover (endpoint nuevo que lista tenedores y escribe movimientos).
+</li></ol>
+
+<footer class="doc-footer">Copia del plan aprobado en la sesión del 2026-09-28.</footer>
+</div>
+</body>
+</html>

@@ -242,14 +242,6 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     sortOrder: 80,
   },
   {
-    label: "Asignar Activos",
-    icon: "IoPersonAddOutline",
-    link: "/assets/assign",
-    parentLabel: "Productos",
-    permissionKey: "asset-assignment:access",
-    sortOrder: 90,
-  },
-  {
     label: "Estado de Activos por Solicitud",
     icon: "IoListOutline",
     link: "/solicitudes/estado-activos",
@@ -317,6 +309,41 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     sortOrder: 25,
   },
 
+  // Movimiento Activos (plan 011): Asignar Activos vivia en "Productos"; al
+  // cambiar su parentLabel, la siembra (upsert por label) la mueve en cada BD.
+  { label: "Movimiento Activos", icon: "IoSwapHorizontal", parentLabel: "Adquisiciones", sortOrder: 25 },
+  {
+    label: "Asignar Activos",
+    icon: "IoPersonAddOutline",
+    link: "/assets/assign",
+    parentLabel: "Movimiento Activos",
+    permissionKey: "asset-assignment:access",
+    sortOrder: 10,
+  },
+  {
+    label: "Reasignar Activos",
+    icon: "IoSwapHorizontalOutline",
+    link: "/assets/reassign",
+    parentLabel: "Movimiento Activos",
+    permissionKey: "asset-reassignment:access",
+    sortOrder: 20,
+  },
+  {
+    label: "Visualizar Asignaciones",
+    icon: "IoListOutline",
+    link: "/assets/assignments",
+    parentLabel: "Movimiento Activos",
+    permissionKey: "asset-assignment-list:access",
+    sortOrder: 30,
+  },
+  {
+    label: "Formulario Asignación",
+    icon: "IoDocumentTextOutline",
+    link: "/assets/handover-form",
+    parentLabel: "Movimiento Activos",
+    permissionKey: "asset-handover-form:access",
+    sortOrder: 40,
+  },
   { label: "Categoria Productos", icon: "IoLibrary", parentLabel: "Adquisiciones", sortOrder: 30 },
   {
     label: "Nueva Categoria",

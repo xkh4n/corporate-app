@@ -484,6 +484,23 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
     description: "Pantalla: Asignar Activos",
     includes: ["assets:read", "asset-movements:create", "asset-movements:read"],
   },
+  // Movimiento Activos (plan 011). Reasignar es una pantalla de accion (como
+  // Asignar); Visualizar y Formulario son de solo lectura.
+  {
+    resource: "asset-reassignment",
+    description: "Pantalla: Reasignar Activos",
+    includes: ["assets:read", "asset-movements:read", "asset-movements:create"],
+  },
+  {
+    resource: "asset-assignment-list",
+    description: "Pantalla: Visualizar Asignaciones",
+    includes: ["assets:read", "asset-movements:read", "product-categories:read"],
+  },
+  {
+    resource: "asset-handover-form",
+    description: "Pantalla: Formulario Asignación",
+    includes: ["assets:read", "asset-movements:read"],
+  },
   { resource: "asset-labels", description: "Pantalla: Etiquetas de Activos", includes: ["assets:read"] },
   {
     resource: "asset-kardex-view",
