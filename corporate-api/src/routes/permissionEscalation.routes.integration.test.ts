@@ -42,6 +42,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await resetTestData(RESET_TABLES);
   await RoleModel.destroy({ where: { name: { [Op.like]: `${PREFIX}%` } } });
+  await RoleModel.destroy({ where: { name: { [Op.like]: `1110-${PREFIX}%` } } });
 });
 
 async function permissionId(key: string): Promise<number> {
@@ -148,5 +149,24 @@ describe("escalada de privilegios (auditoria run-2)", () => {
     // Otra pantalla: no puede incluir un permiso que no tiene.
     const otherBundle = await permissionId("asset-labels:access");
     expect((await api(`/permissions/${otherBundle}/includes`, token, "POST", { permissionId: usersUpdate })).status).toBe(403);
+  });
+
+  it("revision 2026-09-28 M1: el prefijo de Sistemas (1110) y el propio rol solo los toca un administrador", async () => {
+    const manager = await roleWith(["roles:create", "roles:update", "roles:read"]);
+    const token = await tokenFor(manager);
+    const other = await roleWith([]);
+
+    // Crear un rol de Sistemas o renombrar uno a 1110-: no.
+    expect((await api("/roles", token, "POST", { name: `1110-${PREFIX}${++seq}` })).status).toBe(403);
+    expect((await api(`/roles/${other.id}`, token, "PUT", { name: `1110-${PREFIX}${++seq}` })).status).toBe(403);
+    // Su propio rol: ni siquiera sin tocar el prefijo.
+    expect((await api(`/roles/${manager.id}`, token, "PUT", { name: `${PREFIX}${++seq}` })).status).toBe(403);
+    // Otro rol sin prefijo de Sistemas: si.
+    expect((await api(`/roles/${other.id}`, token, "PUT", { name: `${PREFIX}${++seq}` })).status).toBe(200);
+    expect((await api("/roles", token, "POST", { name: `${PREFIX}${++seq}` })).status).toBe(201);
+
+    // Un rol de Sistemas ya creado por un admin no se renombra fuera de 1110 sin ser admin.
+    const systems = await createRole({ name: `1110-${PREFIX}${++seq}` });
+    expect((await api(`/roles/${systems.id}`, token, "PUT", { name: `${PREFIX}${++seq}` })).status).toBe(403);
   });
 });

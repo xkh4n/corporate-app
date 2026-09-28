@@ -211,6 +211,15 @@ export async function createAssetMovement(
     if (asset.status?.code === "WRITTEN_OFF" && input.movementType !== "DEVALUATED") {
       throw new ConflictError(`El activo ${asset.tag} tiene baja contable: es definitiva`);
     }
+    // Revision 2026-09-28 (M2): una baja pendiente solo sale por su baja contable o devaluada (hallada en
+    // uso en una toma). Sin esto, POST /asset-movements con SUPPORT la reactivaba con el Kardex en cero.
+    if (
+      asset.status?.code === "DECOMMISSIONED" &&
+      input.movementType !== "WRITTEN_OFF" &&
+      input.movementType !== "DEVALUATED"
+    ) {
+      throw new ConflictError(`El activo ${asset.tag} esta dado de baja: pendiente de su baja contable`);
+    }
     if (
       input.movementType === "DEVALUATED" &&
       !["DECOMMISSIONED", "WRITTEN_OFF", "DEVALUATED"].includes(asset.status?.code ?? "")
@@ -789,11 +798,18 @@ export interface DecommissionPhoto {
   createdAt: Date;
 }
 
+// Revision 2026-09-28 (B1): solo cuenta la foto de la baja vigente (el ultimo DECOMMISSIONED del activo),
+// no la de una baja anterior de la que el activo volvio (devaluado y dado de baja otra vez).
+export const LATEST_DECOMMISSION_MOVEMENT_SQL = `(SELECT MAX(m.id) FROM asset_movements m
+   WHERE m.asset_id = d.asset_id AND m.movement_type = 'DECOMMISSIONED')`;
+
 export async function listDecommissionPhotos(assetIds: number[], transaction?: Transaction): Promise<DecommissionPhoto[]> {
   if (assetIds.length === 0) return [];
   return postgres.query<DecommissionPhoto>(
-    `SELECT id, asset_id AS "assetId", mime_type AS "mimeType", size_bytes AS "sizeBytes", created_at AS "createdAt"
-       FROM asset_decommission_photos WHERE asset_id IN (:assetIds) ORDER BY asset_id, id`,
+    `SELECT d.id, d.asset_id AS "assetId", d.mime_type AS "mimeType", d.size_bytes AS "sizeBytes", d.created_at AS "createdAt"
+       FROM asset_decommission_photos d
+      WHERE d.asset_id IN (:assetIds) AND d.movement_id = ${LATEST_DECOMMISSION_MOVEMENT_SQL}
+      ORDER BY d.asset_id, d.id`,
     { replacements: { assetIds }, type: QueryTypes.SELECT, transaction },
   );
 }

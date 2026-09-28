@@ -8,6 +8,9 @@ import { BadRequestError, ConflictError } from "../../library/errors";
 import { getAssetDecommissionFolder, getAssetWriteOffFolder } from "../../library/documentStorage";
 import { currentDate } from "../../library/depreciation";
 import { createCostCenter } from "./costCenter.service";
+import { getRoleByName } from "./role.service";
+import { createPerson } from "../mssql/person.service";
+import { createUser } from "../mssql/user.service";
 import { createProduct } from "../mongo/product.service";
 import { createAssetsFromReceipt, getAssetByIdOrThrow } from "./asset.service";
 import { createAssetMovement, decommissionAsset } from "./assetMovement.service";
@@ -29,6 +32,7 @@ import {
 } from "./assetWriteOff.service";
 
 const RESET_TABLES = {
+  mssql: ["users", "persons"],
   postgres: [
     "asset_write_off_photos",
     "asset_write_off_lines",
@@ -263,6 +267,31 @@ describe("baja contable con la foto de Dar de Baja (plan 013)", () => {
     await complete(writeOff.id);
     await expect(confirmWriteOff(writeOff.id, USER_ID)).resolves.toMatchObject({ status: "CONFIRMED", assetCount: 1 });
     expect((await getAssetByIdOrThrow(asset.id)).status?.code).toBe("WRITTEN_OFF");
+  });
+
+  it("revision 2026-09-28 B1: la foto de una baja anterior no sirve para la baja vigente", async () => {
+    const asset = await decommissionedWithPhoto();
+    const oldPhotoId = (await draft([asset.id])).lines[0]!.decommissionPhotos[0]!.id;
+    await postgres.query("DELETE FROM asset_write_off_lines WHERE asset_id = :assetId", {
+      replacements: { assetId: asset.id },
+    });
+    // Hallado en uso (devaluado) y dado de baja otra vez desde una toma, sin foto.
+    const userRole = await getRoleByName("user");
+    const person = await createPerson({
+      firstName: "Test",
+      lastName: `Baja${++seq}`,
+      documentId: `TESTDOC-WO${seq}`,
+      email: `test-wo-${seq}@example.com`,
+    });
+    const holder = await createUser({ personId: person.id, roleId: userRole!.id, username: `testwo${seq}` });
+    await createAssetMovement({ assetId: asset.id, movementType: "DEVALUATED", userIds: [holder.id] });
+    await createAssetMovement({ assetId: asset.id, movementType: "DECOMMISSIONED" });
+
+    const writeOff = await draft([asset.id]);
+    expect(writeOff.lines[0]!.decommissionPhotos).toHaveLength(0);
+    await expect(getLineDecommissionPhotoFile(writeOff.id, oldPhotoId)).rejects.toThrow(/no existe/);
+    await complete(writeOff.id);
+    await expect(confirmWriteOff(writeOff.id, USER_ID)).rejects.toThrow(/foto/);
   });
 
   it("la foto de la baja operativa solo se sirve desde una baja que tiene ese activo", async () => {

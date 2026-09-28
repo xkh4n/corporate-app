@@ -18,6 +18,29 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (16) — Revisión de seguridad del delta 7275cdc..2aec9e3 (planes 012 y 013, devoluciones, siembra)
+
+### Hecho
+- Revisión con los dos agentes, **cybersecurity-orchestrator** y **security-engineer**, en paralelo e independientes. Ambos dan **GO**, sin hallazgos críticos ni altos.
+- **M1 (Media), corregido.** Lo reportaron los dos. El privilegio «recibir devoluciones» sale del prefijo `1110-` del nombre del rol, y `PUT /roles/:id` no controlaba quién renombraba, ni siquiera el propio rol.
+  - Ahora un no-admin no edita su propio rol ni el de admin, la misma regla que ya aplicaba a los permisos de un rol.
+  - Solo un admin crea un rol `1110-…`, o pone o quita ese prefijo al renombrar.
+  - El prefijo se compara como texto: `01110-x` ya no cuenta como Sistemas.
+- **M2 (Media, previo pero expuesto por el plan 012), corregido.** Solo lo reportó security-engineer.
+  - El problema: un `POST /asset-movements` con `SUPPORT` (permiso `asset-movements:create`, que tiene grantToUser) sacaba de la baja un activo «Pendiente de baja contable», con el Kardex en 0.
+  - Ahora ese activo solo sale como `WRITTEN_OFF` (baja contable) o `DEVALUATED` (encontrado en uso en una toma).
+- **B1 (Baja), corregido.** Solo lo reportó security-engineer. La baja contable aceptaba la foto de una baja anterior del mismo activo. Ahora solo cuenta, se muestra y se sirve la foto del último movimiento `DECOMMISSIONED`.
+- **Informativos, sin cambio:**
+  - I1: al desplegar, todo rol con «Valorización de Activos» recibe `asset-valuation:update`, por decisión del usuario. Conviene revisar qué roles la tienen.
+  - I2: un activo `WRITTEN_OFF` puede volver a usarse devaluado, con valor 0 y sin vía de revalorización.
+- **Pruebas:**
+  - regresión nueva para M1, M2 y B1;
+  - 140 unitarias; integración contra Testing en dar de baja, baja contable, escalamiento de permisos, inventario, movimientos, devoluciones, depreciación, valorización, contabilidad y roles: 123 OK;
+  - front: `tsc` y lint.
+- Como en run-2, el orquestador solo no vio M2 ni B1: la revisión cruzada sigue siendo necesaria.
+
+---
+
 ## 2026-09-28 (15) — Instalación limpia: sin productos de ejemplo
 
 ### Hecho

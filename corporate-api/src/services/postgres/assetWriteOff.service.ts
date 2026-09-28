@@ -19,6 +19,7 @@ import { ACCUMULATED_SQL } from "./assetDepreciation.service";
 import {
   createAssetMovement,
   getDecommissionPhotoFile,
+  LATEST_DECOMMISSION_MOVEMENT_SQL,
   listDecommissionPhotos,
   type DecommissionPhoto,
 } from "./assetMovement.service";
@@ -519,7 +520,7 @@ export async function getLineDecommissionPhotoFile(
     `SELECT d.asset_id AS "assetId"
        FROM asset_decommission_photos d
        JOIN asset_write_off_lines l ON l.asset_id = d.asset_id AND l.write_off_id = :id
-      WHERE d.id = :photoId`,
+      WHERE d.id = :photoId AND d.movement_id = ${LATEST_DECOMMISSION_MOVEMENT_SQL}`,
     { replacements: { id, photoId }, type: QueryTypes.SELECT },
   );
   if (!row) throw new NotFoundError(`La foto ${photoId} no existe en la baja ${id}`);
@@ -561,7 +562,8 @@ export async function confirmWriteOff(id: number, userId: number): Promise<Write
               (${BOOK_VALUE_SQL})::numeric(18,2)::text AS "bookValue",
               (SELECT COUNT(*)::int FROM asset_write_off_photos p
                 WHERE p.write_off_id = :id AND p.asset_id = a.id)
-              + (SELECT COUNT(*)::int FROM asset_decommission_photos d WHERE d.asset_id = a.id) AS "photoCount"
+              + (SELECT COUNT(*)::int FROM asset_decommission_photos d
+                  WHERE d.asset_id = a.id AND d.movement_id = ${LATEST_DECOMMISSION_MOVEMENT_SQL}) AS "photoCount"
          FROM asset_accounting aa
          JOIN assets a ON a.id = aa.asset_id
          JOIN asset_statuses s ON s.id = a.status_id

@@ -126,6 +126,14 @@ describe("Dar de Baja Activos (plan 012, integracion)", () => {
     expect(eligible.items.map((item) => item.assetId)).toContain(asset.id);
   });
 
+  it("revision 2026-09-28 M2: una baja pendiente no se reactiva por la API generica", async () => {
+    const asset = await createAvailableAsset();
+    await classify(asset.id, { classification: "EXPENSE" }, USER_ID);
+    await decommissionAsset({ assetId: asset.id, reason: "OBSOLESCENCE", photo: photo() });
+    await expect(createAssetMovement({ assetId: asset.id, movementType: "SUPPORT" })).rejects.toBeInstanceOf(ConflictError);
+    expect((await getAssetByIdOrThrow(asset.id)).status?.code).toBe("DECOMMISSIONED");
+  });
+
   it("sin clasificacion contable no se da de baja", async () => {
     const asset = await createAvailableAsset();
 
