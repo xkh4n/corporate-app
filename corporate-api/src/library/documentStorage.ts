@@ -42,6 +42,11 @@ export function getAssetWriteOffFolder(writeOffId: number): string {
   return path.join(UPLOADS_ROOT, "bajas", String(writeOffId));
 }
 
+// Fotos tomadas al dar de baja un activo (plan 013), en una carpeta por activo. Nombres generados por el servidor.
+export function getAssetDecommissionFolder(assetId: number): string {
+  return path.join(UPLOADS_ROOT, "bajas-operativas", String(assetId));
+}
+
 // Adjuntos de un ticket del Service Desk (plan 009). Nombres generados por el servidor.
 export function getServiceTicketFolder(ticketId: number): string {
   return path.join(UPLOADS_ROOT, "tickets", String(ticketId));

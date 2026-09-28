@@ -37,7 +37,7 @@ export type AccountingStage =
 
 // Un activo dado de baja (o devaluado despues de la baja: valor 0, Kardex en
 // cero) no entra al ciclo contable. Mismo criterio que el cierre de depreciacion.
-const EXCLUDED_STATUS_CODES = ["DECOMMISSIONED", "DEVALUATED"];
+const EXCLUDED_STATUS_CODES = ["DECOMMISSIONED", "WRITTEN_OFF", "DEVALUATED"];
 // Etapas en que todavia se puede reclasificar o tocar el costo.
 const EDITABLE_STAGES: AccountingStage[] = ["CLASSIFIED", "COSTED"];
 

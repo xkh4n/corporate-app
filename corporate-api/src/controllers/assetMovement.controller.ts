@@ -63,7 +63,8 @@ export const reassignAssetSchema = z
 // Dar de baja (plan 012): motivo de la lista; el detalle es obligatorio con OTHER.
 export const decommissionAssetSchema = z
   .object({
-    assetId: z.number().int().positive(),
+    // multipart (plan 013: va con la foto): los campos llegan como texto.
+    assetId: z.coerce.number().int().positive(),
     reason: z.enum(["OBSOLESCENCE", "IRREPARABLE_DAMAGE", "THEFT_LOSS", "OTHER"]),
     detail: z.string().trim().max(200).optional(),
   })
@@ -184,8 +185,46 @@ export async function decommissionCheck(req: Request, res: Response, next: NextF
 export async function decommission(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const body = req.body as z.infer<typeof decommissionAssetSchema>;
-    const movement = await assetMovementService.decommissionAsset({ ...body, createdBy: req.user?.userId });
-    sendOk(res, movement, "Activo dado de baja exitosamente", 201);
+    if (!req.file) throw new BadRequestError("Adjunte la foto del activo (JPEG o PNG)");
+    const movement = await assetMovementService.decommissionAsset({
+      ...body,
+      photo: req.file,
+      createdBy: req.user?.userId,
+    });
+    sendOk(res, movement, "Activo dado de baja: queda pendiente de baja contable", 201);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Inline (se muestra en <img>), con el tipo guardado -ya verificado por magic bytes al subir- y
+// nosniff para que el navegador no lo reinterprete. Mismo criterio que las fotos de Baja Contable.
+export function sendInlinePhoto(
+  res: Response,
+  next: NextFunction,
+  file: { filePath: string; mimeType: string },
+): void {
+  res.sendFile(
+    file.filePath,
+    {
+      headers: {
+        "Content-Type": file.mimeType,
+        "Content-Disposition": "inline",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, no-store",
+      },
+    },
+    (err) => {
+      if (err) next(err);
+    },
+  );
+}
+
+export async function decommissionPhoto(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const assetId = Number(req.params.assetId);
+    if (!Number.isInteger(assetId) || assetId <= 0) throw new BadRequestError("Id de activo invalido");
+    sendInlinePhoto(res, next, await assetMovementService.getLatestDecommissionPhotoFile(assetId));
   } catch (err) {
     next(err);
   }
