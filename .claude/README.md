@@ -18,6 +18,34 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (4) — Permisos faltantes en pantallas y agrupadores de edición
+
+### Hecho
+- **Auditoría de todas las pantallas implementadas:** un script cruzó, para cada hoja del menú, los permisos que su página exige (endpoints que llama más `can()` y `RequirePermissions`) con los includes de su agrupador.
+- **Permisos que la propia pantalla necesitaba** (la acción fallaba con 403):
+  - Asignar Activos: `asset-movements:read`, para el acta de entrega que se descarga al asignar (el caso reportado con pburgos).
+  - Crear Proveedor: `addresses:create` y `supplier-contacts:create`.
+  - Nuevo Producto: `products:update` (imagen) y `product-categories:read`.
+  - Ver Productos y Actualizar Categorías: `product-categories:read`.
+  - Autorizar Solicitud y Aprobar Cotización: `products:read`.
+- **Agrupadores de edición nuevos**, sin hoja de menú. El de la pantalla sigue siendo de solo lectura y abre el menú; el rol necesita los dos:
+  - «Toma de Inventario (edición)»: `inventory-counts:create/update`, productos y categorías.
+  - «Valorización de Activos (edición)».
+  - «Devoluciones de Activos (edición)».
+  - «Carga Masiva de Activos (edición)».
+  - «Depreciación (anular cierre)».
+
+### Decisiones
+- **Lectura y edición separadas** (usuario): no se amplía el agrupador de lectura; la edición se otorga con su propio agrupador. En la primera versión se había ampliado «Toma de Inventario», y se borraron a mano esos 4 vínculos en Development y Testing, porque la siembra solo agrega.
+- **Por diseño:** las pestañas opcionales (Service Desk, historial de servicio en el Kardex, datos de remuneraciones en Nuevo Ingreso) se ven según sus propios permisos y ya se consultan con `can()`.
+
+### Verificación
+- `tsc` limpio, 132 tests unitarios y los tests de integración de permisos y menú (17) en verde.
+- Development reiniciado; los agrupadores quedan en la BD y los nuevos solo los tiene admin.
+
+### Pendiente
+- Al rol de pburgos, darle «Toma de Inventario (edición)». Después debe cerrar sesión y volver a entrar.
+
 ## 2026-09-28 (3) — Tests de integración contra Testing y hosts desde ALLOCATED_IP
 
 ### Hecho

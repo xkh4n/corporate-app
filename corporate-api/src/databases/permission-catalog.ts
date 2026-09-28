@@ -374,7 +374,14 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
   {
     resource: "supplier-creation",
     description: "Pantalla: Crear Proveedor",
-    includes: ["business-partners:create", "suppliers:create", "supplier-service-types:create", "supplier-delivery-terms:create"],
+    includes: [
+      "business-partners:create",
+      "suppliers:create",
+      "supplier-service-types:create",
+      "supplier-delivery-terms:create",
+      "addresses:create",
+      "supplier-contacts:create",
+    ],
   },
   { resource: "quote-request", description: "Pantalla: Solicitar Cotización", includes: ["purchase-requests:read", "quotes:create"] },
   {
@@ -395,8 +402,13 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
     description: "Pantalla: Enviar Orden de Compra",
     includes: ["purchase-requests:read", "purchase-orders:read", "quotes:create", "suppliers:read", "supplier-contacts:read"],
   },
-  { resource: "product-creation", description: "Pantalla: Nuevo Producto", includes: ["products:create"] },
-  { resource: "product-list", description: "Pantalla: Ver Productos", includes: ["products:read"] },
+  // products:update: la imagen se sube despues de crear el producto (POST /products/:id/image).
+  {
+    resource: "product-creation",
+    description: "Pantalla: Nuevo Producto",
+    includes: ["products:create", "products:update", "product-categories:read"],
+  },
+  { resource: "product-list", description: "Pantalla: Ver Productos", includes: ["products:read", "product-categories:read"] },
   {
     resource: "supplier-product-linking",
     description: "Pantalla: Vincular Productos a Proveedor",
@@ -404,7 +416,11 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
   },
   { resource: "category-creation", description: "Pantalla: Nueva Categoria", includes: ["product-categories:create"] },
   { resource: "category-view", description: "Pantalla: Ver Categorias", includes: ["product-categories:read"] },
-  { resource: "category-update", description: "Pantalla: Actualizar Categorias", includes: ["product-categories:update"] },
+  {
+    resource: "category-update",
+    description: "Pantalla: Actualizar Categorias",
+    includes: ["product-categories:read", "product-categories:update"],
+  },
 
   // Solicitudes de compra
   // Retirada (plan 010): la solicitud se crea desde Generar Ticket. Se conserva
@@ -417,7 +433,7 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
   {
     resource: "request-approval",
     description: "Pantalla: Autorizar Solicitud",
-    includes: ["purchase-requests:approve", "purchase-request-lines:read", "purchase-request-lines:update"],
+    includes: ["purchase-requests:approve", "purchase-request-lines:read", "purchase-request-lines:update", "products:read"],
   },
   {
     resource: "quote-approval",
@@ -429,6 +445,7 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
       "quotes:read",
       "authorizations:create",
       "suppliers:read",
+      "products:read",
     ],
   },
   {
@@ -465,7 +482,12 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
   },
 
   // Activos
-  { resource: "asset-assignment", description: "Pantalla: Asignar Activos", includes: ["assets:read", "asset-movements:create"] },
+  // asset-movements:read: al asignar se descarga el acta de entrega (GET /asset-movements/:id/handover.pdf).
+  {
+    resource: "asset-assignment",
+    description: "Pantalla: Asignar Activos",
+    includes: ["assets:read", "asset-movements:create", "asset-movements:read"],
+  },
   { resource: "asset-labels", description: "Pantalla: Etiquetas de Activos", includes: ["assets:read"] },
   {
     resource: "asset-kardex-view",
@@ -476,6 +498,38 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
   { resource: "asset-valuation-view", description: "Pantalla: Valorización de Activos", includes: ["asset-valuation:read"] },
   { resource: "asset-return-management", description: "Pantalla: Devoluciones de Activos", includes: ["asset-returns:read"] },
   { resource: "asset-bulk-import", description: "Pantalla: Carga Masiva de Activos", includes: ["asset-imports:read"] },
+
+  // Agrupadores de edicion: la pantalla de arriba solo deja consultar (y es la
+  // que abre la hoja del menu); estos habilitan sus acciones. Se otorgan aparte,
+  // asi el admin separa quien mira de quien opera. No tienen hoja de menu propia:
+  // el rol necesita los dos.
+  {
+    resource: "inventory-taking-edit",
+    description: "Pantalla: Toma de Inventario (edición)",
+    // Productos y categorias arman el alta de un equipo que no estaba registrado.
+    includes: [
+      "inventory-counts:read",
+      "inventory-counts:create",
+      "inventory-counts:update",
+      "products:read",
+      "product-categories:read",
+    ],
+  },
+  {
+    resource: "asset-valuation-edit",
+    description: "Pantalla: Valorización de Activos (edición)",
+    includes: ["asset-valuation:read", "asset-valuation:update"],
+  },
+  {
+    resource: "asset-return-management-edit",
+    description: "Pantalla: Devoluciones de Activos (edición)",
+    includes: ["asset-returns:read", "asset-returns:create", "asset-returns:update"],
+  },
+  {
+    resource: "asset-bulk-import-edit",
+    description: "Pantalla: Carga Masiva de Activos (edición)",
+    includes: ["asset-imports:read", "asset-imports:create"],
+  },
 
   // Contabilidad > Gestion de Activos (plan 007)
   {
@@ -499,6 +553,12 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
     resource: "accounting-depreciation",
     description: "Pantalla: Depreciación",
     includes: ["asset-accounting:read", "asset-accounting:update", "asset-depreciation:read", "asset-depreciation:create"],
+  },
+  // Anular el ultimo cierre reversa el Kardex: se otorga aparte de cerrar el mes.
+  {
+    resource: "accounting-depreciation-void",
+    description: "Pantalla: Depreciación (anular cierre)",
+    includes: ["asset-depreciation:read", "asset-depreciation:delete"],
   },
   {
     resource: "accounting-policy",
