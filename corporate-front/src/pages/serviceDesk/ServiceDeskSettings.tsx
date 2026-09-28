@@ -126,6 +126,8 @@ function GroupsSettings({ groups, onChanged }: { groups: SupportGroup[]; onChang
           <div key={group.id} className={CARD}>
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="font-semibold text-slate-800">{group.name}</h3>
+              {/* Va en el número de los tickets que el grupo recibe: REQ2026<código>000001. */}
+              <Badge className="bg-sky-100 text-sky-800">Código {group.code}</Badge>
               {!group.isActive && <Badge className="bg-slate-100 text-slate-500">Inactivo</Badge>}
             </div>
             <p className="text-sm text-slate-600">{group.description ?? ""}</p>
@@ -546,7 +548,13 @@ function CatalogSettings({ categories, groups }: { categories: ServiceCategory[]
                     <div className="text-xs text-slate-500">{item.description ?? ""}</div>
                   </td>
                   <td className={TD}>{groupOf(item.defaultGroupId)}</td>
-                  <td className={TD}>{item.approvalGroupId ? groupOf(item.approvalGroupId) : "Sin aprobación"}</td>
+                  <td className={TD}>
+                    {item.fulfillment === "PURCHASE_REQUEST"
+                      ? "Aprobador de la compra"
+                      : item.approvalGroupId
+                        ? groupOf(item.approvalGroupId)
+                        : "Sin aprobación"}
+                  </td>
                   <td className={TD}>{item.fields.length}</td>
                   <td className={TD}>{item.isActive ? "Activo" : "Inactivo"}</td>
                   {canEdit && (
@@ -597,6 +605,7 @@ function CatalogItemModal({
   const [categoryId, setCategoryId] = useState<number | "">(item?.categoryId ?? "");
   const [groupId, setGroupId] = useState<number | "">(item?.defaultGroupId ?? "");
   const [approvalGroupId, setApprovalGroupId] = useState<number | "">(item?.approvalGroupId ?? "");
+  const [createsPurchase, setCreatesPurchase] = useState(item?.fulfillment === "PURCHASE_REQUEST");
   const [fields, setFields] = useState<CatalogField[]>(item?.fields ?? []);
   const [isActive, setIsActive] = useState(item?.isActive ?? true);
   const [saving, setSaving] = useState(false);
@@ -613,7 +622,9 @@ function CatalogItemModal({
         description: description.trim() || null,
         categoryId: categoryId === "" ? null : categoryId,
         defaultGroupId: groupId === "" ? null : groupId,
-        approvalGroupId: approvalGroupId === "" ? null : approvalGroupId,
+        // La solicitud de equipo la aprueba el aprobador de la compra, no un grupo.
+        approvalGroupId: createsPurchase || approvalGroupId === "" ? null : approvalGroupId,
+        fulfillment: createsPurchase ? "PURCHASE_REQUEST" : null,
         fields: fields.map((field) => ({
           ...field,
           key: field.key.trim(),
@@ -682,8 +693,13 @@ function CatalogItemModal({
           </Select>
         </Field>
         <Field label="Grupo aprobador" htmlFor="item-approval">
-          <Select id="item-approval" value={approvalGroupId === "" ? "" : String(approvalGroupId)} onChange={(e) => setApprovalGroupId(e.target.value ? Number(e.target.value) : "")}>
-            <option value="">No requiere aprobación</option>
+          <Select
+            id="item-approval"
+            disabled={createsPurchase}
+            value={createsPurchase || approvalGroupId === "" ? "" : String(approvalGroupId)}
+            onChange={(e) => setApprovalGroupId(e.target.value ? Number(e.target.value) : "")}
+          >
+            <option value="">{createsPurchase ? "Lo aprueba el aprobador de la compra" : "No requiere aprobación"}</option>
             {groups.map((group) => (
               <option key={group.id} value={group.id}>
                 {group.name}
@@ -695,6 +711,17 @@ function CatalogItemModal({
           <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
           Activo
         </label>
+        <div className="sm:col-span-2">
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input type="checkbox" className="mt-1" checked={createsPurchase} onChange={(e) => setCreatesPurchase(e.target.checked)} />
+            <span>
+              Genera solicitud de compra
+              <span className="block text-xs text-slate-500">
+                El solicitante elige productos, centro de costo y aprobador; el ticket sigue a la compra hasta la recepción del equipo.
+              </span>
+            </span>
+          </label>
+        </div>
         <div className="sm:col-span-2">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-sm font-medium text-slate-700">Campos del formulario</p>

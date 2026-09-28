@@ -101,9 +101,9 @@ export default function AssignAsset() {
     setValidating(true);
     try {
       const users = await assetMovementService.listAssignableUsers(documentId);
-      // Match exacto de documentId -mismo criterio que CreateRequest.tsx,
-      // para no asignar por error a un RUT parecido (la busqueda del
-      // servidor es por LIKE).
+      // Match exacto de documentId -mismo criterio que el beneficiario de la
+      // solicitud de equipo-, para no asignar por error a un RUT parecido (la
+      // busqueda del servidor es por LIKE).
       const found = users.find((user) => user.person.documentId === documentId);
       if (!found) {
         showErrorToast("No existe un usuario activo con ese RUT");

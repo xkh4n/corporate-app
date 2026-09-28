@@ -29,9 +29,16 @@ describe("IsEmail", () => {
     expect(IsEmail("persona@dominio.com")).toBe(true);
   });
 
+  it("acepta subdirecciones con +", () => {
+    expect(IsEmail("micorreo+alias@gmail.com")).toBe(true);
+    expect(IsEmail("nombre.apellido+compras+2026@empresa.cl")).toBe(true);
+  });
+
   it("rechaza formatos invalidos", () => {
     expect(IsEmail("no-es-un-email")).toBe(false);
     expect(IsEmail("@dominio.com")).toBe(false);
+    expect(IsEmail("micorreo+@gmail.com")).toBe(false);
+    expect(IsEmail("+alias@gmail.com")).toBe(false);
   });
 });
 

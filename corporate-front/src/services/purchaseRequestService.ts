@@ -13,7 +13,7 @@ export const purchaseRequestService = {
   list: (params?: ListParams) => apiFetch<Paginated<PurchaseRequest>>(`/purchase-requests${toQuery(params)}`),
 
   // Usuarios activos cuyo rol tiene purchase-requests:approve -para el
-  // select de aprobador en CreateRequest.tsx.
+  // select de aprobador de la solicitud de equipo (serviceDesk/EquipmentRequestFields.tsx).
   listApprovers: () => apiFetch<SafeUser[]>("/purchase-requests/approvers"),
 
   // Solo lo que le corresponde revisar al usuario logeado (AproveRequest.tsx)

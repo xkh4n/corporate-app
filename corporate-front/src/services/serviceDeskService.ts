@@ -4,6 +4,7 @@ import type { ListParams, Paginated } from "../types/api";
 import type {
   AssetServiceRecord,
   BusinessCalendar,
+  CatalogFulfillment,
   CatalogItem,
   ChangeAction,
   ChangeDetail,
@@ -65,6 +66,9 @@ export const servicePortalService = {
   list: (params?: ListParams & { includeClosed?: boolean }) =>
     apiFetch<Paginated<TicketSummary>>(`/service-portal/tickets${toQuery(params)}`),
   create: (payload: CreateTicketPayload) => apiFetch<TicketDetail>("/service-portal/tickets", { method: "POST", body: payload }),
+  // Solicitud de equipo: confirma el beneficiario por RUT (solo id y nombre).
+  lookupBeneficiary: (documentId: string) =>
+    apiFetch<{ personId: number; fullName: string }>("/service-portal/beneficiary", { method: "POST", body: { documentId } }),
   getById: (id: number) => apiFetch<TicketDetail>(`/service-portal/tickets/${id}`),
   comment: (id: number, body: string) => apiFetch<TicketDetail>(`/service-portal/tickets/${id}/comments`, { method: "POST", body: { body } }),
   uploadAttachment: (id: number, file: File) =>
@@ -222,6 +226,7 @@ export interface CatalogItemPayload {
   categoryId?: number | null;
   defaultGroupId?: number | null;
   approvalGroupId?: number | null;
+  fulfillment?: CatalogFulfillment | null;
   fields: CatalogField[];
   isActive?: boolean;
 }
