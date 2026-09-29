@@ -18,6 +18,26 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-29 (6) — Redespliegue de los 3 ambientes con volúmenes nuevos
+
+### Hecho
+- El usuario volvió a crear dev, Testing y producción con volúmenes nuevos. Con eso quedan desplegados los planes 012 a 016.
+- **Réplicas de la API:** healthy y sin errores en los logs.
+- **Postgres (`corpdbpg`), los tres ambientes con el mismo resultado:**
+  - las 5 tablas `comm_room*` y la columna `validation_warnings`;
+  - el ítem ROOM_ACCESS y el grupo «Responsable TI / Seguridad»;
+  - 11 permisos `comm-room*`;
+  - el bundle `comm-room-entry` sin `comm-rooms:read`.
+
+### Pendiente
+- En cada ambiente:
+  - agregar miembros a «Responsable TI / Seguridad»;
+  - asignar a los roles los 4 bundles `comm-room-*:access`;
+  - crear las salas.
+- Probar en el navegador los planes 012 a 016.
+
+---
+
 ## 2026-09-29 (5) — Revisión de seguridad del plan 016
 
 ### Resultado
