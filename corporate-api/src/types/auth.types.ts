@@ -38,6 +38,8 @@ declare global {
   namespace Express {
     interface Request {
       user?: AuthenticatedUser;
+      // Plan 015: la sesion o el token trae la marca de cambio de password obligatorio.
+      passwordChangePending?: boolean;
     }
   }
 }

@@ -120,7 +120,7 @@ describe("contraseña por defecto (plan 015)", () => {
     const token = await login(user.username, defaultPassword());
     expect((await api("/notifications/pending-summary", token)).status).toBe(403);
     const me = (await (await api("/auth/me", token)).json()) as { data: { user: { mustChangePassword: boolean } } };
-    // /auth/me via Bearer solo lee el flag de la BD; el bloqueo lo hace la marca del token.
-    expect(me.data.user.mustChangePassword).toBe(false);
+    // /auth/me informa la marca del token aunque la BD no tenga el flag.
+    expect(me.data.user.mustChangePassword).toBe(true);
   });
 });

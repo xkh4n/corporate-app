@@ -18,6 +18,19 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-29 (3) — Revisión de seguridad y promoción del plan 015
+
+### Hecho
+- **Revisión** del delta `ecf09a8..5467f85` con `cybersecurity-orchestrator` y `security-engineer`: los dos dan **GO**, sin hallazgos Critical, High ni Medium.
+- Las correcciones van en el commit de esta entrada:
+  - `/auth/me` también informa la marca cuando el acceso es por token Bearer (`req.passwordChangePending`).
+  - `/auth/refresh` relee `mustChangePassword` e `isActive` de la BD, así un refresh token anterior no esquiva la marca.
+  - La contraseña por defecto se lee una vez y queda en caché.
+
+### Pendiente
+- **Despliegue:** las sesiones de cookie abiertas antes del deploy (hasta 8 h) no traen la marca. Si se quiere un corte inmediato, hay que purgar las `sess:*` de Redis al desplegar.
+- **Residual, anterior al plan:** quien conozca la contraseña por defecto y el username de alguien que todavía no entró puede tomar esa cuenta cambiándole la contraseña. La solución de fondo es una contraseña inicial aleatoria por usuario o un enlace de activación.
+
 ## 2026-09-29 (2) — Plan 015: la API no acepta la contraseña por defecto (aprobado e implementado)
 
 ### Hecho

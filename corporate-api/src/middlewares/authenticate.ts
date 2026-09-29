@@ -115,6 +115,7 @@ async function resolveAuth(
     }
 
     req.user = resolved.user;
+    req.passwordChangePending = resolved.mustChangePassword;
     next();
   } catch (err) {
     if (err instanceof ForbiddenError) {
