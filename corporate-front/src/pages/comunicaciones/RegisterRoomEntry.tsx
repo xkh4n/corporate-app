@@ -5,17 +5,17 @@ import { showErrorToast, showSuccessToast } from "../../components/Toast";
 import { Button, EmptyState, Field, Input, Select } from "../../components/ui";
 import { handleError } from "../../lib/Errors";
 import { commRoomService } from "../../services/commRoomService";
-import { ROOM_ACCESS_TYPE_LABELS, type CommRoom, type RoomEntry } from "../../types/commRoom";
+import { ROOM_ACCESS_TYPE_LABELS, type PortalCommRoom, type RoomEntry } from "../../types/commRoom";
 import { formatDateTime } from "../inventario/inventoryLabels";
 import { PAGE_CLASS, TABLE_WRAP, TD, TH, TITLE_CLASS } from "./commRoomUi";
 
 // Registrar Ingreso (plan 016): quien custodia la sala anota la entrada y la salida de cada persona.
 // Solo entra quien tiene un acceso vigente, aprobado por ticket. El RUT se busca exacto.
-const REQUIRED_PERMISSIONS = ["comm-rooms:read", "comm-room-entries:read", "comm-room-entries:create"] as const;
+const REQUIRED_PERMISSIONS = ["comm-room-entries:read", "comm-room-entries:create"] as const;
 
 export default function RegisterRoomEntry() {
   const navigate = useNavigate();
-  const [rooms, setRooms] = useState<CommRoom[]>([]);
+  const [rooms, setRooms] = useState<PortalCommRoom[]>([]);
   const [roomId, setRoomId] = useState("");
   const [documentId, setDocumentId] = useState("");
   const [notes, setNotes] = useState("");
@@ -25,8 +25,8 @@ export default function RegisterRoomEntry() {
 
   useEffect(() => {
     commRoomService
-      .list({ limit: 200, isActive: true, sortBy: "costCenter", sortOrder: "asc" })
-      .then((res) => setRooms(res.items))
+      .entryRooms()
+      .then(setRooms)
       .catch((error) => handleError(error, navigate));
   }, [navigate]);
 

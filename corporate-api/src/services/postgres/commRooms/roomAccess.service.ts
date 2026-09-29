@@ -1,16 +1,17 @@
 import { QueryTypes, type Transaction } from "sequelize";
 import { postgres } from "../../../databases/postgres/connection";
-import { BadRequestError, ConflictError, NotFoundError } from "../../../library/errors";
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../../../library/errors";
 import type { PaginationParams } from "../../../library/pagination";
 import { getOffset } from "../../../library/pagination";
 import { normalizeRut } from "../../../library/rut";
+import { escapeLikePattern } from "../../../library/sequelizeSearch";
 import {
   roomAccessPeriodError,
   type RoomAccessType,
   type RoomBeneficiaryKind,
 } from "../../../library/serviceDesk/ticketRules";
 import { findBeneficiaryByDocumentId } from "../../mssql/person.service";
-import { getUserDirectory } from "../../mssql/user.service";
+import { getUserById, getUserDirectory } from "../../mssql/user.service";
 import { getSettings } from "./commRoom.service";
 
 // Solicitudes y registros de acceso a salas de comunicaciones (plan 016). La solicitud nace con el
@@ -118,6 +119,7 @@ export interface RoomAccessRequestRow {
   validatedBy: number | null;
   validatedAt: Date | null;
   validationNotes: string | null;
+  validationWarnings: string[];
   accessType: RoomAccessType | null;
   validFrom: Date | null;
   validUntil: Date | null;
@@ -133,6 +135,7 @@ const REQUEST_COLUMNS = `
   q.beneficiary_company AS "beneficiaryCompany", q.reason, q.requested_type AS "requestedType",
   q.requested_from AS "requestedFrom", q.requested_until AS "requestedUntil", q.status,
   q.validated_by AS "validatedBy", q.validated_at AS "validatedAt", q.validation_notes AS "validationNotes",
+  q.validation_warnings AS "validationWarnings",
   q.access_type AS "accessType", q.valid_from AS "validFrom", q.valid_until AS "validUntil",
   q.decided_by AS "decidedBy", q.decided_at AS "decidedAt", q.decision_comment AS "decisionComment"`;
 
@@ -146,10 +149,25 @@ export async function getRequestForTicket(
        FROM comm_room_access_requests q
        JOIN comm_rooms r ON r.id = q.room_id
        JOIN cost_centers cc ON cc.id = r.cost_center_id
-      WHERE q.ticket_id = :ticketId ${options.lock ? "FOR UPDATE OF q" : ""}`,
+      WHERE q.ticket_id = :ticketId ${options.lock ? "FOR UPDATE OF q FOR SHARE OF r" : ""}`,
     { replacements: { ticketId }, type: QueryTypes.SELECT, transaction },
   );
   return row ?? null;
+}
+
+// Separacion de funciones (revision plan 016, M1/M2): el beneficiario no valida ni aprueba su propio
+// acceso, aunque otro haya abierto el ticket. Se compara por persona y por RUT (un externo con el RUT
+// de un colaborador es la misma persona).
+export async function getActorIdentity(userId: number): Promise<{ personId: number | null; documentId: string | null }> {
+  const user = await getUserById(userId);
+  return { personId: user?.personId ?? null, documentId: user?.person?.documentId ? normalizeRut(user.person.documentId) : null };
+}
+
+export async function assertActorIsNotBeneficiary(request: RoomAccessRequestRow, userId: number, message: string): Promise<void> {
+  const { personId, documentId } = await getActorIdentity(userId);
+  if ((personId !== null && request.beneficiaryPersonId === personId) || (documentId !== null && request.beneficiaryDocumentId === documentId)) {
+    throw new ForbiddenError(message);
+  }
 }
 
 export interface RoomAccessValidation {
@@ -199,6 +217,12 @@ export async function markRequestValidated(
       warnings.push(`El acceso temporal supera los ${temporaryMaxActiveDays} días: aparecerá como prolongado`);
     }
   }
+  if (warnings.length > 0) {
+    await postgres.query(`UPDATE comm_room_access_requests SET validation_warnings = ARRAY[:warnings]::text[] WHERE id = :id`, {
+      replacements: { id: request.id, warnings },
+      transaction,
+    });
+  }
   return { roomName: room.name, warnings };
 }
 
@@ -245,8 +269,14 @@ export async function setRequestDecision(
   );
 }
 
-// Anular el ticket (solicitante, agente o rechazo) cierra la solicitud que siga abierta.
+// Anular el ticket (solicitante, agente o rechazo) cierra la solicitud que siga abierta. Un acceso ya
+// aprobado no se anula por el ticket: se revoca en Administrar Salas (revision plan 016, B1).
 export async function cancelOpenRequest(ticketId: number, transaction: Transaction): Promise<void> {
+  const [approved] = await postgres.query(
+    `SELECT 1 FROM comm_room_access_requests WHERE ticket_id = :ticketId AND status = 'APPROVED'`,
+    { replacements: { ticketId }, type: QueryTypes.SELECT, transaction },
+  );
+  if (approved) throw new ConflictError("El acceso a sala ya fue autorizado: revóquelo en Administrar Salas en vez de anular el ticket");
   await postgres.query(
     `UPDATE comm_room_access_requests SET status = 'CANCELLED', updated_at = now()
       WHERE ticket_id = :ticketId AND status IN ('REQUESTED','VALIDATED')`,
@@ -394,7 +424,7 @@ export async function listGrants(params: PaginationParams, filters: GrantFilters
   }
   if (params.search) {
     conditions.push("(g.beneficiary_name ILIKE :search OR g.beneficiary_company ILIKE :search OR r.name ILIKE :search)");
-    replacements.search = `%${params.search}%`;
+    replacements.search = `%${escapeLikePattern(params.search)}%`;
   }
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const order = `${GRANT_SORT_COLUMNS[params.sortBy] ?? "g.id"} ${params.sortOrder === "asc" ? "ASC" : "DESC"} NULLS LAST, g.id DESC`;

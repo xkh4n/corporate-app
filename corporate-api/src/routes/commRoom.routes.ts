@@ -35,6 +35,8 @@ commRoomAccessRouter.post(
 export const commRoomEntryRouter = Router();
 commRoomEntryRouter.use(authenticate);
 
+// Registrar Ingreso elige la sala sin ver direcciones (revision plan 016, L).
+commRoomEntryRouter.get("/rooms", authorize("comm-room-entries", "create"), controller.listEntryRooms);
 commRoomEntryRouter.get("/", authorize("comm-room-entries", "read"), controller.listEntries);
 commRoomEntryRouter.post(
   "/check-in",

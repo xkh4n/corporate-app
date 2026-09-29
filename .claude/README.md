@@ -18,6 +18,34 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-29 (5) — Revisión de seguridad del plan 016
+
+### Resultado
+- La primera ronda terminó con veredictos distintos:
+  - el security-engineer dio **NO-GO**: 2 Medios, 3 Bajos y 4 informativos;
+  - el orquestador dio **GO**, con 1 Bajo.
+- Después de las correcciones, el security-engineer las volvió a revisar y dio **GO**.
+
+### Correcciones
+- **M1:** el beneficiario no aprueba su propio acceso. Se compara por persona y por RUT normalizado, así también cuenta un externo que usa el RUT de un colaborador. Además, esos tickets no aparecen en sus aprobaciones pendientes.
+- **M2:** no valida quien pidió o registró la solicitud, ni el beneficiario.
+- **B1:** un acceso aprobado ya no se anula a través del ticket; se revoca en Administrar Salas.
+- **B2:**
+  - los avisos de la validación salen del evento público y pasan a la columna `validation_warnings`, que ven el agente y el aprobador;
+  - el aprobador que no pertenece al grupo ahora ve las notas del validador.
+- **B3:** aprobar toma `FOR SHARE` sobre la sala, así no puede competir con una desactivación.
+- **I1:** `minPlaces` queda acotado entre 2 y 50.
+- **I2:** las búsquedas ILIKE escapan los comodines (`escapeLikePattern`).
+- **L:**
+  - Registrar Ingreso lista las salas por `GET /comm-room-entries/rooms`, que no devuelve la dirección;
+  - el bundle `comm-room-entry` ya no incluye `comm-rooms:read`;
+  - el campo nuevo `revokedIncludes` del catálogo lo quita de las bases que ya estaban sembradas, en cada arranque. Si un admin lo vuelve a agregar, también se quita.
+- **Pruebas:** 3 de integración nuevas (M1, M2, B1/B2) y cobertura de L e I1 en las pruebas de rutas.
+  - Suite de la API: 54 archivos, 457 pruebas.
+  - Front: tsc, lint, 69 pruebas y build.
+
+---
+
 ## 2026-09-29 (4) — Plan 016: Acceso a Salas de Comunicaciones (aprobado)
 
 ### Hecho

@@ -157,7 +157,9 @@ export async function revokeAccess(req: Request, res: Response, next: NextFuncti
 export async function multiRoomReport(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const by = optionalEnum(req.query.by, ["room", "costCenter"] as const, "Agrupacion") ?? "costCenter";
-    const minPlaces = Math.max(2, Number(queryString(req.query.minPlaces)) || 2);
+    // Acotado a 2..50: un valor no finito (Infinity) llegaba a la consulta y daba 500 (revision plan 016, I1).
+    const requested = Number(queryString(req.query.minPlaces));
+    const minPlaces = Number.isFinite(requested) ? Math.min(50, Math.max(2, Math.trunc(requested))) : 2;
     sendOk(res, await accessService.listMultiRoomHolders(by, minPlaces), "Personas con acceso a varias salas");
   } catch (err) {
     next(err);
@@ -165,6 +167,15 @@ export async function multiRoomReport(req: Request, res: Response, next: NextFun
 }
 
 // ---- Ingresos ----------------------------------------------------------------
+// Salas para Registrar Ingreso: sin la direccion, como el portal (revision plan 016, L).
+export async function listEntryRooms(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    sendOk(res, await roomService.listPortalRooms(), "Salas obtenidas");
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function listEntries(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const params = parsePaginationParams({ ...req.query }, "checkedInAt", "desc", { maxLimit: 200, allowedSortBy: ["checkedInAt"] });

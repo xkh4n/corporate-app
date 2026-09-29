@@ -212,6 +212,55 @@ describe("acceso a sala por ticket (plan 016)", () => {
     await expect(ticketService.decideApproval(ticket.id, { decision: "APPROVED" }, { userId: s.requester.id })).rejects.toBeInstanceOf(ForbiddenError);
   });
 
+  it("revision M1: el aprobador no aprueba un acceso a su nombre, ni como colaborador ni como externo con su RUT", async () => {
+    const s = await scenario();
+    for (const beneficiary of [
+      { kind: "INTERNAL" as const, documentId: s.approver.documentId },
+      { kind: "EXTERNAL" as const, fullName: "Otro nombre", documentId: s.approver.documentId.toLowerCase(), company: "X SpA" },
+    ]) {
+      const ticket = await ticketService.createTicket(requestFor(s, beneficiary), { userId: s.requester.id }, "PORTAL");
+      await ticketService.takeTicket(ticket.id, { userId: s.agent.id });
+      await validate(s, ticket.id);
+      expect((await ticketService.listPendingApprovals({ userId: s.approver.id }, PAGE)).items.map((t) => t.id)).not.toContain(ticket.id);
+      await expect(ticketService.decideApproval(ticket.id, { decision: "APPROVED" }, { userId: s.approver.id })).rejects.toBeInstanceOf(ForbiddenError);
+    }
+  });
+
+  it("revision M2: el agente no valida lo que pidio ni un acceso a su nombre", async () => {
+    const s = await scenario();
+    // El agente pide para un externo y toma su propio ticket.
+    const own = await ticketService.createTicket(
+      requestFor(s, { kind: "EXTERNAL", fullName: "Juan Técnico", documentId: "12345678-5", company: "Redes SpA" }),
+      { userId: s.agent.id },
+      "PORTAL",
+    );
+    await ticketService.takeTicket(own.id, { userId: s.agent.id });
+    await expect(validate(s, own.id)).rejects.toBeInstanceOf(ForbiddenError);
+    // Otro pide acceso para el agente.
+    const forAgent = await ticketService.createTicket(requestFor(s, { kind: "INTERNAL", documentId: s.agent.documentId }), { userId: s.requester.id }, "PORTAL");
+    await ticketService.takeTicket(forAgent.id, { userId: s.agent.id });
+    await expect(validate(s, forAgent.id)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("revision B1/B2: un acceso aprobado no se anula por el ticket; los avisos no llegan al solicitante", async () => {
+    const s = await scenario();
+    const { ticket } = await approvedGrant(s);
+    await ticketService.requesterAction(ticket.id, "reopen", { comment: "Necesito otra cosa" }, { userId: s.requester.id });
+    const reopened = await ticketService.getTicketDetail(ticket.id, { audience: "agent" });
+    expect(reopened.allowedTransitions).not.toContain("CANCELLED");
+    await expect(ticketService.changeStatus(ticket.id, { status: "CANCELLED", comment: "x" }, { userId: s.agent.id })).rejects.toBeInstanceOf(ConflictError);
+
+    // Segundo pedido para el mismo externo: el aviso de acceso vigente lo ve el agente, no el solicitante.
+    const second = await openTicket(s);
+    await ticketService.takeTicket(second.id, { userId: s.agent.id });
+    const { warnings } = await validate(s, second.id);
+    expect(warnings).toContain("El beneficiario ya tiene un acceso vigente a esta sala");
+    expect((await ticketService.getTicketDetail(second.id, { audience: "agent" })).roomAccess?.validationWarnings).toEqual(warnings);
+    const forRequester = await ticketService.getTicketDetail(second.id, { audience: "requester", requesterUserId: s.requester.id });
+    expect(forRequester.roomAccess?.validationWarnings).toEqual([]);
+    expect(JSON.stringify(forRequester.events)).not.toContain("acceso vigente");
+  });
+
   it("aprobar crea el registro de acceso vigente y resuelve el ticket", async () => {
     const s = await scenario();
     const { ticket, grant } = await approvedGrant(s);

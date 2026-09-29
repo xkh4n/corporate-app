@@ -91,6 +91,11 @@ describe("pantallas de Acceso Sala (plan 016)", () => {
     // Sin acceso vigente: 409 (el permiso alcanza, la regla de negocio rechaza).
     expect((await api("/comm-room-entries/check-in", token, "POST", { roomId: created.id, documentId: "12345678-5" })).status).toBe(409);
     expect((await api("/comm-room-entries", token)).status).toBe(200);
+    // Elige la sala sin ver direcciones (revision L): no lista /comm-rooms.
+    const roomsRes = await api("/comm-room-entries/rooms", token);
+    expect(roomsRes.status).toBe(200);
+    expect(((await roomsRes.json()) as { data: Record<string, unknown>[] }).data[0]).not.toHaveProperty("address");
+    expect((await api("/comm-rooms", token)).status).toBe(403);
     expect((await api("/comm-room-accesses", token)).status).toBe(403);
     expect((await api("/comm-room-accesses/1/revoke", token, "POST", { reason: "x" })).status).toBe(403);
     expect((await api(`/comm-rooms/${created.id}`, token, "PUT", { name: "X", costCenterId: created.costCenterId, address: "Y" })).status).toBe(403);
@@ -101,6 +106,8 @@ describe("pantallas de Acceso Sala (plan 016)", () => {
     const token = await tokenWith(["comm-room-access-report:access"]);
     expect((await api("/comm-room-accesses?validNow=true", token)).status).toBe(200);
     expect((await api("/comm-room-accesses/reports/multi-room", token)).status).toBe(200);
+    // Un minimo no finito ya no llega a la consulta (revision I1).
+    expect((await api("/comm-room-accesses/reports/multi-room?minPlaces=Infinity", token)).status).toBe(200);
     expect((await api("/comm-room-accesses/1/revoke", token, "POST", { reason: "x" })).status).toBe(403);
     expect((await api("/comm-room-entries/check-in", token, "POST", { roomId: created.id, documentId: "12345678-5" })).status).toBe(403);
   });

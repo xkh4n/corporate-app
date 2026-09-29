@@ -43,7 +43,9 @@ import { hasPermission } from "../permission.service";
 import { getRoleByIdOrThrow } from "../role.service";
 import { nextServiceDeskNumber } from "./numbering";
 import {
+  assertActorIsNotBeneficiary,
   cancelOpenRequest,
+  getActorIdentity,
   createGrantFromRequest,
   getRequestForTicket,
   insertAccessRequest,
@@ -266,6 +268,7 @@ export interface TicketRoomAccess {
   validatedAt: Date | null;
   // Solo para el agente: lo interno de la validacion.
   validationNotes: string | null;
+  validationWarnings: string[];
   decidedByName: string | null;
   decidedAt: Date | null;
   grantId: number | null;
@@ -1027,7 +1030,9 @@ export async function getTicketDetail(id: number, options: DetailOptions): Promi
           validUntil: roomRequest.validUntil,
           validatedByName: nameOf(roomRequest.validatedBy),
           validatedAt: roomRequest.validatedAt,
-          validationNotes: publicOnly ? null : roomRequest.validationNotes,
+          // El aprobador decide con las notas y avisos del validador; el solicitante no los ve (revision plan 016, B2).
+      validationNotes: options.audience === "requester" ? null : roomRequest.validationNotes,
+      validationWarnings: options.audience === "requester" ? [] : roomRequest.validationWarnings,
           decidedByName: nameOf(roomRequest.decidedBy),
           decidedAt: roomRequest.decidedAt,
           grantId: grant?.id ?? null,
@@ -1049,8 +1054,10 @@ async function getGrantOfRequest(requestId: number): Promise<{ id: number; statu
 }
 
 // Un acceso a sala solo se resuelve al aprobarse (decideApproval): el agente no lo resuelve a mano (plan 016).
+// Y un acceso aprobado no se anula por el ticket: se revoca en Administrar Salas (revision plan 016, B1).
 function isBlockedByRoomAccess(request: RoomAccessRequestRow | null, to: TicketStatus): boolean {
-  return request !== null && to === "RESOLVED" && request.status !== "APPROVED";
+  if (request === null) return false;
+  return (to === "RESOLVED" && request.status !== "APPROVED") || (to === "CANCELLED" && request.status === "APPROVED");
 }
 
 // Estado en vivo de la compra; si MSSQL no responde, el ultimo aplicado al ticket.
@@ -1587,6 +1594,8 @@ export async function decideApproval(
     if (roomRequest && roomRequest.validatedBy === actor.userId) {
       throw new ForbiddenError("No puede aprobar un acceso que usted validó");
     }
+    // Ni el beneficiario, aunque otro haya pedido el acceso (revision plan 016, M1).
+    if (roomRequest) await assertActorIsNotBeneficiary(roomRequest, actor.userId, "No puede aprobar un acceso a su propio nombre");
 
     await postgres.query(
       `INSERT INTO service_ticket_approvals (ticket_id, approver_user_id, decision, comment) VALUES (:id, :userId, :decision, :comment)`,
@@ -1683,6 +1692,11 @@ export async function submitRoomAccessForApproval(
     }
     const request = await getRequestForTicket(id, transaction, { lock: true });
     if (!request) throw new ConflictError(`El ticket ${row.number} no es una solicitud de acceso a sala`);
+    // Quien pide, registra o recibe el acceso no lo valida (revision plan 016, M2).
+    if (row.requesterUserId === actor.userId || row.openedBy === actor.userId) {
+      throw new ForbiddenError("No puede validar una solicitud que usted pidió o registró");
+    }
+    await assertActorIsNotBeneficiary(request, actor.userId, "No puede validar un acceso a su propio nombre");
     const item = row.catalogItemId ? await getCatalogItem(row.catalogItemId, transaction) : null;
     if (!item?.approvalGroupId) {
       throw new ConflictError("El servicio no tiene grupo aprobador: configúrelo en el Service Desk");
@@ -1705,7 +1719,7 @@ export async function submitRoomAccessForApproval(
     await addEvent(transaction, id, "ROOM_ACCESS_VALIDATED", actor.userId, {
       isPublic: true,
       body: `Validado: sala ${roomName}, acceso ${ROOM_ACCESS_TYPE_LABELS[input.accessType]} desde ${SANTIAGO_FORMAT.format(new Date(input.validFrom))}${until}. Pasa a aprobación del responsable.`,
-      payload: { roomId: input.roomId, accessType: input.accessType, warnings },
+      payload: { roomId: input.roomId, accessType: input.accessType },
     });
     await markFirstResponse(row, transaction);
     return { row, groupId: item.approvalGroupId, warnings };
@@ -1723,16 +1737,21 @@ export async function submitRoomAccessForApproval(
 
 // Solicitudes que el usuario puede aprobar (miembro del grupo aprobador, no propias).
 export async function listPendingApprovals(actor: TicketActor, params: PaginationParams): Promise<{ items: TicketSummary[]; total: number }> {
+  // Ni los accesos a sala a su propio nombre (revision plan 016, M1).
+  const identity = await getActorIdentity(actor.userId);
   const where = `WHERE t.status = 'PENDING_APPROVAL' AND t.requester_user_id <> :userId AND t.opened_by <> :userId
-                   AND EXISTS (SELECT 1 FROM support_group_members m WHERE m.group_id = t.approval_group_id AND m.user_id = :userId)`;
+                   AND EXISTS (SELECT 1 FROM support_group_members m WHERE m.group_id = t.approval_group_id AND m.user_id = :userId)
+                   AND NOT EXISTS (SELECT 1 FROM comm_room_access_requests q WHERE q.ticket_id = t.id
+                                     AND (q.beneficiary_person_id = :personId OR q.beneficiary_document_id = :documentId))`;
+  const identityReplacements = { personId: identity.personId ?? -1, documentId: identity.documentId ?? "" };
   const [countRow] = await postgres.query<{ total: number }>(`SELECT COUNT(*)::int AS total ${LIST_FROM} ${where}`, {
-    replacements: { userId: actor.userId },
+    replacements: { userId: actor.userId, ...identityReplacements },
     type: QueryTypes.SELECT,
   });
   const rows = await postgres.query<ListRow>(
     `SELECT ${ROW_COLUMNS}, c.name AS "categoryName", ci.name AS "catalogItemName", g.name AS "assignedGroupName"
        ${LIST_FROM} ${where} ORDER BY t.id LIMIT :limit OFFSET :offset`,
-    { replacements: { userId: actor.userId, limit: params.limit, offset: getOffset(params) }, type: QueryTypes.SELECT },
+    { replacements: { userId: actor.userId, ...identityReplacements, limit: params.limit, offset: getOffset(params) }, type: QueryTypes.SELECT },
   );
   return { items: await withNames(rows), total: countRow?.total ?? 0 };
 }

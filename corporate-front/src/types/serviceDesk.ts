@@ -141,6 +141,7 @@ export interface TicketRoomAccess {
   validatedByName: string | null;
   validatedAt: string | null;
   validationNotes: string | null;
+  validationWarnings: string[];
   decidedByName: string | null;
   decidedAt: string | null;
   grantId: number | null;

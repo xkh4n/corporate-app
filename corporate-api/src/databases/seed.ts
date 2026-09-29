@@ -159,8 +159,23 @@ async function seedScreenAccessIncludes(allPermissions: PermissionModel[], admin
       }
       return id;
     });
-    return { accessId, includedIds: [...new Set(includedIds)] };
+    const revokedIds = (entry.revokedIncludes ?? []).map((key) => {
+      const id = idByKey.get(key);
+      if (id === undefined || entry.includes.includes(key)) {
+        throw new Error(`SCREEN_ACCESS_CATALOG: "${entry.resource}" revoca "${key}", que no existe o tambien esta en includes.`);
+      }
+      return id;
+    });
+    return { accessId, includedIds: [...new Set(includedIds)], revokedIds };
   });
+
+  // Correcciones de seguridad del minimo: se quitan siempre (idempotente).
+  for (const bundle of bundles) {
+    const { revokedIds } = bundle;
+    if (revokedIds.length === 0) continue;
+    const removed = await PermissionIncludeModel.destroy({ where: { permissionId: bundle.accessId, includedPermissionId: revokedIds } });
+    if (removed > 0) logger.info({ removed, permissionId: bundle.accessId }, "Permisos de pantalla: includes revocados por el catalogo");
+  }
 
   const seeded = await PermissionIncludeModel.findAll({
     where: { permissionId: bundles.map((bundle) => bundle.accessId) },

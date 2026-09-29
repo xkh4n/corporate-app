@@ -297,6 +297,9 @@ export interface ScreenAccessCatalogEntry {
   // API no deja quitarlos desde "Permisos de Pantalla". Lo que el admin
   // agregue por encima de este minimo se conserva y se puede quitar.
   includes: string[];
+  // Permisos que la pantalla NO debe incluir: se quitan en cada arranque aunque una version anterior
+  // del catalogo (o el admin) los haya agregado. Para corregir de seguridad un minimo ya sembrado.
+  revokedIncludes?: string[];
 }
 
 // Permisos de pantalla (agrupadores, plan 006): al rol se le asigna uno por
@@ -653,7 +656,10 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
   {
     resource: "comm-room-entry",
     description: "Pantalla: Registrar Ingreso",
-    includes: ["comm-rooms:read", "comm-room-entries:read", "comm-room-entries:create"],
+    // Sin comm-rooms:read: lista las salas por /comm-room-entries/rooms, sin la direccion
+    // (revision plan 016, L). La primera version lo incluia: se quita de las bases ya sembradas.
+    includes: ["comm-room-entries:read", "comm-room-entries:create"],
+    revokedIncludes: ["comm-rooms:read"],
   },
   {
     resource: "comm-room-access-report",

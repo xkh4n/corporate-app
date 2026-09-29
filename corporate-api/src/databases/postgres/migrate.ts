@@ -1503,6 +1503,8 @@ async function migrateCommRooms(): Promise<void> {
         OR (validated_by IS NOT NULL AND access_type IS NOT NULL AND valid_from IS NOT NULL))
     );
   `);
+  // Avisos de la validacion: los ve el agente y el aprobador, nunca el solicitante (revision plan 016, B2).
+  await runDdl(`ALTER TABLE comm_room_access_requests ADD COLUMN IF NOT EXISTS validation_warnings TEXT[] NOT NULL DEFAULT '{}';`);
 
   await runDdl(`
     CREATE TABLE IF NOT EXISTS comm_room_access_grants (

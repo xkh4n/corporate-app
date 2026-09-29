@@ -4,6 +4,7 @@ import { BadRequestError, ConflictError, NotFoundError } from "../../../library/
 import { isUniqueConstraintError } from "../../../library/errors";
 import type { PaginationParams } from "../../../library/pagination";
 import { getOffset } from "../../../library/pagination";
+import { escapeLikePattern } from "../../../library/sequelizeSearch";
 
 // Salas de comunicaciones (plan 016): cada una depende de un centro de costo (tienda, sucursal).
 
@@ -60,7 +61,7 @@ export async function listRooms(params: PaginationParams, filters: CommRoomFilte
   }
   if (params.search) {
     conditions.push("(r.name ILIKE :search OR cc.name ILIKE :search OR r.address ILIKE :search)");
-    replacements.search = `%${params.search}%`;
+    replacements.search = `%${escapeLikePattern(params.search)}%`;
   }
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const order = `${SORT_COLUMNS[params.sortBy] ?? "r.id"} ${params.sortOrder === "asc" ? "ASC" : "DESC"}, r.id`;

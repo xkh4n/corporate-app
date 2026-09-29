@@ -60,6 +60,7 @@ export function RoomAccessPanel({
           />
         )}
         {access.validationNotes && <Item label="Notas de validación" value={access.validationNotes} />}
+        {access.validationWarnings.length > 0 && <Item label="Avisos de la validación" value={access.validationWarnings.join(" · ")} />}
         {access.decidedByName && <Item label="Decidió" value={access.decidedByName} />}
       </dl>
       {!canValidate && access.status === "REQUESTED" && (

@@ -6,6 +6,7 @@ import type {
   CommRoomInput,
   CommRoomSettings,
   MultiRoomHolder,
+  PortalCommRoom,
   RoomAccessGrant,
   RoomAccessGrantDetail,
   RoomAccessGrantFilters,
@@ -33,6 +34,8 @@ export const commRoomService = {
   multiRoomHolders: (by: "room" | "costCenter", minPlaces = 2) =>
     apiFetch<MultiRoomHolder[]>(`/comm-room-accesses/reports/multi-room${toQuery({ by, minPlaces })}`),
 
+  // Salas para Registrar Ingreso, sin la direccion.
+  entryRooms: () => apiFetch<PortalCommRoom[]>("/comm-room-entries/rooms"),
   listEntries: (filters?: RoomEntryFilters) => apiFetch<Paginated<RoomEntry>>(`/comm-room-entries${toQuery(filters)}`),
   checkIn: (body: { roomId: number; documentId: string; notes?: string }) =>
     apiFetch<RoomEntry>("/comm-room-entries/check-in", { method: "POST", body }),
