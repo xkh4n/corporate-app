@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { ZodError } from "zod";
 import { seedTestDataSchema, type SeedTestData } from "./seedTestData.schema";
 import { env } from "../library/env";
 import { logger } from "../library/logger";
@@ -6,6 +7,8 @@ import { isUniqueConstraintError } from "../library/errors";
 import { PermissionModel } from "../models/postgres/permission.model";
 import { PositionModel } from "../models/mongo/position.model";
 import { PersonModel } from "../models/mssql/person.model";
+import { AddressModel } from "../models/mssql/address.model";
+import { EmployeePrevisionalProfileModel } from "../models/mssql/employeePrevisionalProfile.model";
 import { StateModel } from "../models/mssql/state.model";
 import { PrevisionalInstitutionModel } from "../models/mssql/previsionalInstitution.model";
 import type { EmployeeContractType } from "../models/mssql/employeeContract.model";
@@ -55,7 +58,12 @@ export async function seedTestData(): Promise<void> {
     if (raw === "") return;
     data = seedTestDataSchema.parse(JSON.parse(raw));
   } catch (err) {
-    logger.error({ err }, "Datos de prueba: el archivo no es valido, se omite la siembra");
+    // Sin el error completo: JSON.parse y Zod traen trozos del archivo (RUT, nombres) en el mensaje.
+    const issues = err instanceof ZodError ? err.issues.map((i) => i.path.join(".")) : undefined;
+    logger.error(
+      { errName: err instanceof Error ? err.name : "unknown", issues },
+      "Datos de prueba: el archivo no es valido, se omite la siembra",
+    );
     return;
   }
 
@@ -161,18 +169,16 @@ async function seedCompany(data: SeedTestData, adminId: number | undefined): Pro
 // en el siguiente.
 async function seedEmployee(employee: SeedTestData["employees"][number], adminId: number | undefined): Promise<void> {
   let person = await PersonModel.findOne({ where: { documentId: employee.person.documentId } });
-  let personIsNew = false;
   if (!person) {
     try {
       person = await createPerson(employee.person);
-      personIsNew = true;
     } catch (err) {
       if (!isUniqueConstraintError(err)) throw err;
       return; // otra replica lo esta creando
     }
   }
 
-  if (personIsNew) {
+  if ((await AddressModel.count({ where: { personId: person.id } })) === 0) {
     const state = await StateModel.findOne({ where: { territorialCode: employee.address.stateTerritorialCode } });
     if (!state) throw new Error(`No existe la comuna ${employee.address.stateTerritorialCode}`);
     await createAddress({
@@ -209,7 +215,11 @@ async function seedEmployee(employee: SeedTestData["employees"][number], adminId
       } as EmployeeContractInput,
       adminId,
     );
-    const { previsional } = employee;
+  }
+
+  const { previsional } = employee;
+  const profile = await EmployeePrevisionalProfileModel.findOne({ where: { employeeId: employeeRow.id } });
+  if (!profile?.regime) {
     await assignPension(
       employeeRow.id,
       {
@@ -219,6 +229,8 @@ async function seedEmployee(employee: SeedTestData["employees"][number], adminId
       },
       adminId,
     );
+  }
+  if (!profile?.healthInstitutionId) {
     await assignHealth(
       employeeRow.id,
       {
