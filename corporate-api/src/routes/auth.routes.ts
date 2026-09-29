@@ -11,7 +11,7 @@ import {
   changePasswordSchema,
 } from "../controllers/auth.controller";
 import { validateBody } from "../middlewares/validate";
-import { authenticate } from "../middlewares/authenticate";
+import { authenticateAllowingPasswordChange } from "../middlewares/authenticate";
 import { loginRateLimiter } from "../middlewares/rateLimit";
 
 export const authRouter = Router();
@@ -19,6 +19,7 @@ export const authRouter = Router();
 authRouter.post("/login", loginRateLimiter, validateBody(loginSchema), login);
 authRouter.post("/refresh", validateBody(refreshSchema), refresh);
 authRouter.post("/logout", logout);
-authRouter.get("/me", authenticate, me);
-authRouter.get("/menu", authenticate, menu);
-authRouter.patch("/change-password", authenticate, validateBody(changePasswordSchema), changePassword);
+// Plan 015: las unicas rutas que una cuenta con cambio de password pendiente puede usar.
+authRouter.get("/me", authenticateAllowingPasswordChange, me);
+authRouter.get("/menu", authenticateAllowingPasswordChange, menu);
+authRouter.patch("/change-password", authenticateAllowingPasswordChange, validateBody(changePasswordSchema), changePassword);
