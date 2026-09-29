@@ -79,6 +79,12 @@ export async function initSocketServer(
       return;
     }
 
+    // Plan 015: sin socket mientras la password por defecto no se haya cambiado.
+    if (user.mustChangePassword) {
+      next(new Error("Debe cambiar su contraseña"));
+      return;
+    }
+
     socket.data.userId = user.userId;
     socket.data.personId = user.personId;
     next();

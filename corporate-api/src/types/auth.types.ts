@@ -8,6 +8,8 @@ export interface JwtPayload {
   roleName: string;
   type: TokenType;
   jti?: string;
+  // Plan 015: la sesion entro con una password que el usuario no eligio (ver authenticate.ts).
+  mustChangePassword?: boolean;
   // Agregado automaticamente por jsonwebtoken al firmar (epoch seconds), no
   // se setea a mano -se usa en authenticate.ts para el watermark de
   // invalidacion (ver services/redis/session.service.ts).

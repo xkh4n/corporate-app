@@ -18,6 +18,28 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-29 (2) — Plan 015: la API no acepta la contraseña por defecto (aprobado e implementado)
+
+### Hecho
+- Plan aprobado y copiado a [`planes/015-contrasena-por-defecto-bloqueada.html`](planes/015-contrasena-por-defecto-bloqueada.html). Cierra el hallazgo L1 de la revisión del 2026-09-29.
+- **Marca al iniciar sesión:** la sesión Redis (o el JWT, si se piden tokens) queda marcada cuando el usuario tiene `mustChangePassword` o entra con la contraseña por defecto. `/auth/refresh` conserva la marca.
+- **Bloqueo:** `authenticate` responde 403 con `reason: "password_change_required"`. Solo pasan `/auth/me`, `/auth/menu` y `/auth/change-password` (`authenticateAllowingPasswordChange`). Socket.IO también rechaza el handshake.
+- **Contraseña nueva:** `PATCH /auth/change-password` rechaza la contraseña por defecto con 400.
+- El front no cambia: `/auth/me` ya informaba `mustChangePassword` y ahora también toma en cuenta la marca de la sesión.
+
+### Verificación
+- `passwordChangeRequired.routes.integration.test.ts`:
+  - login real: 403 en una ruta de negocio;
+  - `/auth/me` y `/auth/menu` responden 200;
+  - usar la contraseña por defecto como nueva da 400;
+  - el cambio da 204 y el siguiente login tiene acceso;
+  - la contraseña por defecto bloquea aunque la cuenta no tenga el flag.
+- `tsc` limpio. Suite completa: 51 archivos, 428 pruebas OK.
+
+### Pendiente
+- Las sesiones abiertas antes del despliegue no traen la marca. Se aplica desde el siguiente inicio de sesión.
+- Revisión de seguridad y promoción a master.
+
 ## 2026-09-29 (1) — Revisión de seguridad y promoción del plan 014 a master (PR #39, #40)
 
 ### Hecho
