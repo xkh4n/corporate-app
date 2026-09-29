@@ -18,6 +18,26 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-29 (6) — Redespliegue de los 3 ambientes con volúmenes nuevos
+
+### Hecho
+- El usuario volvió a crear dev, Testing y producción con volúmenes nuevos. Con eso quedan desplegados los planes 012 a 016.
+- **Réplicas de la API:** healthy y sin errores en los logs.
+- **Postgres (`corpdbpg`), los tres ambientes con el mismo resultado:**
+  - las 5 tablas `comm_room*` y la columna `validation_warnings`;
+  - el ítem ROOM_ACCESS y el grupo «Responsable TI / Seguridad»;
+  - 11 permisos `comm-room*`;
+  - el bundle `comm-room-entry` sin `comm-rooms:read`.
+
+### Pendiente
+- En cada ambiente:
+  - agregar miembros a «Responsable TI / Seguridad»;
+  - asignar a los roles los 4 bundles `comm-room-*:access`;
+  - crear las salas.
+- Probar en el navegador los planes 012 a 016.
+
+---
+
 ## 2026-09-29 (5) — Revisión de seguridad del plan 016
 
 ### Resultado
@@ -43,6 +63,18 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 - **Pruebas:** 3 de integración nuevas (M1, M2, B1/B2) y cobertura de L e I1 en las pruebas de rutas.
   - Suite de la API: 54 archivos, 457 pruebas.
   - Front: tsc, lint, 69 pruebas y build.
+
+### Promoción
+- PR #43 `develop → testing` pasó el CI y se hizo el merge. El gate de seguridad quedó marcado sobre `5e6af63`.
+- PR #44 `release/master → master`. `promote-to-master` excluyó las 3 pruebas del plan 016 y `master` quedó en `0233437`.
+
+### Pendiente
+- Redesplegar Testing y producción.
+- En cada ambiente:
+  - agregar miembros a «Responsable TI / Seguridad»;
+  - asignar a los roles los 4 bundles `comm-room-*:access`;
+  - crear las salas.
+- Probar en el navegador.
 
 ---
 
