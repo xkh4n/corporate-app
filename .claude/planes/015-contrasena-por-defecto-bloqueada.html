@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>015 — Contraseña por defecto no aceptada por la API (marca de cambio obligatorio)</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:900px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.5rem; font-size:1.25rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  h3 { margin-top:1.6rem; font-size:1.05rem; }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }
+  th, td { border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 015</span>
+  <h1>Contraseña por defecto no aceptada por la API (marca de cambio obligatorio)</h1>
+  <div class="meta">corporate-app · corporate-api · Estado: aprobado · 2026-09-29</div>
+</header>
+
+<h2>Contexto</h2>
+<p>En la revisión de seguridad del plan 014 (hallazgo L1) quedó en evidencia que <code>mustChangePassword</code> solo lo aplica el front. Un usuario con la contraseña por defecto (Nuevo Ingreso, semilla de prueba o reset del admin) puede llamar a la API directo y operar con todos los permisos de su rol sin cambiarla nunca. El usuario pidió una «marca de agua» para que la API no acepte la contraseña por defecto.</p>
+
+<h2>Diseño</h2>
+<ol>
+<li><strong>Marca al iniciar sesión.</strong> Si el usuario tiene <code>mustChangePassword</code>, o entra con la contraseña por defecto aunque no lo tenga, la sesión Redis guarda <code>mustChangePassword: true</code>. Si pidió tokens, el JWT lleva el mismo claim y <code>/auth/refresh</code> lo conserva.</li>
+<li><strong>Bloqueo en <code>authenticate</code>.</strong> Con la marca activa, toda ruta responde 403 con <code>reason: "password_change_required"</code>. Las excepciones son <code>/auth/me</code>, <code>/auth/menu</code> y <code>/auth/change-password</code>, que usan <code>authenticateAllowingPasswordChange</code>. <code>/auth/logout</code> no requiere sesión. El handshake de Socket.IO también se rechaza.</li>
+<li><strong>Cómo se quita la marca.</strong> Solo cambiando la contraseña: el cambio invalida todas las sesiones, así que el siguiente inicio de sesión entra sin marca. No se consulta la base en cada request.</li>
+<li><strong>Contraseña nueva.</strong> <code>PATCH /auth/change-password</code> rechaza la contraseña por defecto con «No puede usar la contraseña por defecto».</li>
+</ol>
+
+<h2>Archivos</h2>
+<ul>
+<li><code>middlewares/authenticate.ts</code>: la marca y el middleware permisivo.</li>
+<li><code>controllers/auth.controller.ts</code>: marca en <code>login</code> y <code>refresh</code>; rechazo de la contraseña por defecto.</li>
+<li><code>routes/auth.routes.ts</code>, <code>library/realtime/socketServer.ts</code>.</li>
+<li><code>types/auth.types.ts</code>, <code>types/redis/session.types.ts</code>, <code>library/errors.ts</code> (<code>ForbiddenError</code> con <code>details</code>).</li>
+<li>El front no cambia: ya redirige a <code>/change-password</code>.</li>
+</ul>
+
+<h2>Verificación</h2>
+<ul>
+<li>Prueba de integración:
+  <ul>
+  <li>un usuario recién creado inicia sesión y recibe 403 en una ruta de negocio;</li>
+  <li>sí puede usar <code>/auth/me</code> y cambiar la contraseña;</li>
+  <li>elegir la contraseña por defecto da 400;</li>
+  <li>después del cambio, un nuevo inicio de sesión no queda bloqueado.</li>
+  </ul>
+</li>
+<li>tsc, pruebas unitarias e integración.</li>
+<li>Revisión de seguridad antes de ir a master.</li>
+</ul>
+
+<footer class="doc-footer">Plan 015 · aprobado por el usuario el 2026-09-29</footer>
+</div>
+</body>
+</html>

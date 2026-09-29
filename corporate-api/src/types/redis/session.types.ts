@@ -9,6 +9,9 @@ export interface SessionUserData {
   roleId: number;
   roleName: string;
   loginAt: string;
+  // Plan 015: mientras sea true, authenticate.ts solo deja pasar /auth/me, /auth/menu y el cambio de
+  // password. Se fija en el login y no se actualiza: cambiar la password invalida la sesion entera.
+  mustChangePassword?: boolean;
 }
 
 declare module "express-session" {

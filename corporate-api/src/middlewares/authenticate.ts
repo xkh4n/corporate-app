@@ -1,13 +1,14 @@
 import type { NextFunction, Request, Response } from "express";
 import { env } from "../library/env";
 import { verifyAccessToken } from "../library/jwt";
-import { UnauthorizedError } from "../library/errors";
+import { ForbiddenError, UnauthorizedError } from "../library/errors";
 import { getUserInvalidation, type InvalidationReason } from "../services/redis/session.service";
 import type { AuthenticatedUser } from "../types/auth.types";
 
 interface ResolvedAuth {
   user: AuthenticatedUser;
   issuedAt: number; // epoch seconds - momento en que se emitio el token/sesion
+  mustChangePassword: boolean;
 }
 
 function fromSession(req: Request): ResolvedAuth | undefined {
@@ -22,6 +23,7 @@ function fromSession(req: Request): ResolvedAuth | undefined {
       roleName: sessionUser.roleName,
     },
     issuedAt: Math.floor(new Date(sessionUser.loginAt).getTime() / 1000),
+    mustChangePassword: sessionUser.mustChangePassword === true,
   };
 }
 
@@ -40,6 +42,7 @@ function fromBearerToken(req: Request): ResolvedAuth | undefined {
       roleName: payload.roleName,
     },
     issuedAt: payload.iat ?? 0,
+    mustChangePassword: payload.mustChangePassword === true,
   };
 }
 
@@ -53,10 +56,27 @@ const INVALIDATION_MESSAGES: Partial<Record<InvalidationReason, string>> = {
   password_changed: "Su sesion expiro porque se actualizo su contraseña. Inicie sesion nuevamente.",
 };
 
+export const PASSWORD_CHANGE_REQUIRED = "password_change_required";
+
 // Acepta sesion Redis (cookie) O JWT access token (Authorization: Bearer),
 // en ese orden -clientes con cookie (front web) y clientes stateless
 // (mobile/integraciones) conviven con el mismo guard.
-export async function authenticate(req: Request, _res: Response, next: NextFunction): Promise<void> {
+export async function authenticate(req: Request, res: Response, next: NextFunction): Promise<void> {
+  await resolveAuth(req, res, next, false);
+}
+
+// Plan 015: solo para /auth/me, /auth/menu y /auth/change-password, lo minimo para que una cuenta que
+// entro con una password que no eligio pueda cambiarla. Cualquier otra ruta usa authenticate.
+export async function authenticateAllowingPasswordChange(req: Request, res: Response, next: NextFunction): Promise<void> {
+  await resolveAuth(req, res, next, true);
+}
+
+async function resolveAuth(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+  allowPendingPasswordChange: boolean,
+): Promise<void> {
   if (env.flags.disableAuth) {
     next();
     return;
@@ -88,9 +108,20 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       );
     }
 
+    // Plan 015: la API no acepta la password por defecto (ni la de un reset administrativo) para
+    // operar; el front ya redirige a /change-password, esto cierra el mismo camino llamando directo.
+    if (resolved.mustChangePassword && !allowPendingPasswordChange) {
+      throw new ForbiddenError("Debe cambiar su contraseña antes de continuar", { reason: PASSWORD_CHANGE_REQUIRED });
+    }
+
     req.user = resolved.user;
+    req.passwordChangePending = resolved.mustChangePassword;
     next();
   } catch (err) {
+    if (err instanceof ForbiddenError) {
+      next(err);
+      return;
+    }
     next(err instanceof UnauthorizedError ? err : new UnauthorizedError("Token invalido o expirado"));
   }
 }

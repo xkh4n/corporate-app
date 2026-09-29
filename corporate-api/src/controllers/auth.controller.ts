@@ -20,7 +20,9 @@ import {
   revokeAllRefreshTokens,
   invalidateUserSessions,
 } from "../services/redis/session.service";
-import { UnauthorizedError } from "../library/errors";
+import { BadRequestError, UnauthorizedError } from "../library/errors";
+import { env } from "../library/env";
+import { readSecretFromEnv } from "../library/secrets";
 import { sendOk, sendNoContent } from "../library/response";
 import type { AuthenticatedUser } from "../types/auth.types";
 
@@ -47,7 +49,16 @@ export const changePasswordSchema = z.object({
   newPassword: z.string().min(1),
 });
 
-async function issueTokenPair(user: AuthenticatedUser) {
+// Plan 015: la password por defecto nunca habilita la API, aunque la cuenta no tenga
+// mustChangePassword (p. ej. alguien que la eligio antes de que existiera este chequeo).
+// Se lee una vez (mismo criterio que los secrets JWT): evita un readFileSync en cada login.
+let defaultPassword: string | undefined;
+function isDefaultPassword(password: string): boolean {
+  defaultPassword ??= readSecretFromEnv(env.users.defaultPasswordFileVar);
+  return password === defaultPassword;
+}
+
+async function issueTokenPair(user: AuthenticatedUser, mustChangePassword: boolean) {
   const jti = randomUUID();
   const basePayload = {
     sub: user.userId,
@@ -55,6 +66,7 @@ async function issueTokenPair(user: AuthenticatedUser) {
     username: user.username,
     roleId: user.roleId,
     roleName: user.roleName,
+    ...(mustChangePassword ? { mustChangePassword: true } : {}),
   };
   const accessToken = signAccessToken(basePayload);
   const refreshToken = signRefreshToken(basePayload, jti);
@@ -91,6 +103,8 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
       roleId: role.id,
       roleName: role.name,
     };
+    // Marca de cambio obligatorio (ver authenticate.ts): se fija aca y dura lo que dure la sesion.
+    const mustChangePassword = user.mustChangePassword || isDefaultPassword(password);
 
     // Regenerar el id de sesion en el login (session fixation): la sesion
     // vieja (anonima, pre-login) nunca se reutiliza para una ya autenticada.
@@ -104,9 +118,10 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
       roleId: authUser.roleId,
       roleName: authUser.roleName,
       loginAt: new Date().toISOString(),
+      ...(mustChangePassword ? { mustChangePassword: true } : {}),
     };
 
-    const tokens = issueTokens ? await issueTokenPair(authUser) : undefined;
+    const tokens = issueTokens ? await issueTokenPair(authUser, mustChangePassword) : undefined;
     await touchLastLogin(authUser.userId);
 
     sendOk(res, { user: authUser, ...tokens }, "Login exitoso");
@@ -124,6 +139,12 @@ export async function refresh(req: Request, res: Response, next: NextFunction): 
       throw new UnauthorizedError("Refresh token invalido o revocado");
     }
 
+    // Plan 015: la marca se relee de la BD, asi un refresh emitido antes de que existiera (o antes de
+    // un reset administrativo) no la esquiva. Una cuenta desactivada tampoco renueva.
+    const user = await getUserByIdOrThrow(payload.sub);
+    if (!user.isActive) throw new UnauthorizedError("Refresh token invalido");
+    const mustChangePassword = payload.mustChangePassword === true || user.mustChangePassword;
+
     // Rotacion: el jti usado se invalida de inmediato, se emite un par nuevo.
     await revokeRefreshToken(payload.jti, payload.sub);
     const tokens = await issueTokenPair({
@@ -132,7 +153,7 @@ export async function refresh(req: Request, res: Response, next: NextFunction): 
       username: payload.username,
       roleId: payload.roleId,
       roleName: payload.roleName,
-    });
+    }, mustChangePassword);
 
     sendOk(res, tokens, "Tokens renovados exitosamente");
   } catch (err) {
@@ -209,7 +230,8 @@ export async function me(req: Request, res: Response, next: NextFunction): Promi
       ...req.user,
       firstName: person.firstName,
       lastName: person.lastName,
-      mustChangePassword: fullUser.mustChangePassword,
+      // La marca de la sesion tambien cuenta: entro con la password por defecto sin tener el flag.
+      mustChangePassword: fullUser.mustChangePassword || req.passwordChangePending === true,
     };
     sendOk(res, { user, permissions }, "Usuario actual obtenido exitosamente");
   } catch (err) {
@@ -249,6 +271,9 @@ export async function changePassword(req: Request, res: Response, next: NextFunc
     const passwordMatches = await comparePassword(currentPassword, user.passwordHash);
     if (!passwordMatches) {
       throw new UnauthorizedError("Contraseña actual incorrecta");
+    }
+    if (isDefaultPassword(newPassword)) {
+      throw new BadRequestError("No puede usar la contraseña por defecto", { field: "newPassword" });
     }
 
     // Auto-servicio: el propio dueño de la cuenta eligio la password nueva
