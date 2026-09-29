@@ -44,6 +44,18 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
   - Suite de la API: 54 archivos, 457 pruebas.
   - Front: tsc, lint, 69 pruebas y build.
 
+### Promoción
+- PR #43 `develop → testing` pasó el CI y se hizo el merge. El gate de seguridad quedó marcado sobre `5e6af63`.
+- PR #44 `release/master → master`. `promote-to-master` excluyó las 3 pruebas del plan 016 y `master` quedó en `0233437`.
+
+### Pendiente
+- Redesplegar Testing y producción.
+- En cada ambiente:
+  - agregar miembros a «Responsable TI / Seguridad»;
+  - asignar a los roles los 4 bundles `comm-room-*:access`;
+  - crear las salas.
+- Probar en el navegador.
+
 ---
 
 ## 2026-09-29 (4) — Plan 016: Acceso a Salas de Comunicaciones (aprobado)
