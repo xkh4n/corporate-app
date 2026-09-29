@@ -98,6 +98,14 @@ for i in "${!backend_secret_files[@]}"; do
     created=$((created + 1))
 done
 
+# Datos de prueba (plan 014): compose.dev/test montan seed_test_data.json. Si falta, se deja vacio para
+# que el stack levante; vacio = sin datos de prueba. El archivo con los datos reales se copia a mano
+# (no se genera ni se versiona). Produccion no lo usa.
+if [ "$environment" != "prod" ] && [ ! -f "$secrets_dir/seed_test_data.json" ]; then
+    : > "$secrets_dir/seed_test_data.json"
+    echo "  + seed_test_data.json creado vacio (sin datos de prueba)."
+fi
+
 if [ "$created" -eq 0 ]; then
     echo "Todos los secretos de backend ya existian, nada que generar."
 else

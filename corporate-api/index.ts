@@ -11,6 +11,7 @@ import { migrateMssql } from "./src/databases/mssql/migrate";
 import { seedBootstrapAdmin, seedGeography, seedMenuItems, seedPermissions, seedPrevisional } from "./src/databases/seed";
 import { seedCostCenters } from "./src/services/postgres/costCenter.service";
 import { seedProductCategories } from "./src/services/mongo/productCategory.service";
+import { seedTestData } from "./src/databases/seedTestData";
 import { initSocketServer } from "./src/library/realtime/socketServer";
 import { startImportSweeper, stopImportWorkers } from "./src/services/redis/assetImportJob.service";
 import { startServiceDeskSlaSweeper, stopServiceDeskSlaSweeper } from "./src/services/postgres/serviceDesk/slaSweeper";
@@ -28,6 +29,8 @@ async function bootstrap(): Promise<void> {
   // queda poblada cuando seedPermissions() termina (ver menu-catalog.ts).
   await seedMenuItems();
   await seedBootstrapAdmin();
+  // Solo dev/test (plan 014): sin SEED_TEST_DATA_FILE no hace nada.
+  await seedTestData();
 
   // Misma instancia de sessionMiddleware para Express (REST) y para el
   // handshake de Socket.IO (io.engine.use, ver socketServer.ts) -asi el
