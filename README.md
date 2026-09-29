@@ -11,6 +11,9 @@ observabilidad (métricas + logs) desde el día uno.
 > replicación por streaming), catálogo de productos en MongoDB (esquema flexible, replica set) y
 > sesiones/tokens en Redis (volátil, replicado).
 
+**Manual de operación** (roles, pantallas, flujos y ciclo de vida del activo, para usuarios y
+administradores): [`corporate-manual/`](corporate-manual/README.md).
+
 ## Estado actual
 
 | Módulo | Estado |

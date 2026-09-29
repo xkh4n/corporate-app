@@ -18,6 +18,58 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-28 (18) — Plan 014: datos de prueba en dev/test y manual de operación (aprobado)
+
+### Hecho
+- Plan aprobado y copiado a [`planes/014-datos-de-prueba-y-manual.html`](planes/014-datos-de-prueba-y-manual.html).
+
+### Decisiones
+- **Datos de prueba** (9 roles con sus permisos, 9 cargos, CCAF/mutual, gratificación y 9 colaboradores): van en `corporate-secrets/{Development,Testing}/seed_test_data.json`, fuera de git, porque tienen RUT, nombres y correos reales. Solo `compose.dev/test` los montan.
+- **Correcciones sobre lo que hay en Development:**
+  - vendedora «CONSTANZA ANDREA BRITTANY», sexo F;
+  - `5802-gerente-tienda` lleva «Devoluciones de Activos (edición)» en vez de «Dar de Baja Activos».
+- **Manual de operación:** lo redacta el agente de documentación y se publica como Artifact.
+
+### Implementación
+- **Commit `0447677`:**
+  - `databases/seedTestData.ts` (semilla), `seedTestData.schema.ts` (Zod) y su prueba unitaria;
+  - prueba de integración con datos ficticios: siembra completa, repetición sin duplicar, y archivo vacío o inválido;
+  - `SEED_TEST_DATA_FILE` montado solo en `compose.dev/test`;
+  - `ensure-backend-secrets` crea `seed_test_data.json` vacío si falta, así el stack levanta igual.
+- **Datos:** `corporate-secrets/{Development,Testing}/seed_test_data.json` se exportó de Development con solo lecturas. Las instituciones, la comuna (código territorial 13101), los centros de costo, los cargos y los roles van por código o nombre, no por id.
+- **Verificación:**
+  - Development recreado con el secret: las 3 réplicas arrancaron y no duplicaron nada;
+  - 142 pruebas unitarias OK;
+  - integración de la semilla contra Testing: 2/2 OK.
+- **Manual:** publicado como Artifact (https://claude.ai/artifact/Utxi8ShZe9FYKaWjvD5SnN). Sobre el borrador del agente se corrigieron:
+  - los estados que acepta Dar de Baja y que la clasificación es previa;
+  - los folios (SOL/COT/OC, INC/REQ/PRB/CHG/KB, IT y DEV);
+  - que el tag se asigna al recepcionar, y que la baja contable no escribe en el Kardex;
+  - las transiciones del ciclo de vida.
+
+### Pendiente
+- **Probar desde cero en Testing** con los volúmenes recreados. No se hizo porque borra los datos de ese ambiente.
+- **Development conserva sus datos anteriores**, porque la semilla no pisa lo existente: la vendedora sigue como «CONTSTANZA … BRITANY» (M) y el gerente sigue con «Dar de Baja». Se corrigen a mano o al recrear los volúmenes.
+- **Producción:** no lleva el archivo. El código va a master, pero no se ejecuta.
+
+---
+
+## 2026-09-28 (17) — Promoción de los planes 012 y 013 a master (PR #37, #38)
+
+### Hecho
+- **PR #37** `develop → testing` (delta `7275cdc..6a1b0d9`) con CI verde, mergeado (`b3ad2a5`). Gate de seguridad marcado sobre `6a1b0d9`.
+- **PR #38** `release/master → master`: se excluyeron 6 archivos de prueba y la guardia de rutas prohibidas pasó. `master` quedó en `512028b`.
+
+### Pendiente
+- **Redesplegar Testing y producción.** La migración crea el estado `WRITTEN_OFF`, renombra `DECOMMISSIONED`, crea la tabla de fotos y hace el backfill. La siembra agrega el permiso y la pantalla de Dar de Baja, y `update` a Valorización.
+- **Asignar permisos:**
+  - «Pantalla: Dar de Baja Activos» a los roles que correspondan;
+  - «Devoluciones de Activos (edición)» a los roles 1110 que deban recibir.
+- **Revisar** qué roles tienen «Valorización de Activos» (I1).
+- **Probar en el navegador** el ciclo devolución → dar de baja con foto → baja contable individual y por lote.
+
+---
+
 ## 2026-09-28 (16) — Revisión de seguridad del delta 7275cdc..2aec9e3 (planes 012 y 013, devoluciones, siembra)
 
 ### Hecho

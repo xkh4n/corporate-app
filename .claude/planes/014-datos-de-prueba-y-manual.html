@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>014 — Datos de prueba sembrados en dev/test (roles, cargos y colaboradores) y manual de operación</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:900px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.5rem; font-size:1.25rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  h3 { margin-top:1.6rem; font-size:1.05rem; }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }
+  th, td { border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 014</span>
+  <h1>Datos de prueba sembrados en dev/test (roles, cargos y colaboradores) y manual de operación</h1>
+  <div class="meta">corporate-app · corporate-api + corporate-front · Estado: aprobado · 2026-09-28</div>
+</header>
+
+<h2>Contexto</h2>
+<p>Cada vez que se recrean los volúmenes de las bases, el usuario debe rehacer a mano el flujo de <code>flujo-pruebas-limpias.txt</code> en Nuevo Ingreso, para cada colaborador:</p>
+<ol>
+<li>crear los 9 roles y asignarles permisos;
+</li>
+<li>crear los 9 cargos, vinculados a su rol;
+</li>
+<li>configurar una vez CCAF, mutual y gratificación;
+</li>
+<li>dar de alta a los 9 colaboradores: persona, dirección, contrato, AFP/salud y usuario.
+</li></ol>
+<p>Quiere que, <strong>solo en dev y test</strong>, el primer arranque deje todo eso poblado con los datos que ya cargó en Development, para poder empezar a probar de inmediato. También pide un <strong>manual de operación</strong> con los roles, los flujos y un diagrama del ciclo de vida de un activo, redactado por el agente de documentación y publicado como página (Artifact).</p>
+<p>Decisiones del usuario (2026-09-28):</p>
+<ul>
+<li><strong>Dónde van los datos:</strong> en un JSON en <code>corporate-secrets</code> (fuera de git), porque tienen RUT, nombres y correos reales. El código de la semilla sí va al repo, sin datos.
+</li>
+<li><strong>Vendedora:</strong> se corrige a «CONSTANZA ANDREA BRITTANY», sexo F. En Development está como «CONTSTANZA … BRITANY», M.
+</li>
+<li><strong>Permisos de <code>5802-gerente-tienda</code>:</strong> en vez de «Pantalla: Dar de Baja Activos» lleva «Pantalla: Devoluciones de Activos (edición)», para poder armar y enviar devoluciones. No puede recibir: eso sigue siendo solo de roles 1110.
+</li>
+<li><strong>Manual:</strong> página publicada (Artifact).
+</li></ul>
+<h2>Datos que se exportan de Development (solo lectura, ya revisados)</h2>
+<ul>
+<li><strong>Postgres:</strong>
+<ul>
+<li>9 roles con su descripción y sus permisos directos (bundles <code>…:access</code> y algunos base, como <code>service-tickets:*</code> o <code>products:update</code>);
+</li>
+<li>centros de costo 1072 CONTABILIDAD, 1110 SISTEMAS y 5802 TIENDA STA ROSA MADERAS, que ya siembra <code>seedCostCenters</code>.
+</li></ul>
+</li>
+<li><strong>Mongo <code>positions</code>:</strong> 9 cargos (title, description, responsibilities, technicalSkills, softSkills, reportsTo, supervises y roleId), que en el JSON se referencian por <strong>nombre de rol</strong>.
+</li>
+<li><strong>MSSQL:</strong>
+<ul>
+<li>persons (nombres, RUT, correo, teléfono, sexo, nacionalidad) y addresses (PARTICULAR, dirección y comuna por <code>state_id</code>);
+</li>
+<li>employees (código <code>EMP&lt;rut&gt;</code>, centro de costo por <strong>código</strong>, cargo por <strong>título</strong>);
+</li>
+<li>employee_contracts (INDEFINIDO, fecha de inicio por persona, sueldo 1.200.000, gratificación ART50 25 % con tope 4,75 IMM y anticipo mensual de 216.000);
+</li>
+<li>employee_previsional_profiles (AFP por <strong>código</strong> de institución, FONASA, AFC y tramo D);
+</li>
+<li>payroll_settings (ART50, 18 %);
+</li>
+<li>previred_employer_settings (CCAF_LOS_ANDES, MUTUAL_ACHS, sucursal 1, tasa 0,30 %);
+</li>
+<li>users (username y rol).
+</li></ul>
+</li>
+<li>Las instituciones van por <code>code</code>, no por id, así el JSON no depende del orden en que se sembró el catálogo.
+</li></ul>
+<h2>Diseño</h2>
+<h3>1. Archivo de datos (fuera de git)</h3>
+<ul>
+<li><code>corporate-secrets/Development/seed_test_data.json</code> y una copia idéntica en <code>corporate-secrets/Testing/</code>. Se generan en la implementación con un export de solo lectura de Development, más las dos correcciones de arriba.
+</li>
+<li><strong>Estructura:</strong> <code>{ roles: [{name, description, permissions: ["recurso:accion", …]}], positions: [...], company: { ccaf, mutual, mutualBranchCode, workAccidentRate, gratificationSystem, monthlyAdvancePercentage }, employees: [{ person, address, costCenterCode, positionTitle, username, contract, previsional }] }</code>.
+</li></ul>
+<h3>2. Montaje solo en dev/test</h3>
+<ul>
+<li><code>corporate-api/compose.dev.yml</code> y <code>compose.test.yml</code>, que nunca van a master (<code>master-excluded-paths.txt</code>):
+<ul>
+<li>el secret <code>seed_test_data</code> apunta a <code>../corporate-secrets/${SECRETS_ENV}/seed_test_data.json</code>;
+</li>
+<li>la variable <code>SEED_TEST_DATA_FILE=/run/secrets/seed_test_data</code>.
+</li></ul>
+</li>
+<li><code>compose.prod.yml</code> no cambia: sin la variable, la semilla no hace nada.
+</li>
+<li><strong>Doble resguardo en el código:</strong> si <code>NODE_ENV === "production"</code>, la semilla se niega y lo deja en el log, aunque la variable exista.
+</li></ul>
+<h3>3. Semilla <code>seedTestData()</code> (<code>corporate-api/src/databases/seedTestData.ts</code>)</h3>
+<ul>
+<li><strong>Cuándo corre:</strong> en <code>index.ts</code>, después de <code>seedBootstrapAdmin()</code>, solo si <code>env</code> trae <code>SEED_TEST_DATA_FILE</code>.
+</li>
+<li><strong>Validación:</strong> el JSON se valida con Zod; si es inválido, loguea el error y <strong>no</strong> tumba el arranque.
+</li>
+<li><strong>Idempotencia y réplicas:</strong> es idempotente por entidad y se puede correr en cada arranque, con las 3 réplicas en paralelo, igual que las otras semillas: se tolera la clave duplicada y cada paso revisa antes si ya existe.
+</li>
+<li><strong>Pasos, en orden, reutilizando los servicios que usa la pantalla:</strong>
+<ol>
+<li><strong>Roles:</strong> <code>createRole</code> si el nombre no existe; <code>setRolePermissions</code> solo al crearlo, para no pisar cambios manuales posteriores. Los permisos se resuelven por <code>recurso:accion</code> y un permiso inexistente se loguea y se omite.
+</li>
+<li><strong>Cargos:</strong> <code>createPosition</code> (Mongo) si el título no existe, con <code>roleId</code> resuelto por el nombre del rol.
+</li>
+<li><strong>Empresa, una sola vez:</strong> configuración de CCAF/mutual (<code>previredSettings.service</code>) y de gratificación (<code>payrollSettings.service</code>), solo si no existen.
+</li>
+<li><strong>Colaboradores:</strong> por cada uno, si su RUT no existe:
+<ul>
+<li><code>createPerson</code>;
+</li>
+<li>dirección con <code>address.service</code>;
+</li>
+<li><code>createEmployee</code>;
+</li>
+<li><code>employeeContract.service</code> create;
+</li>
+<li><code>previsionalProfile.service</code>: pensión y salud;
+</li>
+<li><code>createUser</code> sin password, con el rol del cargo.
+</li>
+<li>Sin password, <code>createUser</code> usa <code>default_user_password</code> con <code>mustChangePassword</code>, igual que Nuevo Ingreso.
+</li></ul>
+</li></ol>
+</li>
+<li><code>createdBy</code> es el usuario admin de arranque.
+</li></ul>
+<h3>4. Manual de operación (Artifact)</h3>
+<ul>
+<li><strong>Encargo al agente de documentación</strong> (<code>technical-writer</code>), en segundo plano mientras se implementa la semilla. Debe:
+<ul>
+<li>leer el código real (menú, catálogo de permisos, pantallas, <code>.claude/planes/</code>, bitácora) y <code>flujo-pruebas-limpias.txt</code>;
+</li>
+<li>escribir en el scratchpad un manual en Markdown con Mermaid: roles y qué hace cada uno; flujos de solicitud y compra, recepción, asignación, reasignación, devolución, dar de baja y baja contable, service desk e inventario; y el <strong>diagrama de estados del ciclo de vida del activo</strong> (Ingresado/Disponible → Asignado → En tránsito → Devolución → Pendiente de baja contable → De baja, más Soporte, Dañado y Devaluado).
+</li></ul>
+</li>
+<li><strong>Publicación:</strong> se carga el skill <code>artifact-design</code>, se arma la página HTML con el contenido (diagramas incluidos), se lee completa y se publica como Artifact privado.
+</li></ul>
+<h2>Paso 0</h2>
+<p>Copiar este plan aprobado a <code>.claude/planes/014-datos-de-prueba-y-manual.html</code> y agregar la entrada en la bitácora <code>.claude/README.md</code>.</p>
+<h2>Archivos críticos</h2>
+<ul>
+<li><strong>Nuevo:</strong> <code>corporate-api/src/databases/seedTestData.ts</code>.
+</li>
+<li><strong>Modificados:</strong>
+<ul>
+<li><code>corporate-api/index.ts</code>;
+</li>
+<li><code>corporate-api/src/library/env.ts</code> (variable opcional);
+</li>
+<li><code>corporate-api/compose.dev.yml</code>, <code>compose.test.yml</code>.
+</li></ul>
+</li>
+<li><strong>Fuera de git:</strong> <code>corporate-secrets/{Development,Testing}/seed_test_data.json</code>.
+</li>
+<li><strong>Se reutilizan:</strong>
+<ul>
+<li><code>role.service</code> (<code>createRole</code>), <code>permission.service</code> (<code>setRolePermissions</code>);
+</li>
+<li><code>mongo/position.service</code>;
+</li>
+<li><code>mssql/person.service</code>, <code>address.service</code>, <code>employee.service</code>, <code>employeeContract.service</code>, <code>previsionalProfile.service</code>, <code>previredSettings.service</code>, <code>payrollSettings.service</code>, <code>user.service</code> (<code>createUser</code>);
+</li>
+<li><code>readSecretFromEnv</code>.
+</li></ul>
+</li>
+<li><code>flujo-pruebas-limpias.txt</code> no se modifica ni se commitea.
+</li></ul>
+<h2>Verificación</h2>
+<ol>
+<li><strong>Tipos y unitarias:</strong> <code>tsc</code> y pruebas unitarias. Prueba unitaria del schema Zod: el JSON de ejemplo es válido y un JSON inválido se rechaza.
+</li>
+<li><strong>Instalación limpia en Testing</strong> (volúmenes recreados):
+<ul>
+<li>quedan 9 roles con sus permisos, 9 cargos y 9 colaboradores, cada uno con persona, dirección, contrato, perfil previsional y usuario;
+</li>
+<li>CCAF/mutual y gratificación configuradas;
+</li>
+<li><code>pburgos</code> entra con la password por defecto y se le pide cambiarla.
+</li></ul>
+</li>
+<li><strong>Idempotencia:</strong> un segundo arranque, y las 3 réplicas a la vez, no duplican nada.
+</li>
+<li><strong>Producción:</strong> <code>compose.prod.yml</code> no monta el secret. Con <code>NODE_ENV=production</code> la semilla se niega aunque exista la variable.
+</li>
+<li><strong>Manual:</strong> se lee completo el HTML antes de publicarlo; los diagramas se dibujan.
+</li></ol>
+
+<footer class="doc-footer">Copia del plan aprobado en la sesión del 2026-09-28.</footer>
+</div>
+</body>
+</html>

@@ -131,6 +131,10 @@ export const env = {
     adminPasswordFileVar: "ADMIN_BOOTSTRAP_PASSWORD_FILE",
   },
 
+  // Datos de prueba (plan 014): ruta al JSON con roles, cargos y colaboradores. Solo lo montan
+  // compose.dev/test (corporate-secrets, fuera de git); en produccion no existe y la semilla no corre.
+  seedTestDataFileVar: "SEED_TEST_DATA_FILE",
+
   // Password fija que createUser() aplica cuando quien crea el User no manda
   // una (ver services/mssql/user.service.ts) -flujo tipico: alta de
   // colaborador desde el front, que no le pide password a quien lo crea.
