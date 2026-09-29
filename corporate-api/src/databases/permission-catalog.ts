@@ -270,6 +270,16 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { resource: "service-desk-settings", action: "read", description: "Ver la configuracion del Service Desk" },
   { resource: "service-desk-settings", action: "update", description: "Configurar grupos, catalogo, SLA y calendario del Service Desk" },
   { resource: "service-desk-reports", action: "read", description: "Ver indicadores del Service Desk" },
+
+  // Acceso a salas de comunicaciones (plan 016): seguridad fisica, ninguno por defecto. El acceso se
+  // pide y se aprueba por ticket (service-tickets:*), estos permisos administran y consultan.
+  { resource: "comm-rooms", action: "read", description: "Consultar salas de comunicaciones" },
+  { resource: "comm-rooms", action: "create", description: "Crear salas de comunicaciones" },
+  { resource: "comm-rooms", action: "update", description: "Editar y desactivar salas de comunicaciones y su configuracion" },
+  { resource: "comm-room-accesses", action: "read", description: "Consultar quien tiene acceso a las salas, quien lo autorizo y por que" },
+  { resource: "comm-room-accesses", action: "delete", description: "Revocar accesos a salas de comunicaciones" },
+  { resource: "comm-room-entries", action: "read", description: "Consultar los ingresos fisicos a las salas" },
+  { resource: "comm-room-entries", action: "create", description: "Registrar ingresos y salidas de las salas" },
 ];
 
 export interface ScreenAccessCatalogEntry {
@@ -627,6 +637,28 @@ export const SCREEN_ACCESS_CATALOG: ScreenAccessCatalogEntry[] = [
     resource: "support-settings",
     description: "Pantalla: Configuración Service Desk",
     includes: ["service-desk-settings:read", "service-desk-settings:update"],
+  },
+
+  // Comunicaciones > Acceso Sala (plan 016).
+  {
+    resource: "comm-room-creation",
+    description: "Pantalla: Crear Sala",
+    includes: ["comm-rooms:create", "cost-centers:read"],
+  },
+  {
+    resource: "comm-room-admin",
+    description: "Pantalla: Administrar Salas",
+    includes: ["comm-rooms:read", "comm-rooms:update", "comm-room-accesses:read", "comm-room-accesses:delete", "cost-centers:read"],
+  },
+  {
+    resource: "comm-room-entry",
+    description: "Pantalla: Registrar Ingreso",
+    includes: ["comm-rooms:read", "comm-room-entries:read", "comm-room-entries:create"],
+  },
+  {
+    resource: "comm-room-access-report",
+    description: "Pantalla: Consulta de Accesos",
+    includes: ["comm-rooms:read", "comm-room-accesses:read", "comm-room-entries:read", "cost-centers:read"],
   },
 ];
 

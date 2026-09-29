@@ -26,6 +26,7 @@ servicePortalRouter.use(authenticate);
 
 servicePortalRouter.get("/catalog", authorize("service-tickets", "create"), portal.catalog);
 servicePortalRouter.get("/my-assets", authorize("service-tickets", "create"), portal.myAssets);
+servicePortalRouter.get("/comm-rooms", authorize("service-tickets", "create"), portal.commRooms);
 servicePortalRouter.get("/kb", authorize("kb-articles", "read"), kbSearchRateLimiter, portal.searchKb);
 servicePortalRouter.get("/kb/:articleId", authorize("kb-articles", "read"), portal.getKbArticle);
 servicePortalRouter.post(
@@ -103,6 +104,12 @@ serviceTicketRouter.post(
 );
 serviceTicketRouter.get("/:id/attachments/:attachmentId", authorize("service-tickets", "read"), tickets.downloadAttachment);
 serviceTicketRouter.post("/:id/approval", authorize("service-tickets", "approve"), validateBody(tickets.approvalSchema), tickets.decideApproval);
+serviceTicketRouter.post(
+  "/:id/room-access/validate",
+  authorize("service-tickets", "update"),
+  validateBody(tickets.roomAccessValidationSchema),
+  tickets.validateRoomAccess,
+);
 serviceTicketRouter.post("/:id/assets", authorize("service-tickets", "update"), validateBody(tickets.linkAssetsSchema), tickets.linkAssets);
 serviceTicketRouter.delete("/:id/assets/:assetId", authorize("service-tickets", "update"), tickets.unlinkAsset);
 // Mover el activo es un movimiento de activos: exige tambien asset-movements:create.

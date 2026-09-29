@@ -488,6 +488,42 @@ export const MENU_CATALOG: MenuCatalogEntry[] = [
     permissionKey: "support-settings:access",
     sortOrder: 20,
   },
+
+  // Serv. Productivos > Comunicaciones > Acceso Sala (plan 016).
+  { label: "Comunicaciones", icon: "IoRadio", parentLabel: "Serv. Productivos", sortOrder: 20 },
+  { label: "Acceso Sala", icon: "IoKeyOutline", parentLabel: "Comunicaciones", sortOrder: 10 },
+  {
+    label: "Crear Sala",
+    icon: "IoAddCircleOutline",
+    link: "/comm-rooms/create",
+    parentLabel: "Acceso Sala",
+    permissionKey: "comm-room-creation:access",
+    sortOrder: 10,
+  },
+  {
+    label: "Administrar Salas",
+    icon: "IoBusinessOutline",
+    link: "/comm-rooms",
+    parentLabel: "Acceso Sala",
+    permissionKey: "comm-room-admin:access",
+    sortOrder: 20,
+  },
+  {
+    label: "Registrar Ingreso",
+    icon: "IoLogInOutline",
+    link: "/comm-rooms/entries",
+    parentLabel: "Acceso Sala",
+    permissionKey: "comm-room-entry:access",
+    sortOrder: 30,
+  },
+  {
+    label: "Consulta de Accesos",
+    icon: "IoSearchOutline",
+    link: "/comm-rooms/report",
+    parentLabel: "Acceso Sala",
+    permissionKey: "comm-room-access-report:access",
+    sortOrder: 40,
+  },
 ];
 
 // Items que salieron de MENU_CATALOG pero que ya pueden existir en

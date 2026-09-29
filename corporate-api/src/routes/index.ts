@@ -42,6 +42,7 @@ import {
 } from "./assetAccounting.routes";
 import { assetWriteOffRouter } from "./assetWriteOff.routes";
 import { notificationRouter } from "./notification.routes";
+import { commRoomAccessRouter, commRoomEntryRouter, commRoomRouter } from "./commRoom.routes";
 import {
   kbArticleRouter,
   serviceChangeRouter,
@@ -130,6 +131,11 @@ apiRouter.use("/service-changes", serviceChangeRouter);
 apiRouter.use("/kb-articles", kbArticleRouter);
 apiRouter.use("/service-desk-reports", serviceDeskReportRouter);
 apiRouter.use("/service-desk-settings", serviceDeskSettingsRouter);
+
+// Acceso a salas de comunicaciones (plan 016).
+apiRouter.use("/comm-rooms", commRoomRouter);
+apiRouter.use("/comm-room-accesses", commRoomAccessRouter);
+apiRouter.use("/comm-room-entries", commRoomEntryRouter);
 
 // Resumen derivado de pendientes del usuario logeado (badge + push en
 // tiempo real, ver library/realtime/).

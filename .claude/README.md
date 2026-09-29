@@ -18,6 +18,22 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-29 (4) — Plan 016: Acceso a Salas de Comunicaciones (aprobado)
+
+### Hecho
+- Plan aprobado y copiado a [`planes/016-acceso-salas-comunicaciones.html`](planes/016-acceso-salas-comunicaciones.html).
+
+### Decisiones
+- **Módulo:** Gerencia de TI › Serv. Productivos › Comunicaciones › Acceso Sala, con 4 pantallas: Crear Sala, Administrar Salas, Registrar Ingreso y Consulta de Accesos.
+- **Solicitud:** el acceso solo se pide por ticket, con el ítem de catálogo `fulfillment = ROOM_ACCESS`.
+- **Flujo:** el Service Desk valida y define el período y el tipo; después aprueba el grupo «Responsable TI / Seguridad». Si rechaza, el ticket queda Cancelado; si aprueba, se crea el registro de acceso y el ticket queda Resuelto.
+- **Beneficiario:** un colaborador (RUT exacto) o un externo (nombre, RUT y empresa).
+- **Tipos de acceso:**
+  - Temporal y Única vez llevan fecha de término y expiran solos;
+  - Permanente no tiene término;
+  - un temporal cuenta como «prolongado» si lleva más de N días activo (configurable, 30 por defecto).
+- **Ingresos físicos:** Registrar Ingreso anota la entrada y la salida, y rechaza a quien no tenga acceso vigente.
+
 ## 2026-09-29 (3) — Revisión de seguridad y promoción del plan 015
 
 ### Hecho
