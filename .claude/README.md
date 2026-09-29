@@ -18,6 +18,24 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-29 (1) — Revisión de seguridad y promoción del plan 014 a master (PR #39, #40)
+
+### Hecho
+- Commit `b70f373`: título de la pestaña del front «Corporate View».
+- **Revisión de seguridad** del delta `aded34e..b70f373`, en paralelo por `cybersecurity-orchestrator` y `security-engineer`: ambos dan **GO**, sin hallazgos Critical, High ni Medium.
+- **Commit `ecf09a8`** corrige lo barato:
+  - el log de un JSON inválido ya no serializa el error completo, que trae trozos del archivo; ahora solo lleva el nombre del error y las rutas de Zod;
+  - dirección, AFP y salud se completan en el siguiente arranque si uno anterior se cortó a medias;
+  - el plan 014 ya no cita la dirección de los datos reales. Sigue en el historial de `develop`, porque el impacto es bajo y no se reescribe.
+- **PR #39** `develop → testing`, con CI verde.
+- **Gate de seguridad** marcado sobre `ecf09a8`.
+- **PR #40** `release/master → master`: se excluyeron `compose.dev/test` y las 2 pruebas de la semilla, y el chequeo de rutas prohibidas pasó. `master` quedó en `6e25ed2`.
+
+### Pendiente (no bloqueante)
+- **L1 (ticket):** `mustChangePassword` solo lo aplica el front. Un usuario con la password por defecto puede llamar a la API directo. Hay que bloquear en el servidor todo lo que no sea `/auth/me`, cambiar password y logout. Afecta también a Nuevo Ingreso en producción.
+- **Info:** la semilla crea roles y usuarios sin las reglas de actor de las pantallas (prefijo 1110, rol admin). Es aceptable porque el JSON vive en `corporate-secrets`. Un rol renombrado a mano se recrea al reiniciar (solo dev/test).
+- Instalación limpia en Testing (recrear volúmenes) para ver la siembra completa.
+
 ## 2026-09-28 (18) — Plan 014: datos de prueba en dev/test y manual de operación (aprobado)
 
 ### Hecho
