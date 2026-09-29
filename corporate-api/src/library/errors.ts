@@ -25,8 +25,8 @@ export class UnauthorizedError extends AppError {
 }
 
 export class ForbiddenError extends AppError {
-  constructor(message = "No autorizado") {
-    super(403, message);
+  constructor(message = "No autorizado", details?: unknown) {
+    super(403, message, details);
     this.name = "ForbiddenError";
   }
 }

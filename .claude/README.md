@@ -18,6 +18,59 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-29 (3) — Revisión de seguridad y promoción del plan 015
+
+### Hecho
+- **Revisión** del delta `ecf09a8..5467f85` con `cybersecurity-orchestrator` y `security-engineer`: los dos dan **GO**, sin hallazgos Critical, High ni Medium.
+- Las correcciones van en el commit de esta entrada:
+  - `/auth/me` también informa la marca cuando el acceso es por token Bearer (`req.passwordChangePending`).
+  - `/auth/refresh` relee `mustChangePassword` e `isActive` de la BD, así un refresh token anterior no esquiva la marca.
+  - La contraseña por defecto se lee una vez y queda en caché.
+
+### Pendiente
+- **Despliegue:** las sesiones de cookie abiertas antes del deploy (hasta 8 h) no traen la marca. Si se quiere un corte inmediato, hay que purgar las `sess:*` de Redis al desplegar.
+- **Residual, anterior al plan:** quien conozca la contraseña por defecto y el username de alguien que todavía no entró puede tomar esa cuenta cambiándole la contraseña. La solución de fondo es una contraseña inicial aleatoria por usuario o un enlace de activación.
+
+## 2026-09-29 (2) — Plan 015: la API no acepta la contraseña por defecto (aprobado e implementado)
+
+### Hecho
+- Plan aprobado y copiado a [`planes/015-contrasena-por-defecto-bloqueada.html`](planes/015-contrasena-por-defecto-bloqueada.html). Cierra el hallazgo L1 de la revisión del 2026-09-29.
+- **Marca al iniciar sesión:** la sesión Redis (o el JWT, si se piden tokens) queda marcada cuando el usuario tiene `mustChangePassword` o entra con la contraseña por defecto. `/auth/refresh` conserva la marca.
+- **Bloqueo:** `authenticate` responde 403 con `reason: "password_change_required"`. Solo pasan `/auth/me`, `/auth/menu` y `/auth/change-password` (`authenticateAllowingPasswordChange`). Socket.IO también rechaza el handshake.
+- **Contraseña nueva:** `PATCH /auth/change-password` rechaza la contraseña por defecto con 400.
+- El front no cambia: `/auth/me` ya informaba `mustChangePassword` y ahora también toma en cuenta la marca de la sesión.
+
+### Verificación
+- `passwordChangeRequired.routes.integration.test.ts`:
+  - login real: 403 en una ruta de negocio;
+  - `/auth/me` y `/auth/menu` responden 200;
+  - usar la contraseña por defecto como nueva da 400;
+  - el cambio da 204 y el siguiente login tiene acceso;
+  - la contraseña por defecto bloquea aunque la cuenta no tenga el flag.
+- `tsc` limpio. Suite completa: 51 archivos, 428 pruebas OK.
+
+### Pendiente
+- Las sesiones abiertas antes del despliegue no traen la marca. Se aplica desde el siguiente inicio de sesión.
+- Revisión de seguridad y promoción a master.
+
+## 2026-09-29 (1) — Revisión de seguridad y promoción del plan 014 a master (PR #39, #40)
+
+### Hecho
+- Commit `b70f373`: título de la pestaña del front «Corporate View».
+- **Revisión de seguridad** del delta `aded34e..b70f373`, en paralelo por `cybersecurity-orchestrator` y `security-engineer`: ambos dan **GO**, sin hallazgos Critical, High ni Medium.
+- **Commit `ecf09a8`** corrige lo barato:
+  - el log de un JSON inválido ya no serializa el error completo, que trae trozos del archivo; ahora solo lleva el nombre del error y las rutas de Zod;
+  - dirección, AFP y salud se completan en el siguiente arranque si uno anterior se cortó a medias;
+  - el plan 014 ya no cita la dirección de los datos reales. Sigue en el historial de `develop`, porque el impacto es bajo y no se reescribe.
+- **PR #39** `develop → testing`, con CI verde.
+- **Gate de seguridad** marcado sobre `ecf09a8`.
+- **PR #40** `release/master → master`: se excluyeron `compose.dev/test` y las 2 pruebas de la semilla, y el chequeo de rutas prohibidas pasó. `master` quedó en `6e25ed2`.
+
+### Pendiente (no bloqueante)
+- **L1 (ticket):** `mustChangePassword` solo lo aplica el front. Un usuario con la password por defecto puede llamar a la API directo. Hay que bloquear en el servidor todo lo que no sea `/auth/me`, cambiar password y logout. Afecta también a Nuevo Ingreso en producción.
+- **Info:** la semilla crea roles y usuarios sin las reglas de actor de las pantallas (prefijo 1110, rol admin). Es aceptable porque el JSON vive en `corporate-secrets`. Un rol renombrado a mano se recrea al reiniciar (solo dev/test).
+- Instalación limpia en Testing (recrear volúmenes) para ver la siembra completa.
+
 ## 2026-09-28 (18) — Plan 014: datos de prueba en dev/test y manual de operación (aprobado)
 
 ### Hecho

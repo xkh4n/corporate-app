@@ -8,6 +8,8 @@ export interface JwtPayload {
   roleName: string;
   type: TokenType;
   jti?: string;
+  // Plan 015: la sesion entro con una password que el usuario no eligio (ver authenticate.ts).
+  mustChangePassword?: boolean;
   // Agregado automaticamente por jsonwebtoken al firmar (epoch seconds), no
   // se setea a mano -se usa en authenticate.ts para el watermark de
   // invalidacion (ver services/redis/session.service.ts).
@@ -36,6 +38,8 @@ declare global {
   namespace Express {
     interface Request {
       user?: AuthenticatedUser;
+      // Plan 015: la sesion o el token trae la marca de cambio de password obligatorio.
+      passwordChangePending?: boolean;
     }
   }
 }
