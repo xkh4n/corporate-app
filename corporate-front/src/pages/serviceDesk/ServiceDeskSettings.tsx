@@ -9,6 +9,7 @@ import { Pager } from "../contabilidad/Pager";
 import { formatDateTime } from "../inventario/inventoryLabels";
 import { serviceChangeService, serviceDeskSettingsService, type CatalogItemPayload } from "../../services/serviceDeskService";
 import type {
+  CatalogFulfillment,
   BusinessCalendar,
   CatalogField,
   CatalogFieldType,
@@ -551,7 +552,9 @@ function CatalogSettings({ categories, groups }: { categories: ServiceCategory[]
                   <td className={TD}>
                     {item.fulfillment === "PURCHASE_REQUEST"
                       ? "Aprobador de la compra"
-                      : item.approvalGroupId
+                      : item.fulfillment === "ROOM_ACCESS"
+                        ? `${groupOf(item.approvalGroupId)} (tras validar)`
+                        : item.approvalGroupId
                         ? groupOf(item.approvalGroupId)
                         : "Sin aprobación"}
                   </td>
@@ -605,7 +608,9 @@ function CatalogItemModal({
   const [categoryId, setCategoryId] = useState<number | "">(item?.categoryId ?? "");
   const [groupId, setGroupId] = useState<number | "">(item?.defaultGroupId ?? "");
   const [approvalGroupId, setApprovalGroupId] = useState<number | "">(item?.approvalGroupId ?? "");
-  const [createsPurchase, setCreatesPurchase] = useState(item?.fulfillment === "PURCHASE_REQUEST");
+  // Tipo de atencion: ninguno, solicitud de compra (plan 010) o acceso a sala (plan 016).
+  const [fulfillment, setFulfillment] = useState<CatalogFulfillment | "">(item?.fulfillment ?? "");
+  const createsPurchase = fulfillment === "PURCHASE_REQUEST";
   const [fields, setFields] = useState<CatalogField[]>(item?.fields ?? []);
   const [isActive, setIsActive] = useState(item?.isActive ?? true);
   const [saving, setSaving] = useState(false);
@@ -624,7 +629,7 @@ function CatalogItemModal({
         defaultGroupId: groupId === "" ? null : groupId,
         // La solicitud de equipo la aprueba el aprobador de la compra, no un grupo.
         approvalGroupId: createsPurchase || approvalGroupId === "" ? null : approvalGroupId,
-        fulfillment: createsPurchase ? "PURCHASE_REQUEST" : null,
+        fulfillment: fulfillment === "" ? null : fulfillment,
         fields: fields.map((field) => ({
           ...field,
           key: field.key.trim(),
@@ -712,15 +717,20 @@ function CatalogItemModal({
           Activo
         </label>
         <div className="sm:col-span-2">
-          <label className="flex items-start gap-2 text-sm text-slate-700">
-            <input type="checkbox" className="mt-1" checked={createsPurchase} onChange={(e) => setCreatesPurchase(e.target.checked)} />
-            <span>
-              Genera solicitud de compra
-              <span className="block text-xs text-slate-500">
-                El solicitante elige productos, centro de costo y aprobador; el ticket sigue a la compra hasta la recepción del equipo.
-              </span>
-            </span>
-          </label>
+          <Field label="Tipo de atención" htmlFor="item-fulfillment">
+            <Select id="item-fulfillment" value={fulfillment} onChange={(e) => setFulfillment(e.target.value as CatalogFulfillment | "")}>
+              <option value="">Ninguno (solo el ticket)</option>
+              <option value="PURCHASE_REQUEST">Solicitud de compra</option>
+              <option value="ROOM_ACCESS">Acceso a sala de comunicaciones</option>
+            </Select>
+          </Field>
+          <p className="mt-1 text-xs text-slate-500">
+            {fulfillment === "PURCHASE_REQUEST"
+              ? "El solicitante elige productos, centro de costo y aprobador; el ticket sigue a la compra hasta la recepción del equipo."
+              : fulfillment === "ROOM_ACCESS"
+                ? "El solicitante pide sala, beneficiario y período; el Service Desk lo valida y lo aprueba el grupo aprobador (obligatorio)."
+                : "El ticket se atiende en la cola del grupo, con la aprobación previa si tiene grupo aprobador."}
+          </p>
         </div>
         <div className="sm:col-span-2">
           <div className="mb-2 flex items-center justify-between">

@@ -34,6 +34,36 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
   - un temporal cuenta como «prolongado» si lleva más de N días activo (configurable, 30 por defecto).
 - **Ingresos físicos:** Registrar Ingreso anota la entrada y la salida, y rechaza a quien no tenga acceso vigente.
 
+### Implementación
+- **API (`4fd205a`):**
+  - `migrateCommRooms()`: las tablas `comm_rooms`, `comm_room_access_requests`, `comm_room_access_grants`, `comm_room_entries` y `comm_room_settings`. Amplía el CHECK de `fulfillment` a `ROOM_ACCESS`, verificándolo antes en `pg_constraint`, y siembra el grupo «Responsable TI / Seguridad» (sin miembros) y el ítem «Acceso a sala de comunicaciones».
+  - `ticket.service`:
+    - el ticket nace NEW, sin aprobación al crearse;
+    - `submitRoomAccessForApproval` lo pasa a PENDING_APPROVAL con el grupo del ítem, con el SLA en pausa (`on_hold_since`);
+    - `decideApproval` crea el grant y deja el ticket RESOLVED/FULFILLED; quien validó no puede aprobar, y rechazar lo anula (CANCELLED);
+    - no se puede resolver a mano sin aprobación.
+  - Ingresos con lock e índice único de ingreso abierto. Un acceso de única vez expira al registrar la salida.
+  - Barrido `accessSweeper` cada 60 s, con lease en Redis. «Vigente» siempre se calcula con `now()` de la base.
+  - Reportes: accesos vigentes, vencidos, por RUT exacto, varias salas o tiendas, y temporales prolongados (N días configurable).
+  - Corrección aparte: pasar de ON_HOLD a CANCELLED repetía `on_hold_since` en el UPDATE.
+- **Front:**
+  - pantallas `pages/comunicaciones/`: Crear Sala, Administrar Salas, Registrar Ingreso y Consulta de Accesos;
+  - `RoomAccessFields` en Generar Ticket y `RoomAccessPanel` (validar y enviar a aprobación) en Gestión de Tickets;
+  - en Configuración del Service Desk, el «Tipo de atención» pasa a ser un selector.
+
+### Verificación
+- `commRoomAccess.service.integration.test.ts` (17 pruebas) y `commRoom.routes.integration.test.ts` (5, cada bundle con solo sus endpoints y el portal sin dirección).
+- `rut.unit.test.ts` (4 pruebas).
+- API: suite completa verde (52 archivos, 445 pruebas, antes de las pruebas de rutas). Front: tsc, ESLint, 69 pruebas y build.
+
+### Pendiente
+- Revisión de seguridad y promoción a master.
+- En cada ambiente, el admin debe:
+  - agregar miembros al grupo «Responsable TI / Seguridad»;
+  - asignar las 4 pantallas `comm-room-*:access`;
+  - crear las salas.
+- Probar en el navegador.
+
 ## 2026-09-29 (3) — Revisión de seguridad y promoción del plan 015
 
 ### Hecho

@@ -1,5 +1,11 @@
 // Espejo de los tipos del Service Desk en corporate-api (plan 009):
 // services/postgres/serviceDesk/*.service.ts.
+import type {
+  RoomAccessRequestInput,
+  RoomAccessRequestStatus,
+  RoomAccessType,
+  RoomBeneficiaryKind,
+} from "./commRoom";
 
 export type TicketType = "INCIDENT" | "SERVICE_REQUEST";
 export type TicketStatus =
@@ -111,7 +117,34 @@ export interface TicketDetail extends TicketSummary {
   assets: TicketAsset[];
   // Solicitud de compra que genero el ticket (solicitud de equipo, plan 010).
   purchaseRequest: LinkedPurchaseRequest | null;
+  // Solicitud de acceso a una sala de comunicaciones (plan 016).
+  roomAccess: TicketRoomAccess | null;
   allowedTransitions: TicketStatus[];
+}
+
+export interface TicketRoomAccess {
+  status: RoomAccessRequestStatus;
+  roomId: number;
+  roomName: string;
+  costCenterName: string;
+  beneficiaryKind: RoomBeneficiaryKind;
+  beneficiaryName: string;
+  beneficiaryDocumentId: string;
+  beneficiaryCompany: string | null;
+  reason: string;
+  requestedType: RoomAccessType;
+  requestedFrom: string;
+  requestedUntil: string | null;
+  accessType: RoomAccessType | null;
+  validFrom: string | null;
+  validUntil: string | null;
+  validatedByName: string | null;
+  validatedAt: string | null;
+  validationNotes: string | null;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  grantId: number | null;
+  grantStatus: string | null;
 }
 
 export interface LinkedPurchaseRequest {
@@ -148,7 +181,7 @@ export interface ServiceCategory {
   isActive: boolean;
 }
 
-export type CatalogFulfillment = "PURCHASE_REQUEST";
+export type CatalogFulfillment = "PURCHASE_REQUEST" | "ROOM_ACCESS";
 
 export interface CatalogItem {
   id: number;
@@ -159,6 +192,7 @@ export interface CatalogItem {
   approvalGroupId?: number | null;
   requiresApproval?: boolean;
   // PURCHASE_REQUEST: el pedido genera la solicitud de compra junto con el ticket (plan 010).
+  // ROOM_ACCESS: acceso a una sala de comunicaciones, validado y aprobado por ticket (plan 016).
   fulfillment: CatalogFulfillment | null;
   fields: CatalogField[];
   isActive: boolean;
@@ -205,6 +239,7 @@ export interface CreateTicketPayload {
   assignedGroupId?: number | null;
   isMajor?: boolean;
   purchaseRequest?: EquipmentPurchasePayload;
+  roomAccess?: RoomAccessRequestInput;
 }
 
 // Datos de la compra de una solicitud de equipo. El solicitante es el usuario de la sesion.

@@ -85,6 +85,8 @@ serviceTicketRouter.get("/assets", authorize("service-tickets", "update"), servi
 // assets:read: ese permiso lo tiene cualquier usuario y el historial expone asuntos de tickets ajenos.
 serviceTicketRouter.get("/asset-history/:assetId", authorize("service-tickets", "read"), tickets.assetHistory);
 serviceTicketRouter.get("/approvals", authorize("service-tickets", "approve"), tickets.listApprovals);
+// Salas para validar un acceso (plan 016): la misma lista acotada del portal, para el agente.
+serviceTicketRouter.get("/comm-rooms", authorize("service-tickets", "update"), portal.commRooms);
 
 serviceTicketRouter.get("/", authorize("service-tickets", "read"), tickets.list);
 serviceTicketRouter.post("/", authorize("service-tickets", "update"), ticketCreateRateLimiter, validateBody(tickets.createTicketSchema), tickets.create);

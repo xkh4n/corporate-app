@@ -39,6 +39,10 @@ import {
 } from "./components";
 import { EMPTY_EQUIPMENT_DRAFT, toEquipmentPayload, type EquipmentDraft } from "./equipmentDraft";
 import { EquipmentRequestFields } from "./EquipmentRequestFields";
+import { RoomAccessFields } from "./RoomAccessFields";
+import { emptyRoomAccessDraft, toRoomAccessPayload, type RoomAccessDraft } from "./roomAccessDraft";
+import { ROOM_ACCESS_REQUEST_STATUS_LABELS, ROOM_ACCESS_TYPE_LABELS } from "../../types/commRoom";
+import { formatPeriod } from "../comunicaciones/commRoomUi";
 import { ASSET_STATUS_LABELS, humanizeKey, IMPACT_LABELS, MAX_ATTACHMENT_BYTES, RESOLUTION_LABELS, TYPE_LABELS, URGENCY_LABELS } from "./serviceDeskLabels";
 
 // Portal del solicitante (plan 009): registrar un incidente o pedir un
@@ -113,6 +117,7 @@ function NewTicketForm({ canKb, initialService, onCreated }: { canKb: boolean; i
   const [assetIds, setAssetIds] = useState<Set<number>>(new Set());
   const [files, setFiles] = useState<File[]>([]);
   const [equipment, setEquipment] = useState<EquipmentDraft>(EMPTY_EQUIPMENT_DRAFT);
+  const [roomAccess, setRoomAccess] = useState<RoomAccessDraft>(emptyRoomAccessDraft);
   const [saving, setSaving] = useState(false);
   const [suggestions, setSuggestions] = useState<KbArticleSummary[]>([]);
   const [openArticleId, setOpenArticleId] = useState<number | null>(null);
@@ -157,6 +162,7 @@ function NewTicketForm({ canKb, initialService, onCreated }: { canKb: boolean; i
 
   const selectedItem = catalogItems.find((item) => item.id === catalogItemId) ?? null;
   const createsPurchase = type === "SERVICE_REQUEST" && selectedItem?.fulfillment === "PURCHASE_REQUEST";
+  const requestsRoomAccess = type === "SERVICE_REQUEST" && selectedItem?.fulfillment === "ROOM_ACCESS";
   const incidentCategories = useMemo(
     () => categories.filter((category) => category.appliesTo.includes(type)),
     [categories, type],
@@ -196,6 +202,7 @@ function NewTicketForm({ canKb, initialService, onCreated }: { canKb: boolean; i
         }
       }
       const purchaseRequest = createsPurchase ? toEquipmentPayload(equipment) : undefined;
+      const roomAccessPayload = requestsRoomAccess ? toRoomAccessPayload(roomAccess) : undefined;
       setSaving(true);
       const cleanVariables = Object.fromEntries(Object.entries(variables).filter(([, value]) => value !== undefined && value !== ""));
       const created = await servicePortalService.create({
@@ -209,6 +216,7 @@ function NewTicketForm({ canKb, initialService, onCreated }: { canKb: boolean; i
         urgency,
         assetIds: [...assetIds],
         purchaseRequest,
+        roomAccess: roomAccessPayload,
       });
       let failed = 0;
       for (const file of files) {
@@ -258,6 +266,7 @@ function NewTicketForm({ canKb, initialService, onCreated }: { canKb: boolean; i
                   setType(option.key);
                   setVariables({});
                   setEquipment(EMPTY_EQUIPMENT_DRAFT);
+                  setRoomAccess(emptyRoomAccessDraft());
                 }}
               />
               <span className="block font-semibold text-slate-800">{option.title}</span>
@@ -277,6 +286,7 @@ function NewTicketForm({ canKb, initialService, onCreated }: { canKb: boolean; i
                 setCatalogItemId(e.target.value ? Number(e.target.value) : "");
                 setVariables({});
                 setEquipment(EMPTY_EQUIPMENT_DRAFT);
+                setRoomAccess(emptyRoomAccessDraft());
               }}
             >
               <option value="">Seleccione…</option>
@@ -290,8 +300,13 @@ function NewTicketForm({ canKb, initialService, onCreated }: { canKb: boolean; i
           {selectedItem && (
             <div className="rounded-md bg-slate-50 p-3">
               <PlainText text={selectedItem.description} />
-              {selectedItem.requiresApproval && (
+              {selectedItem.requiresApproval && selectedItem.fulfillment !== "ROOM_ACCESS" && (
                 <p className="mt-1 text-xs text-violet-700">Este servicio requiere aprobación antes de atenderse.</p>
+              )}
+              {selectedItem.fulfillment === "ROOM_ACCESS" && (
+                <p className="mt-1 text-xs text-violet-700">
+                  El Service Desk valida la sala, el motivo y el período, y luego lo aprueba el responsable de TI / Seguridad.
+                </p>
               )}
               {selectedItem.fulfillment === "PURCHASE_REQUEST" && (
                 <p className="mt-1 text-xs text-violet-700">
@@ -311,6 +326,11 @@ function NewTicketForm({ canKb, initialService, onCreated }: { canKb: boolean; i
               {createsPurchase && (
                 <div className="mt-3">
                   <EquipmentRequestFields value={equipment} onChange={setEquipment} />
+                </div>
+              )}
+              {requestsRoomAccess && (
+                <div className="mt-3">
+                  <RoomAccessFields value={roomAccess} onChange={setRoomAccess} />
                 </div>
               )}
             </div>
@@ -578,6 +598,19 @@ function PortalTicketDetail({ id, onBack }: { id: number; onBack: () => void }) 
           {detail.assigneeName ? ` (${detail.assigneeName})` : ""}
         </p>
         <PlainText text={detail.description} className="mt-3" />
+        {detail.roomAccess && (
+          <div className="rounded-md bg-slate-50 p-3 text-sm text-slate-700">
+            <p>
+              Acceso a <span className="font-semibold">{detail.roomAccess.roomName}</span> ({detail.roomAccess.costCenterName}) para{" "}
+              {detail.roomAccess.beneficiaryName}: {ROOM_ACCESS_REQUEST_STATUS_LABELS[detail.roomAccess.status]}
+            </p>
+            <p className="text-xs text-slate-500">
+              {detail.roomAccess.accessType
+                ? `${ROOM_ACCESS_TYPE_LABELS[detail.roomAccess.accessType]}: ${formatPeriod(detail.roomAccess.validFrom, detail.roomAccess.validUntil)}`
+                : `Solicitado: ${ROOM_ACCESS_TYPE_LABELS[detail.roomAccess.requestedType]}, ${formatPeriod(detail.roomAccess.requestedFrom, detail.roomAccess.requestedUntil)}`}
+            </p>
+          </div>
+        )}
         {detail.purchaseRequest && (
           <p className="mt-3 rounded-md bg-violet-50 px-3 py-2 text-sm text-violet-900">
             Solicitud de compra <span className="font-semibold">{detail.purchaseRequest.number ?? `#${detail.purchaseRequest.id}`}</span>:{" "}
