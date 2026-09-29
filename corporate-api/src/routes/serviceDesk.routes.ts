@@ -26,6 +26,7 @@ servicePortalRouter.use(authenticate);
 
 servicePortalRouter.get("/catalog", authorize("service-tickets", "create"), portal.catalog);
 servicePortalRouter.get("/my-assets", authorize("service-tickets", "create"), portal.myAssets);
+servicePortalRouter.get("/comm-rooms", authorize("service-tickets", "create"), portal.commRooms);
 servicePortalRouter.get("/kb", authorize("kb-articles", "read"), kbSearchRateLimiter, portal.searchKb);
 servicePortalRouter.get("/kb/:articleId", authorize("kb-articles", "read"), portal.getKbArticle);
 servicePortalRouter.post(
@@ -84,6 +85,8 @@ serviceTicketRouter.get("/assets", authorize("service-tickets", "update"), servi
 // assets:read: ese permiso lo tiene cualquier usuario y el historial expone asuntos de tickets ajenos.
 serviceTicketRouter.get("/asset-history/:assetId", authorize("service-tickets", "read"), tickets.assetHistory);
 serviceTicketRouter.get("/approvals", authorize("service-tickets", "approve"), tickets.listApprovals);
+// Salas para validar un acceso (plan 016): la misma lista acotada del portal, para el agente.
+serviceTicketRouter.get("/comm-rooms", authorize("service-tickets", "update"), portal.commRooms);
 
 serviceTicketRouter.get("/", authorize("service-tickets", "read"), tickets.list);
 serviceTicketRouter.post("/", authorize("service-tickets", "update"), ticketCreateRateLimiter, validateBody(tickets.createTicketSchema), tickets.create);
@@ -103,6 +106,12 @@ serviceTicketRouter.post(
 );
 serviceTicketRouter.get("/:id/attachments/:attachmentId", authorize("service-tickets", "read"), tickets.downloadAttachment);
 serviceTicketRouter.post("/:id/approval", authorize("service-tickets", "approve"), validateBody(tickets.approvalSchema), tickets.decideApproval);
+serviceTicketRouter.post(
+  "/:id/room-access/validate",
+  authorize("service-tickets", "update"),
+  validateBody(tickets.roomAccessValidationSchema),
+  tickets.validateRoomAccess,
+);
 serviceTicketRouter.post("/:id/assets", authorize("service-tickets", "update"), validateBody(tickets.linkAssetsSchema), tickets.linkAssets);
 serviceTicketRouter.delete("/:id/assets/:assetId", authorize("service-tickets", "update"), tickets.unlinkAsset);
 // Mover el activo es un movimiento de activos: exige tambien asset-movements:create.
