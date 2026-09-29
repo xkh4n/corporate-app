@@ -22,6 +22,10 @@ import ReassignAsset from "../pages/activos/ReassignAsset";
 import AssetAssignments from "../pages/activos/AssetAssignments";
 import AssetHandoverForm from "../pages/activos/AssetHandoverForm";
 import DecommissionAsset from "../pages/activos/DecommissionAsset";
+import CreateCommRoom from "../pages/comunicaciones/CreateCommRoom";
+import CommRoomAdmin from "../pages/comunicaciones/CommRoomAdmin";
+import RegisterRoomEntry from "../pages/comunicaciones/RegisterRoomEntry";
+import CommRoomAccessReport from "../pages/comunicaciones/CommRoomAccessReport";
 import AssetKardex from "../pages/activos/AssetKardex";
 import PrintAssetLabels from "../pages/activos/PrintAssetLabels";
 import AssetValuation from "../pages/activos/AssetValuation";
@@ -96,6 +100,11 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
   "/assets/assignments": () => <AssetAssignments />,
   "/assets/handover-form": () => <AssetHandoverForm />,
   "/assets/decommission": () => <DecommissionAsset />,
+  // Comunicaciones > Acceso Sala (plan 016).
+  "/comm-rooms/create": () => <CreateCommRoom />,
+  "/comm-rooms": () => <CommRoomAdmin />,
+  "/comm-rooms/entries": () => <RegisterRoomEntry />,
+  "/comm-rooms/report": () => <CommRoomAccessReport />,
   "/solicitudes/estado-activos": () => <RequestAssetStatus />,
   "/assets/kardex": () => <AssetKardex />,
   "/assets/labels": () => <PrintAssetLabels />,

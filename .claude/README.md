@@ -18,6 +18,80 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-29 (5) — Revisión de seguridad del plan 016
+
+### Resultado
+- La primera ronda terminó con veredictos distintos:
+  - el security-engineer dio **NO-GO**: 2 Medios, 3 Bajos y 4 informativos;
+  - el orquestador dio **GO**, con 1 Bajo.
+- Después de las correcciones, el security-engineer las volvió a revisar y dio **GO**.
+
+### Correcciones
+- **M1:** el beneficiario no aprueba su propio acceso. Se compara por persona y por RUT normalizado, así también cuenta un externo que usa el RUT de un colaborador. Además, esos tickets no aparecen en sus aprobaciones pendientes.
+- **M2:** no valida quien pidió o registró la solicitud, ni el beneficiario.
+- **B1:** un acceso aprobado ya no se anula a través del ticket; se revoca en Administrar Salas.
+- **B2:**
+  - los avisos de la validación salen del evento público y pasan a la columna `validation_warnings`, que ven el agente y el aprobador;
+  - el aprobador que no pertenece al grupo ahora ve las notas del validador.
+- **B3:** aprobar toma `FOR SHARE` sobre la sala, así no puede competir con una desactivación.
+- **I1:** `minPlaces` queda acotado entre 2 y 50.
+- **I2:** las búsquedas ILIKE escapan los comodines (`escapeLikePattern`).
+- **L:**
+  - Registrar Ingreso lista las salas por `GET /comm-room-entries/rooms`, que no devuelve la dirección;
+  - el bundle `comm-room-entry` ya no incluye `comm-rooms:read`;
+  - el campo nuevo `revokedIncludes` del catálogo lo quita de las bases que ya estaban sembradas, en cada arranque. Si un admin lo vuelve a agregar, también se quita.
+- **Pruebas:** 3 de integración nuevas (M1, M2, B1/B2) y cobertura de L e I1 en las pruebas de rutas.
+  - Suite de la API: 54 archivos, 457 pruebas.
+  - Front: tsc, lint, 69 pruebas y build.
+
+---
+
+## 2026-09-29 (4) — Plan 016: Acceso a Salas de Comunicaciones (aprobado)
+
+### Hecho
+- Plan aprobado y copiado a [`planes/016-acceso-salas-comunicaciones.html`](planes/016-acceso-salas-comunicaciones.html).
+
+### Decisiones
+- **Módulo:** Gerencia de TI › Serv. Productivos › Comunicaciones › Acceso Sala, con 4 pantallas: Crear Sala, Administrar Salas, Registrar Ingreso y Consulta de Accesos.
+- **Solicitud:** el acceso solo se pide por ticket, con el ítem de catálogo `fulfillment = ROOM_ACCESS`.
+- **Flujo:** el Service Desk valida y define el período y el tipo; después aprueba el grupo «Responsable TI / Seguridad». Si rechaza, el ticket queda Cancelado; si aprueba, se crea el registro de acceso y el ticket queda Resuelto.
+- **Beneficiario:** un colaborador (RUT exacto) o un externo (nombre, RUT y empresa).
+- **Tipos de acceso:**
+  - Temporal y Única vez llevan fecha de término y expiran solos;
+  - Permanente no tiene término;
+  - un temporal cuenta como «prolongado» si lleva más de N días activo (configurable, 30 por defecto).
+- **Ingresos físicos:** Registrar Ingreso anota la entrada y la salida, y rechaza a quien no tenga acceso vigente.
+
+### Implementación
+- **API (`4fd205a`):**
+  - `migrateCommRooms()`: las tablas `comm_rooms`, `comm_room_access_requests`, `comm_room_access_grants`, `comm_room_entries` y `comm_room_settings`. Amplía el CHECK de `fulfillment` a `ROOM_ACCESS`, verificándolo antes en `pg_constraint`, y siembra el grupo «Responsable TI / Seguridad» (sin miembros) y el ítem «Acceso a sala de comunicaciones».
+  - `ticket.service`:
+    - el ticket nace NEW, sin aprobación al crearse;
+    - `submitRoomAccessForApproval` lo pasa a PENDING_APPROVAL con el grupo del ítem, con el SLA en pausa (`on_hold_since`);
+    - `decideApproval` crea el grant y deja el ticket RESOLVED/FULFILLED; quien validó no puede aprobar, y rechazar lo anula (CANCELLED);
+    - no se puede resolver a mano sin aprobación.
+  - Ingresos con lock e índice único de ingreso abierto. Un acceso de única vez expira al registrar la salida.
+  - Barrido `accessSweeper` cada 60 s, con lease en Redis. «Vigente» siempre se calcula con `now()` de la base.
+  - Reportes: accesos vigentes, vencidos, por RUT exacto, varias salas o tiendas, y temporales prolongados (N días configurable).
+  - Corrección aparte: pasar de ON_HOLD a CANCELLED repetía `on_hold_since` en el UPDATE.
+- **Front:**
+  - pantallas `pages/comunicaciones/`: Crear Sala, Administrar Salas, Registrar Ingreso y Consulta de Accesos;
+  - `RoomAccessFields` en Generar Ticket y `RoomAccessPanel` (validar y enviar a aprobación) en Gestión de Tickets;
+  - en Configuración del Service Desk, el «Tipo de atención» pasa a ser un selector.
+
+### Verificación
+- `commRoomAccess.service.integration.test.ts` (17 pruebas) y `commRoom.routes.integration.test.ts` (5, cada bundle con solo sus endpoints y el portal sin dirección).
+- `rut.unit.test.ts` (4 pruebas).
+- API: suite completa verde (52 archivos, 445 pruebas, antes de las pruebas de rutas). Front: tsc, ESLint, 69 pruebas y build.
+
+### Pendiente
+- Revisión de seguridad y promoción a master.
+- En cada ambiente, el admin debe:
+  - agregar miembros al grupo «Responsable TI / Seguridad»;
+  - asignar las 4 pantallas `comm-room-*:access`;
+  - crear las salas.
+- Probar en el navegador.
+
 ## 2026-09-29 (3) — Revisión de seguridad y promoción del plan 015
 
 ### Hecho

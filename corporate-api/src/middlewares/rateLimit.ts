@@ -133,6 +133,15 @@ export const serviceDeskLookupRateLimiter = createLazyUserLimiter({
   message: "Demasiadas busquedas de usuarios o activos, intenta mas tarde",
 });
 
+// Registrar ingreso a una sala (plan 016): la respuesta confirma el nombre de un RUT con acceso, asi
+// que se frena igual que las busquedas de personas.
+export const roomEntryRateLimiter = createLazyUserLimiter({
+  prefix: "rl:roomentry:",
+  windowMs: 60 * 1000,
+  limit: 30,
+  message: "Demasiados registros de ingreso seguidos, intenta mas tarde",
+});
+
 // Busqueda de conocimiento (portal y agentes): el front espera a que se deje de escribir.
 export const kbSearchRateLimiter = createLazyUserLimiter({
   prefix: "rl:kbsearch:",

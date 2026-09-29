@@ -151,6 +151,12 @@ export const EVENT_LABELS: Record<string, string> = {
   ASSETS_LINKED: "Activos vinculados",
   ASSET_UNLINKED_PROBLEM: "Activo desvinculado",
   KB_DRAFTED: "Borrador de artículo creado",
+  PURCHASE_REQUEST_LINKED: "Solicitud de compra",
+  ROOM_ACCESS_REQUESTED: "Acceso a sala solicitado",
+  ROOM_ACCESS_VALIDATED: "Acceso a sala validado",
+  ROOM_ACCESS_GRANTED: "Acceso a sala autorizado",
+  ROOM_ACCESS_EXPIRED: "Acceso a sala vencido",
+  ROOM_ACCESS_REVOKED: "Acceso a sala revocado",
 };
 
 export const ASSET_STATUS_LABELS: Record<string, string> = {

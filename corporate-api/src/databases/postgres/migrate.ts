@@ -12,6 +12,8 @@ import {
   DEFAULT_HOLIDAYS,
   DEFAULT_SLA_POLICIES,
   EQUIPMENT_REQUEST_ITEM_NAME,
+  ROOM_ACCESS_APPROVAL_GROUP_NAME,
+  ROOM_ACCESS_ITEM_NAME,
 } from "../serviceDesk-defaults";
 
 // Tiempos maximos de espera por un lock, en ms. Los ALTER TABLE piden un lock fuerte aunque el cambio sea un
@@ -127,6 +129,7 @@ async function applyPostgresMigrations(): Promise<void> {
   await migrateAssetAccounting();
   await migrateAssetWriteOffs();
   await migrateServiceDesk();
+  await migrateCommRooms();
   await migrateIntegrityAndIndexes();
 
   logger.info("Migracion de Postgres aplicada");
@@ -1422,6 +1425,176 @@ async function migrateEquipmentRequests(): Promise<void> {
       WHERE purchase_request_id IS NOT NULL;
   `);
   await assertIndexExists("ux_service_tickets_purchase_request");
+}
+
+// Acceso a salas de comunicaciones (plan 016). El acceso se pide por ticket
+// (item del catalogo con fulfillment ROOM_ACCESS): la solicitud es 1:1 con el
+// ticket y, al aprobarse, deja un grant que es el registro oficial del acceso.
+// Los ingresos fisicos cuelgan del grant. "Vigente" se calcula siempre con
+// now() de la base (el barrido solo marca EXPIRED para los listados).
+async function migrateCommRooms(): Promise<void> {
+  // Ampliar el CHECK de fulfillment solo si falta ROOM_ACCESS: alreadyApplied no ve constraints y un
+  // DROP/ADD en cada arranque tomaria un lock ACCESS EXCLUSIVE sobre el catalogo por nada.
+  const [fulfillmentCheck] = await postgres.query<{ def: string }>(
+    `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'ck_service_catalog_items_fulfillment'`,
+    { type: QueryTypes.SELECT },
+  );
+  if (fulfillmentCheck && !fulfillmentCheck.def.includes("ROOM_ACCESS")) {
+    await postgres.transaction(async (transaction) => {
+      await postgres.query(`SET LOCAL lock_timeout = ${DDL_LOCK_TIMEOUT_MS}`, { transaction });
+      await postgres.query(
+        `ALTER TABLE service_catalog_items DROP CONSTRAINT ck_service_catalog_items_fulfillment,
+           ADD CONSTRAINT ck_service_catalog_items_fulfillment CHECK (fulfillment IN ('PURCHASE_REQUEST','ROOM_ACCESS'))`,
+        { transaction },
+      );
+    });
+  }
+
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS comm_rooms (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(120) NOT NULL,
+      cost_center_id INTEGER NOT NULL REFERENCES cost_centers(id),
+      address VARCHAR(255) NOT NULL,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_by INTEGER NOT NULL,
+      updated_by INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await runDdl(`CREATE UNIQUE INDEX IF NOT EXISTS ux_comm_rooms_cc_name ON comm_rooms(cost_center_id, lower(name));`);
+  await assertIndexExists("ux_comm_rooms_cc_name");
+
+  // Lo que se pidio en el ticket y lo que valido el agente. beneficiary_person_id es MSSQL (sin FK);
+  // nombre y RUT quedan como snapshot para responder "quien" aunque la persona cambie despues.
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS comm_room_access_requests (
+      id SERIAL PRIMARY KEY,
+      ticket_id INTEGER NOT NULL UNIQUE REFERENCES service_tickets(id),
+      room_id INTEGER NOT NULL REFERENCES comm_rooms(id),
+      beneficiary_kind VARCHAR(10) NOT NULL CHECK (beneficiary_kind IN ('INTERNAL','EXTERNAL')),
+      beneficiary_person_id INTEGER,
+      beneficiary_name VARCHAR(160) NOT NULL,
+      beneficiary_document_id VARCHAR(20) NOT NULL,
+      beneficiary_company VARCHAR(160),
+      reason TEXT NOT NULL,
+      requested_type VARCHAR(12) NOT NULL CHECK (requested_type IN ('TEMPORARY','PERMANENT','SINGLE_USE')),
+      requested_from TIMESTAMPTZ NOT NULL,
+      requested_until TIMESTAMPTZ,
+      status VARCHAR(12) NOT NULL DEFAULT 'REQUESTED'
+        CHECK (status IN ('REQUESTED','VALIDATED','APPROVED','REJECTED','CANCELLED')),
+      validated_by INTEGER,
+      validated_at TIMESTAMPTZ,
+      validation_notes VARCHAR(1000),
+      access_type VARCHAR(12) CHECK (access_type IN ('TEMPORARY','PERMANENT','SINGLE_USE')),
+      valid_from TIMESTAMPTZ,
+      valid_until TIMESTAMPTZ,
+      decided_by INTEGER,
+      decided_at TIMESTAMPTZ,
+      decision_comment VARCHAR(1000),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT ck_comm_room_requests_beneficiary CHECK (
+        (beneficiary_kind = 'INTERNAL' AND beneficiary_person_id IS NOT NULL)
+        OR (beneficiary_kind = 'EXTERNAL' AND beneficiary_company IS NOT NULL)),
+      CONSTRAINT ck_comm_room_requests_validated CHECK (
+        status IN ('REQUESTED','CANCELLED')
+        OR (validated_by IS NOT NULL AND access_type IS NOT NULL AND valid_from IS NOT NULL))
+    );
+  `);
+  // Avisos de la validacion: los ve el agente y el aprobador, nunca el solicitante (revision plan 016, B2).
+  await runDdl(`ALTER TABLE comm_room_access_requests ADD COLUMN IF NOT EXISTS validation_warnings TEXT[] NOT NULL DEFAULT '{}';`);
+
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS comm_room_access_grants (
+      id SERIAL PRIMARY KEY,
+      request_id INTEGER NOT NULL UNIQUE REFERENCES comm_room_access_requests(id),
+      ticket_id INTEGER NOT NULL REFERENCES service_tickets(id),
+      room_id INTEGER NOT NULL REFERENCES comm_rooms(id),
+      beneficiary_kind VARCHAR(10) NOT NULL CHECK (beneficiary_kind IN ('INTERNAL','EXTERNAL')),
+      beneficiary_person_id INTEGER,
+      beneficiary_name VARCHAR(160) NOT NULL,
+      beneficiary_document_id VARCHAR(20) NOT NULL,
+      beneficiary_company VARCHAR(160),
+      reason TEXT NOT NULL,
+      access_type VARCHAR(12) NOT NULL CHECK (access_type IN ('TEMPORARY','PERMANENT','SINGLE_USE')),
+      valid_from TIMESTAMPTZ NOT NULL,
+      valid_until TIMESTAMPTZ,
+      status VARCHAR(10) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','EXPIRED','REVOKED')),
+      validated_by INTEGER NOT NULL,
+      approved_by INTEGER NOT NULL,
+      approved_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expired_at TIMESTAMPTZ,
+      revoked_by INTEGER,
+      revoked_at TIMESTAMPTZ,
+      revoke_reason VARCHAR(1000),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT ck_comm_room_grants_period CHECK ((access_type = 'PERMANENT') = (valid_until IS NULL)),
+      CONSTRAINT ck_comm_room_grants_order CHECK (valid_until IS NULL OR valid_until > valid_from),
+      CONSTRAINT ck_comm_room_grants_revoked CHECK (status <> 'REVOKED' OR (revoked_by IS NOT NULL AND revoke_reason IS NOT NULL))
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_comm_room_grants_room ON comm_room_access_grants(room_id, status);`);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_comm_room_grants_document ON comm_room_access_grants(beneficiary_document_id, status);`);
+  await runDdl(`
+    CREATE INDEX IF NOT EXISTS ix_comm_room_grants_due ON comm_room_access_grants(valid_until)
+      WHERE status = 'ACTIVE' AND valid_until IS NOT NULL;
+  `);
+
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS comm_room_entries (
+      id SERIAL PRIMARY KEY,
+      grant_id INTEGER NOT NULL REFERENCES comm_room_access_grants(id),
+      room_id INTEGER NOT NULL REFERENCES comm_rooms(id),
+      checked_in_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      checked_in_by INTEGER NOT NULL,
+      checked_out_at TIMESTAMPTZ,
+      checked_out_by INTEGER,
+      notes VARCHAR(500),
+      CONSTRAINT ck_comm_room_entries_order CHECK (checked_out_at IS NULL OR checked_out_at >= checked_in_at)
+    );
+  `);
+  // Una persona no puede estar "adentro" dos veces con el mismo acceso.
+  await runDdl(`CREATE UNIQUE INDEX IF NOT EXISTS ux_comm_room_entries_open ON comm_room_entries(grant_id) WHERE checked_out_at IS NULL;`);
+  await assertIndexExists("ux_comm_room_entries_open");
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_comm_room_entries_room ON comm_room_entries(room_id, checked_in_at DESC);`);
+
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS comm_room_settings (
+      id SMALLINT PRIMARY KEY CHECK (id = 1),
+      temporary_max_active_days INTEGER NOT NULL DEFAULT 30 CHECK (temporary_max_active_days > 0),
+      updated_by INTEGER,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await postgres.query(`INSERT INTO comm_room_settings (id) VALUES (1) ON CONFLICT DO NOTHING`);
+
+  // Grupo aprobador (sin miembros: los asigna el admin) y el item del catalogo. Solo si no existen:
+  // despues el admin los puede cambiar y no se pisan.
+  await postgres.query(
+    `INSERT INTO support_groups (name, description) VALUES (:name, :description) ON CONFLICT (name) DO NOTHING`,
+    { replacements: { name: ROOM_ACCESS_APPROVAL_GROUP_NAME, description: "Aprueba los accesos a las salas de comunicaciones" } },
+  );
+  await migrateSupportGroupCodes();
+  await postgres.query(
+    `INSERT INTO service_catalog_items (name, description, category_id, default_group_id, approval_group_id, fields, fulfillment)
+     SELECT :name, :description,
+            (SELECT id FROM service_categories WHERE parent_id IS NULL AND name = :category),
+            (SELECT id FROM support_groups WHERE name = :defaultGroup),
+            (SELECT id FROM support_groups WHERE name = :approvalGroup),
+            '[]'::jsonb, 'ROOM_ACCESS'
+     ON CONFLICT (name) DO NOTHING`,
+    {
+      replacements: {
+        name: ROOM_ACCESS_ITEM_NAME,
+        description: "Acceso a una sala de comunicaciones de una tienda o sucursal",
+        category: "Accesos y cuentas",
+        defaultGroup: "Infraestructura",
+        approvalGroup: ROOM_ACCESS_APPROVAL_GROUP_NAME,
+      },
+    },
+  );
 }
 
 // Toma de inventario fisica (levantamiento por un auditor). Ver

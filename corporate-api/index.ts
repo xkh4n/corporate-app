@@ -15,6 +15,7 @@ import { seedTestData } from "./src/databases/seedTestData";
 import { initSocketServer } from "./src/library/realtime/socketServer";
 import { startImportSweeper, stopImportWorkers } from "./src/services/redis/assetImportJob.service";
 import { startServiceDeskSlaSweeper, stopServiceDeskSlaSweeper } from "./src/services/postgres/serviceDesk/slaSweeper";
+import { startRoomAccessSweeper, stopRoomAccessSweeper } from "./src/services/postgres/commRooms/accessSweeper";
 import { registerPurchaseTicketSync } from "./src/services/postgres/serviceDesk/purchaseLink.service";
 import "./src/databases/registerModels";
 
@@ -54,6 +55,7 @@ async function bootstrap(): Promise<void> {
   // equipo (plan 010) siguen a su compra: aviso inmediato en cada replica + reconciliacion en el barrido.
   registerPurchaseTicketSync();
   startServiceDeskSlaSweeper();
+  startRoomAccessSweeper();
   registerShutdownHandlers(server);
 }
 
@@ -71,6 +73,7 @@ function registerShutdownHandlers(server: http.Server): void {
     // Deja de aceptar conexiones nuevas mientras termina la fila de carga en curso (las abiertas se cortan al salir).
     server.close();
     stopServiceDeskSlaSweeper();
+    stopRoomAccessSweeper();
     stopImportWorkers()
       .catch((err) => logger.error({ err }, "Error al detener las cargas masivas"))
       .finally(() => process.exit(128 + (SIGNAL_NUMBERS[signal] ?? 15)));

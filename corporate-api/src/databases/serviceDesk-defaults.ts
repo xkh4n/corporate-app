@@ -88,6 +88,10 @@ export const DEFAULT_CATEGORIES: { name: string; group: string; appliesTo: strin
 // productos se eligen en las lineas de la compra, no en un campo del formulario.
 export const EQUIPMENT_REQUEST_ITEM_NAME = "Solicitud de equipo";
 
+// Acceso a salas de comunicaciones (plan 016): item del catalogo y grupo que aprueba.
+export const ROOM_ACCESS_ITEM_NAME = "Acceso a sala de comunicaciones";
+export const ROOM_ACCESS_APPROVAL_GROUP_NAME = "Responsable TI / Seguridad";
+
 export const DEFAULT_CATALOG_ITEMS: {
   name: string;
   description: string;

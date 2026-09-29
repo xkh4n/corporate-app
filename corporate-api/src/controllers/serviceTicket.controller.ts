@@ -10,6 +10,7 @@ import {
   RESOLUTION_CODES,
   TICKET_STATUSES,
   TICKET_TYPES,
+  ROOM_ACCESS_TYPES,
   type Priority,
   type TicketStatus,
   type TicketType,
@@ -20,7 +21,18 @@ import * as ticketAssetService from "../services/postgres/serviceDesk/ticketAsse
 import * as relatedService from "../services/postgres/serviceDesk/related.service";
 import { listCatalogItems, listCategories, listGroups } from "../services/postgres/serviceDesk/settings.service";
 import { resolveTicketScope } from "../services/postgres/serviceDesk/ticketScope";
-import { actorOf, ID, LEVEL, optionalQueryId, parseId, queryString, sendStoredFile, TEXT } from "./serviceDesk.shared";
+import {
+  actorOf,
+  DATETIME,
+  ID,
+  LEVEL,
+  optionalQueryId,
+  parseId,
+  queryString,
+  roomAccessRequestSchema,
+  sendStoredFile,
+  TEXT,
+} from "./serviceDesk.shared";
 
 // Service Desk (plan 009): trabajo del agente sobre incidentes y solicitudes.
 
@@ -41,6 +53,19 @@ export const createTicketSchema = z
     requesterUserId: ID.optional(),
     assignedGroupId: ID.nullable().optional(),
     isMajor: z.boolean().optional(),
+    // Acceso a sala de comunicaciones (plan 016), registrado por el agente a nombre del solicitante.
+    roomAccess: roomAccessRequestSchema.optional(),
+  })
+  .strict();
+
+// El agente valida el acceso a sala y lo envia a aprobacion (plan 016).
+export const roomAccessValidationSchema = z
+  .object({
+    roomId: ID,
+    accessType: z.enum(ROOM_ACCESS_TYPES),
+    validFrom: DATETIME,
+    validUntil: DATETIME.nullable(),
+    notes: z.string().trim().max(1000).optional(),
   })
   .strict();
 
@@ -270,6 +295,16 @@ export async function downloadAttachment(req: Request, res: Response, next: Next
       scope: await scopeOf(req),
     });
     sendStoredFile(res, next, file);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function validateRoomAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = req.body as z.infer<typeof roomAccessValidationSchema>;
+    const { detail, warnings } = await ticketService.submitRoomAccessForApproval(ticketId(req), body, actorOf(req));
+    sendOk(res, { ticket: detail, warnings }, "Acceso validado y enviado a aprobación");
   } catch (err) {
     next(err);
   }

@@ -1,6 +1,7 @@
 import { apiFetch, apiFetchBlob } from "../lib/apiClient";
 import { toQuery } from "../lib/query";
 import type { ListParams, Paginated } from "../types/api";
+import type { PortalCommRoom, RoomAccessValidationInput } from "../types/commRoom";
 import type {
   AssetServiceRecord,
   BusinessCalendar,
@@ -63,6 +64,8 @@ function uploadForm(file: File): FormData {
 export const servicePortalService = {
   catalog: () => apiFetch<{ categories: ServiceCategory[]; catalogItems: CatalogItem[] }>("/service-portal/catalog"),
   myAssets: () => apiFetch<HeldAsset[]>("/service-portal/my-assets"),
+  // Salas para pedir acceso (plan 016): sin la direccion.
+  commRooms: () => apiFetch<PortalCommRoom[]>("/service-portal/comm-rooms"),
   list: (params?: ListParams & { includeClosed?: boolean }) =>
     apiFetch<Paginated<TicketSummary>>(`/service-portal/tickets${toQuery(params)}`),
   create: (payload: CreateTicketPayload) => apiFetch<TicketDetail>("/service-portal/tickets", { method: "POST", body: payload }),
@@ -112,6 +115,10 @@ export const serviceTicketService = {
   downloadAttachment: (id: number, attachmentId: number) => apiFetchBlob(`/service-tickets/${id}/attachments/${attachmentId}`),
   decide: (id: number, decision: "APPROVED" | "REJECTED", comment?: string) =>
     apiFetch<TicketDetail>(`/service-tickets/${id}/approval`, { method: "POST", body: { decision, comment } }),
+  // Acceso a sala (plan 016): el agente valida y envia a aprobacion.
+  commRooms: () => apiFetch<PortalCommRoom[]>("/service-tickets/comm-rooms"),
+  validateRoomAccess: (id: number, body: RoomAccessValidationInput) =>
+    apiFetch<{ ticket: TicketDetail; warnings: string[] }>(`/service-tickets/${id}/room-access/validate`, { method: "POST", body }),
   linkAssets: (id: number, assetIds: number[]) => apiFetch<TicketDetail>(`/service-tickets/${id}/assets`, { method: "POST", body: { assetIds } }),
   unlinkAsset: (id: number, assetId: number) => apiFetch<void>(`/service-tickets/${id}/assets/${assetId}`, { method: "DELETE" }),
   sendAssetToSupport: (id: number, assetId: number, notes?: string) =>
