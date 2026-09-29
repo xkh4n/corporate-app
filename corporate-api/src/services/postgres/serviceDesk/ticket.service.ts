@@ -21,6 +21,7 @@ import {
   PURCHASE_WITHDRAWABLE_STATUSES,
   purchaseSyncEffect,
   resolvePriority,
+  ROOM_ACCESS_TYPE_LABELS,
   SLA_WARNING_RATIO,
   type Channel,
   type OnHoldReason,
@@ -41,6 +42,21 @@ import { getUserByIdOrThrow, getUserDirectory } from "../../mssql/user.service";
 import { hasPermission } from "../permission.service";
 import { getRoleByIdOrThrow } from "../role.service";
 import { nextServiceDeskNumber } from "./numbering";
+import {
+  assertActorIsNotBeneficiary,
+  cancelOpenRequest,
+  getActorIdentity,
+  createGrantFromRequest,
+  getRequestForTicket,
+  insertAccessRequest,
+  markRequestValidated,
+  resolveRoomAccessInput,
+  setRequestDecision,
+  type ResolvedRoomAccessInput,
+  type RoomAccessInput,
+  type RoomAccessRequestRow,
+  type RoomAccessValidation,
+} from "../commRooms/roomAccess.service";
 import {
   emailRequester,
   emailUsersAbout,
@@ -231,6 +247,34 @@ export interface TicketApproval {
   decidedAt: Date;
 }
 
+// Solicitud de acceso a una sala de comunicaciones (plan 016).
+export interface TicketRoomAccess {
+  status: RoomAccessRequestRow["status"];
+  roomId: number;
+  roomName: string;
+  costCenterName: string;
+  beneficiaryKind: RoomAccessRequestRow["beneficiaryKind"];
+  beneficiaryName: string;
+  beneficiaryDocumentId: string;
+  beneficiaryCompany: string | null;
+  reason: string;
+  requestedType: RoomAccessRequestRow["requestedType"];
+  requestedFrom: Date;
+  requestedUntil: Date | null;
+  accessType: RoomAccessRequestRow["accessType"];
+  validFrom: Date | null;
+  validUntil: Date | null;
+  validatedByName: string | null;
+  validatedAt: Date | null;
+  // Solo para el agente: lo interno de la validacion.
+  validationNotes: string | null;
+  validationWarnings: string[];
+  decidedByName: string | null;
+  decidedAt: Date | null;
+  grantId: number | null;
+  grantStatus: string | null;
+}
+
 // Solicitud de compra que genero el ticket (solicitud de equipo, plan 010).
 export interface LinkedPurchaseRequest {
   id: number;
@@ -260,6 +304,7 @@ export interface TicketDetail extends TicketSummary {
   approvals: TicketApproval[];
   assets: TicketAsset[];
   purchaseRequest: LinkedPurchaseRequest | null;
+  roomAccess: TicketRoomAccess | null;
   // Solo para el agente: transiciones permitidas desde el estado actual.
   allowedTransitions: TicketStatus[];
 }
@@ -451,6 +496,8 @@ export interface CreateTicketInput {
   isMajor?: boolean;
   // Solo la solicitud de equipo (item con fulfillment PURCHASE_REQUEST, plan 010).
   purchaseRequest?: EquipmentPurchaseInput;
+  // Solo el acceso a sala de comunicaciones (item con fulfillment ROOM_ACCESS, plan 016).
+  roomAccess?: RoomAccessInput;
 }
 
 export interface EquipmentPurchaseInput {
@@ -475,7 +522,7 @@ interface PendingPurchase {
 // falla, rollback y no queda la compra (ni se quema el numero SOL).
 async function openEquipmentPurchase(input: CreateTicketInput, actor: TicketActor, mode: "PORTAL" | "AGENT"): Promise<PendingPurchase | null> {
   const catalogItem = input.catalogItemId ? await getCatalogItem(input.catalogItemId) : null;
-  if (!catalogItem?.fulfillment) {
+  if (catalogItem?.fulfillment !== "PURCHASE_REQUEST") {
     if (input.purchaseRequest) throw new BadRequestError("Solo una solicitud de equipo lleva datos de compra");
     return null;
   }
@@ -532,10 +579,12 @@ export async function createTicket(
     throw new BadRequestError("El solicitante esta inactivo");
   }
 
+  // Antes de abrir transacciones: el colaborador se resuelve en MSSQL por RUT exacto.
+  const roomAccess = input.roomAccess ? await resolveRoomAccessInput(input.roomAccess) : null;
   const purchase = await openEquipmentPurchase(input, actor, mode);
   let created: { id: number; number: string; status: TicketStatus; assignedGroupId: number | null; approvalGroupId: number | null; priority: Priority };
   try {
-    created = await insertTicket(input, actor, mode, requesterUserId, purchase);
+    created = await insertTicket(input, actor, mode, requesterUserId, purchase, roomAccess);
   } catch (err) {
     await purchase?.transaction.rollback();
     throw err;
@@ -580,6 +629,7 @@ async function insertTicket(
   mode: "PORTAL" | "AGENT",
   requesterUserId: number,
   purchase: PendingPurchase | null,
+  roomAccess: ResolvedRoomAccessInput | null,
 ) {
   return postgres.transaction(async (transaction) => {
     const category = input.categoryId ? await getCategory(input.categoryId, transaction) : null;
@@ -599,9 +649,12 @@ async function insertTicket(
       throw new BadRequestError("Elija el servicio del catalogo que necesita");
     }
     // El item se leyo antes de abrir la compra: si cambio entretanto, no se mezcla.
-    if (Boolean(catalogItem?.fulfillment) !== Boolean(purchase)) {
+    if ((catalogItem?.fulfillment === "PURCHASE_REQUEST") !== Boolean(purchase)) {
       throw new ConflictError("El servicio cambio mientras se registraba el ticket: intente de nuevo");
     }
+    const isRoomAccess = catalogItem?.fulfillment === "ROOM_ACCESS";
+    if (isRoomAccess && !roomAccess) throw new BadRequestError("Complete los datos del acceso: sala, beneficiario, motivo y periodo");
+    if (!isRoomAccess && roomAccess) throw new BadRequestError("Solo una solicitud de acceso a sala lleva datos de sala");
     let variables: Record<string, unknown> = {};
     if (catalogItem) {
       const parsed = buildVariablesSchema(catalogItem.fields).safeParse(input.variables ?? {});
@@ -626,7 +679,9 @@ async function insertTicket(
     const categoryId = category?.id ?? catalogItem?.categoryId ?? null;
     const priority = resolvePriority(await loadPriorityMatrix(transaction), input.impact, input.urgency);
     // La solicitud de equipo la aprueba el aprobador de la compra, no un grupo del Service Desk.
-    const needsApproval = !purchase && catalogItem?.approvalGroupId !== null && catalogItem?.approvalGroupId !== undefined;
+    // El acceso a sala se aprueba despues de que el Service Desk lo valida (submitRoomAccessForApproval).
+    const needsApproval =
+      !purchase && !isRoomAccess && catalogItem?.approvalGroupId !== null && catalogItem?.approvalGroupId !== undefined;
     const status: TicketStatus = needsApproval ? "PENDING_APPROVAL" : "NEW";
     const number = await nextServiceDeskNumber(input.type === "INCIDENT" ? "INC" : "REQ", transaction, assignedGroupId);
 
@@ -677,6 +732,14 @@ async function insertTicket(
         isPublic: true,
         body: `Se generó la solicitud de compra ${purchase.request.requestNumber}: la revisará el aprobador que eligió.`,
         payload: { purchaseRequestId: purchase.request.id, requestNumber: purchase.request.requestNumber },
+      });
+    }
+    if (roomAccess) {
+      const { roomName } = await insertAccessRequest(id, roomAccess, transaction);
+      await addEvent(transaction, id, "ROOM_ACCESS_REQUESTED", actor.userId, {
+        isPublic: true,
+        body: `Acceso solicitado a la sala ${roomName} para ${roomAccess.beneficiary.name}: lo validará el Service Desk y luego lo aprobará el responsable.`,
+        payload: { roomId: roomAccess.roomId, requestedType: roomAccess.requestedType },
       });
     }
     if (status === "NEW") await startSla({ id, type: input.type, priority }, transaction);
@@ -912,8 +975,12 @@ export async function getTicketDetail(id: number, options: DetailOptions): Promi
   );
   const assets = await listTicketAssets(id);
   const purchaseRequest = await loadLinkedPurchaseRequest(row);
+  const roomRequest = await getRequestForTicket(row.id);
+  const grant = roomRequest ? await getGrantOfRequest(roomRequest.id) : null;
 
   const directory = await getUserDirectory([
+    roomRequest?.validatedBy ?? 0,
+    roomRequest?.decidedBy ?? 0,
     row.requesterUserId,
     row.assigneeUserId ?? 0,
     ...events.map((event) => event.actorUserId ?? 0),
@@ -944,8 +1011,53 @@ export async function getTicketDetail(id: number, options: DetailOptions): Promi
     approvals: approvals.map((approval) => ({ ...approval, approverName: nameOf(approval.approverUserId) })),
     assets,
     purchaseRequest,
-    allowedTransitions: publicOnly ? [] : agentTransitionsFrom(row.status).filter((to) => !isBlockedByPurchase(row, to)),
+    roomAccess: roomRequest
+      ? {
+          status: roomRequest.status,
+          roomId: roomRequest.roomId,
+          roomName: roomRequest.roomName,
+          costCenterName: roomRequest.costCenterName,
+          beneficiaryKind: roomRequest.beneficiaryKind,
+          beneficiaryName: roomRequest.beneficiaryName,
+          beneficiaryDocumentId: roomRequest.beneficiaryDocumentId,
+          beneficiaryCompany: roomRequest.beneficiaryCompany,
+          reason: roomRequest.reason,
+          requestedType: roomRequest.requestedType,
+          requestedFrom: roomRequest.requestedFrom,
+          requestedUntil: roomRequest.requestedUntil,
+          accessType: roomRequest.accessType,
+          validFrom: roomRequest.validFrom,
+          validUntil: roomRequest.validUntil,
+          validatedByName: nameOf(roomRequest.validatedBy),
+          validatedAt: roomRequest.validatedAt,
+          // El aprobador decide con las notas y avisos del validador; el solicitante no los ve (revision plan 016, B2).
+      validationNotes: options.audience === "requester" ? null : roomRequest.validationNotes,
+      validationWarnings: options.audience === "requester" ? [] : roomRequest.validationWarnings,
+          decidedByName: nameOf(roomRequest.decidedBy),
+          decidedAt: roomRequest.decidedAt,
+          grantId: grant?.id ?? null,
+          grantStatus: grant?.status ?? null,
+        }
+      : null,
+    allowedTransitions: publicOnly
+      ? []
+      : agentTransitionsFrom(row.status).filter((to) => !isBlockedByPurchase(row, to) && !isBlockedByRoomAccess(roomRequest, to)),
   };
+}
+
+async function getGrantOfRequest(requestId: number): Promise<{ id: number; status: string } | null> {
+  const [grant] = await postgres.query<{ id: number; status: string }>(
+    `SELECT id, status FROM comm_room_access_grants WHERE request_id = :requestId`,
+    { replacements: { requestId }, type: QueryTypes.SELECT },
+  );
+  return grant ?? null;
+}
+
+// Un acceso a sala solo se resuelve al aprobarse (decideApproval): el agente no lo resuelve a mano (plan 016).
+// Y un acceso aprobado no se anula por el ticket: se revoca en Administrar Salas (revision plan 016, B1).
+function isBlockedByRoomAccess(request: RoomAccessRequestRow | null, to: TicketStatus): boolean {
+  if (request === null) return false;
+  return (to === "RESOLVED" && request.status !== "APPROVED") || (to === "CANCELLED" && request.status === "APPROVED");
 }
 
 // Estado en vivo de la compra; si MSSQL no responde, el ultimo aplicado al ticket.
@@ -1107,6 +1219,9 @@ export async function changeStatus(id: number, input: StatusInput, actor: Ticket
         `El ticket ${row.number} sigue la solicitud de compra ${row.purchaseRequestNumber ?? ""}: se resuelve al recepcionar el equipo y se anula si la compra se rechaza o anula`,
       );
     }
+    if (isBlockedByRoomAccess(await getRequestForTicket(row.id, transaction), input.status)) {
+      throw new ConflictError("Un acceso a sala se resuelve al aprobarlo: valídelo y envíelo a aprobación");
+    }
     await applyTransition(row, input, actor, transaction, "agent");
     return row;
   });
@@ -1128,8 +1243,11 @@ async function applyTransition(
   const replacements: Record<string, unknown> = { id: row.id, status: input.status };
   const payload: Record<string, unknown> = { from: row.status, to: input.status, origin };
 
-  // Salir de ON_HOLD: los minutos habiles en pausa corren el vencimiento.
-  if (row.status === "ON_HOLD" && input.status !== "ON_HOLD" && row.onHoldSince && row.slaStartAt) {
+  // Salir de ON_HOLD: los minutos habiles en pausa corren el vencimiento. Tambien la espera de
+  // aprobacion de un acceso a sala (plan 016), que pausa con on_hold_since; la aprobacion al crear el
+  // ticket no tiene reloj (sla_start_at nulo) y no entra aca.
+  const pausedState = row.status === "ON_HOLD" || row.status === "PENDING_APPROVAL";
+  if (pausedState && input.status !== "ON_HOLD" && row.onHoldSince && row.slaStartAt) {
     const { calendar } = await loadBusinessCalendar(row.calendarId, transaction);
     const paused = businessMinutesBetween(new Date(row.onHoldSince), new Date(), calendar);
     const totalPaused = row.slaPausedMinutes + paused;
@@ -1207,8 +1325,11 @@ async function applyTransition(
     case "CANCELLED": {
       // Un activo en soporte quedaria huerfano: se devuelve antes (run-3, F5).
       await assertNoAssetInSupport(row.id, transaction);
-      sets.push("closed_at = now()", "closed_by = :closedBy", "on_hold_reason = NULL", "on_hold_since = NULL");
+      sets.push("closed_at = now()", "closed_by = :closedBy");
+      // Salir de una pausa ya los limpio arriba: repetirlos en el UPDATE es un error de Postgres.
+      if (!sets.includes("on_hold_since = NULL")) sets.push("on_hold_reason = NULL", "on_hold_since = NULL");
       replacements.closedBy = actorId;
+      if (input.status === "CANCELLED") await cancelOpenRequest(row.id, transaction);
       break;
     }
     default:
@@ -1468,6 +1589,13 @@ export async function decideApproval(
       throw new ForbiddenError("No puede aprobar una solicitud que usted pidio o registro");
     }
     if (input.decision === "REJECTED" && !input.comment?.trim()) throw new BadRequestError("Explique el motivo del rechazo");
+    // Acceso a sala (plan 016): separacion de funciones, quien valido no aprueba.
+    const roomRequest = await getRequestForTicket(id, transaction, { lock: true });
+    if (roomRequest && roomRequest.validatedBy === actor.userId) {
+      throw new ForbiddenError("No puede aprobar un acceso que usted validó");
+    }
+    // Ni el beneficiario, aunque otro haya pedido el acceso (revision plan 016, M1).
+    if (roomRequest) await assertActorIsNotBeneficiary(roomRequest, actor.userId, "No puede aprobar un acceso a su propio nombre");
 
     await postgres.query(
       `INSERT INTO service_ticket_approvals (ticket_id, approver_user_id, decision, comment) VALUES (:id, :userId, :decision, :comment)`,
@@ -1478,7 +1606,28 @@ export async function decideApproval(
       body: input.comment?.trim() ?? null,
       payload: { decision: input.decision },
     });
-    if (input.decision === "APPROVED") {
+    let roomAccessSummary: string | null = null;
+    if (roomRequest) {
+      if (input.decision === "APPROVED") {
+        const grantId = await createGrantFromRequest(roomRequest, actor.userId, input.comment?.trim() || null, transaction);
+        roomAccessSummary = describeRoomAccess(roomRequest);
+        await addEvent(transaction, id, "ROOM_ACCESS_GRANTED", actor.userId, {
+          isPublic: true,
+          body: roomAccessSummary,
+          payload: { grantId },
+        });
+        await applyTransition(
+          row,
+          { status: "RESOLVED", resolutionCode: "FULFILLED", resolutionNotes: roomAccessSummary },
+          actor,
+          transaction,
+          "system",
+        );
+      } else {
+        await setRequestDecision(roomRequest.id, "REJECTED", actor.userId, input.comment!.trim(), transaction);
+        await applyTransition(row, { status: "CANCELLED", comment: input.comment }, actor, transaction, "agent");
+      }
+    } else if (input.decision === "APPROVED") {
       await postgres.query(`UPDATE service_tickets SET status = 'NEW', updated_at = now() WHERE id = :id`, {
         replacements: { id },
         transaction,
@@ -1487,12 +1636,21 @@ export async function decideApproval(
     } else {
       await applyTransition(row, { status: "CANCELLED", comment: input.comment }, actor, transaction, "agent");
     }
-    return row;
+    return { ...row, roomAccessSummary, isRoomAccess: roomRequest !== null };
   });
 
   const record = recordOf(outcome);
   pushTo([outcome.requesterUserId], "ticket-updated", record);
   fireAndForget(async () => {
+    if (outcome.isRoomAccess) {
+      await emailRequester(
+        outcome.requesterUserId,
+        record,
+        input.decision === "APPROVED" ? "Acceso a sala autorizado" : "Solicitud de acceso a sala rechazada",
+        input.decision === "APPROVED" ? (outcome.roomAccessSummary ?? "") : `Motivo: ${input.comment?.trim() ?? ""}`,
+      );
+      return;
+    }
     await emailRequester(
       outcome.requesterUserId,
       record,
@@ -1508,18 +1666,92 @@ export async function decideApproval(
   return getTicketDetail(id, { audience: "requester", requesterUserId: outcome.requesterUserId });
 }
 
+// ---------------------------------------------------------------------------
+// Acceso a sala de comunicaciones (plan 016)
+// ---------------------------------------------------------------------------
+const SANTIAGO_FORMAT = new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago", dateStyle: "short", timeStyle: "short" });
+
+function describeRoomAccess(request: RoomAccessRequestRow): string {
+  const type = request.accessType ? ROOM_ACCESS_TYPE_LABELS[request.accessType] : "";
+  const from = request.validFrom ? SANTIAGO_FORMAT.format(new Date(request.validFrom)) : "";
+  const until = request.validUntil ? ` hasta ${SANTIAGO_FORMAT.format(new Date(request.validUntil))}` : " sin fecha de término";
+  return `Acceso autorizado a la sala ${request.roomName} (${request.costCenterName}) para ${request.beneficiaryName}: ${type}, desde ${from}${until}.`;
+}
+
+// El agente valida la sala, el motivo, el tipo y el periodo, y envia el ticket al grupo aprobador
+// del item del catalogo. La espera de la aprobacion pausa el SLA.
+export async function submitRoomAccessForApproval(
+  id: number,
+  input: RoomAccessValidation,
+  actor: TicketActor,
+): Promise<{ detail: TicketDetail; warnings: string[] }> {
+  const outcome = await postgres.transaction(async (transaction) => {
+    const row = await lockWorkableTicket(id, actor, transaction);
+    if (row.status !== "ASSIGNED" && row.status !== "IN_PROGRESS") {
+      throw new ConflictError(`El ticket ${row.number} debe estar asignado o en curso para validarlo`);
+    }
+    const request = await getRequestForTicket(id, transaction, { lock: true });
+    if (!request) throw new ConflictError(`El ticket ${row.number} no es una solicitud de acceso a sala`);
+    // Quien pide, registra o recibe el acceso no lo valida (revision plan 016, M2).
+    if (row.requesterUserId === actor.userId || row.openedBy === actor.userId) {
+      throw new ForbiddenError("No puede validar una solicitud que usted pidió o registró");
+    }
+    await assertActorIsNotBeneficiary(request, actor.userId, "No puede validar un acceso a su propio nombre");
+    const item = row.catalogItemId ? await getCatalogItem(row.catalogItemId, transaction) : null;
+    if (!item?.approvalGroupId) {
+      throw new ConflictError("El servicio no tiene grupo aprobador: configúrelo en el Service Desk");
+    }
+    await assertActiveGroup(item.approvalGroupId, transaction);
+    const { roomName, warnings } = await markRequestValidated(request, input, actor.userId, transaction);
+
+    await postgres.query(
+      `UPDATE service_tickets SET status = 'PENDING_APPROVAL', approval_group_id = :groupId,
+              on_hold_reason = NULL, on_hold_since = CASE WHEN sla_start_at IS NULL THEN NULL ELSE now() END,
+              updated_at = now()
+        WHERE id = :id`,
+      { replacements: { id, groupId: item.approvalGroupId }, transaction },
+    );
+    await addEvent(transaction, id, "STATUS_CHANGED", actor.userId, {
+      isPublic: true,
+      payload: { from: row.status, to: "PENDING_APPROVAL", origin: "agent" },
+    });
+    const until = input.validUntil ? ` hasta ${SANTIAGO_FORMAT.format(new Date(input.validUntil))}` : " sin fecha de término";
+    await addEvent(transaction, id, "ROOM_ACCESS_VALIDATED", actor.userId, {
+      isPublic: true,
+      body: `Validado: sala ${roomName}, acceso ${ROOM_ACCESS_TYPE_LABELS[input.accessType]} desde ${SANTIAGO_FORMAT.format(new Date(input.validFrom))}${until}. Pasa a aprobación del responsable.`,
+      payload: { roomId: input.roomId, accessType: input.accessType },
+    });
+    await markFirstResponse(row, transaction);
+    return { row, groupId: item.approvalGroupId, warnings };
+  });
+
+  const record = recordOf(outcome.row);
+  pushTo([outcome.row.requesterUserId], "ticket-updated", record);
+  fireAndForget(() =>
+    notifyGroup(outcome.groupId, "ticket-approval-pending", record, "Acceso a sala pendiente de aprobación", "Hay una solicitud de acceso a sala esperando su aprobación.", {
+      allMembers: true,
+    }),
+  );
+  return { detail: await getTicketDetail(id, { audience: "agent" }), warnings: outcome.warnings };
+}
+
 // Solicitudes que el usuario puede aprobar (miembro del grupo aprobador, no propias).
 export async function listPendingApprovals(actor: TicketActor, params: PaginationParams): Promise<{ items: TicketSummary[]; total: number }> {
+  // Ni los accesos a sala a su propio nombre (revision plan 016, M1).
+  const identity = await getActorIdentity(actor.userId);
   const where = `WHERE t.status = 'PENDING_APPROVAL' AND t.requester_user_id <> :userId AND t.opened_by <> :userId
-                   AND EXISTS (SELECT 1 FROM support_group_members m WHERE m.group_id = t.approval_group_id AND m.user_id = :userId)`;
+                   AND EXISTS (SELECT 1 FROM support_group_members m WHERE m.group_id = t.approval_group_id AND m.user_id = :userId)
+                   AND NOT EXISTS (SELECT 1 FROM comm_room_access_requests q WHERE q.ticket_id = t.id
+                                     AND (q.beneficiary_person_id = :personId OR q.beneficiary_document_id = :documentId))`;
+  const identityReplacements = { personId: identity.personId ?? -1, documentId: identity.documentId ?? "" };
   const [countRow] = await postgres.query<{ total: number }>(`SELECT COUNT(*)::int AS total ${LIST_FROM} ${where}`, {
-    replacements: { userId: actor.userId },
+    replacements: { userId: actor.userId, ...identityReplacements },
     type: QueryTypes.SELECT,
   });
   const rows = await postgres.query<ListRow>(
     `SELECT ${ROW_COLUMNS}, c.name AS "categoryName", ci.name AS "catalogItemName", g.name AS "assignedGroupName"
        ${LIST_FROM} ${where} ORDER BY t.id LIMIT :limit OFFSET :offset`,
-    { replacements: { userId: actor.userId, limit: params.limit, offset: getOffset(params) }, type: QueryTypes.SELECT },
+    { replacements: { userId: actor.userId, ...identityReplacements, limit: params.limit, offset: getOffset(params) }, type: QueryTypes.SELECT },
   );
   return { items: await withNames(rows), total: countRow?.total ?? 0 };
 }

@@ -9,7 +9,18 @@ import * as ticketAssetService from "../services/postgres/serviceDesk/ticketAsse
 import * as kbService from "../services/postgres/serviceDesk/kb.service";
 import { listCatalogItems, listCategories } from "../services/postgres/serviceDesk/settings.service";
 import { findBeneficiaryByDocumentId } from "../services/mssql/person.service";
-import { actorOf as fullActorOf, ID, LEVEL, parseId, queryString, requireUserId, sendStoredFile, TEXT } from "./serviceDesk.shared";
+import { listPortalRooms } from "../services/postgres/commRooms/commRoom.service";
+import {
+  actorOf as fullActorOf,
+  ID,
+  LEVEL,
+  parseId,
+  queryString,
+  requireUserId,
+  roomAccessRequestSchema,
+  sendStoredFile,
+  TEXT,
+} from "./serviceDesk.shared";
 
 // Portal del solicitante (pantalla "Generar Ticket", plan 009). Todo se
 // acota a los tickets del usuario autenticado: uno ajeno responde 404.
@@ -49,6 +60,8 @@ export const createPortalTicketSchema = z
       })
       .strict()
       .optional(),
+    // Acceso a sala de comunicaciones (plan 016).
+    roomAccess: roomAccessRequestSchema.optional(),
   })
   .strict();
 
@@ -83,6 +96,15 @@ export async function catalog(_req: Request, res: Response, next: NextFunction):
       },
       "Catalogo de servicios obtenido",
     );
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Salas de comunicaciones para pedir acceso (plan 016): sin la direccion.
+export async function commRooms(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    sendOk(res, await listPortalRooms(), "Salas obtenidas");
   } catch (err) {
     next(err);
   }

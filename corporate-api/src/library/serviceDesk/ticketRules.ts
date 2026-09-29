@@ -103,8 +103,33 @@ export const SLA_WARNING_RATIO = 0.75;
 // Solicitud de equipo (plan 010): el item del catalogo que genera la solicitud
 // de compra y como mueve la compra al ticket vinculado.
 // ---------------------------------------------------------------------------
-export const CATALOG_FULFILLMENTS = ["PURCHASE_REQUEST"] as const;
+// ROOM_ACCESS (plan 016): el ticket pide acceso a una sala de comunicaciones; el agente lo
+// valida y lo envia a aprobacion, y al aprobarse queda el registro de acceso.
+export const CATALOG_FULFILLMENTS = ["PURCHASE_REQUEST", "ROOM_ACCESS"] as const;
 export type CatalogFulfillment = (typeof CATALOG_FULFILLMENTS)[number];
+
+// ---------------------------------------------------------------------------
+// Acceso a salas de comunicaciones (plan 016).
+// ---------------------------------------------------------------------------
+export const ROOM_ACCESS_TYPES = ["TEMPORARY", "PERMANENT", "SINGLE_USE"] as const;
+export type RoomAccessType = (typeof ROOM_ACCESS_TYPES)[number];
+export const ROOM_ACCESS_TYPE_LABELS: Record<RoomAccessType, string> = {
+  TEMPORARY: "Temporal",
+  PERMANENT: "Permanente",
+  SINGLE_USE: "Única vez",
+};
+export const ROOM_BENEFICIARY_KINDS = ["INTERNAL", "EXTERNAL"] as const;
+export type RoomBeneficiaryKind = (typeof ROOM_BENEFICIARY_KINDS)[number];
+
+// Reglas de periodo comunes a lo solicitado y a lo validado: permanente sin termino, el resto con
+// termino posterior al inicio. Devuelve el mensaje de error o null.
+export function roomAccessPeriodError(type: RoomAccessType, from: Date, until: Date | null): string | null {
+  if (Number.isNaN(from.getTime())) return "Indique la fecha de inicio del acceso";
+  if (type === "PERMANENT") return until ? "Un acceso permanente no lleva fecha de termino" : null;
+  if (!until || Number.isNaN(until.getTime())) return "Un acceso temporal o de unica vez requiere fecha de termino";
+  if (until.getTime() <= from.getTime()) return "La fecha de termino debe ser posterior al inicio";
+  return null;
+}
 
 // Estados de la compra desde los que el ticket ya no espera nada de ella: el
 // agente vuelve a poder resolverlo o anularlo a mano.

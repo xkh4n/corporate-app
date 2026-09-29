@@ -33,6 +33,7 @@ import {
   Timeline,
 } from "./components";
 import { CreateProblemModal } from "./ProblemsTab";
+import { RoomAccessPanel } from "./RoomAccessPanel";
 import {
   ASSET_STATUS_LABELS,
   CHANGE_STATUS_LABELS,
@@ -215,7 +216,11 @@ export function TicketWorkspace({
         <div className="lg:col-span-2">
           {canApprove && (
             <Section title="Aprobación pendiente">
-              <p className="mb-2 text-sm text-slate-700">Esta solicitud espera la decisión de su grupo aprobador.</p>
+              <p className="mb-2 text-sm text-slate-700">
+                {detail.roomAccess
+                  ? "El Service Desk validó este acceso a sala: revise la sala, el beneficiario, el motivo y el período antes de decidir."
+                  : "Esta solicitud espera la decisión de su grupo aprobador."}
+              </p>
               <div className="flex gap-2">
                 <Button type="button" variant="success" onClick={() => setApproval("APPROVED")}>
                   Aprobar
@@ -226,6 +231,15 @@ export function TicketWorkspace({
               </div>
             </Section>
           )}
+
+          <RoomAccessPanel
+            detail={detail}
+            canValidate={canUpdate && detail.assigneeUserId === user?.userId}
+            onUpdated={(ticket) => {
+              setDetail(ticket);
+              void serviceTicketService.related(id).then(setRelated).catch(() => undefined);
+            }}
+          />
 
           <Section title="Descripción">
             <PlainText text={detail.description} />

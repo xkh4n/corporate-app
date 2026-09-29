@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { BadRequestError, UnauthorizedError } from "../library/errors";
+import { ROOM_ACCESS_TYPES } from "../library/serviceDesk/ticketRules";
 import type { PermissionAction } from "../models/postgres/permission.model";
 import { hasPermission } from "../services/postgres/permission.service";
 
@@ -67,3 +68,22 @@ export function sendStoredFile(
 export const TEXT = (max: number) => z.string().trim().min(1).max(max);
 export const LEVEL = z.number().int().min(1).max(3);
 export const ID = z.number().int().positive();
+
+// Fecha y hora con zona (ISO 8601): el front convierte la hora local de Santiago.
+export const DATETIME = z.string().datetime({ offset: true });
+const RUT = z.string().trim().min(3).max(20);
+
+// Acceso a sala de comunicaciones (plan 016): lo que se pide al abrir el ticket.
+export const roomAccessRequestSchema = z
+  .object({
+    roomId: ID,
+    beneficiary: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("INTERNAL"), documentId: RUT }).strict(),
+      z.object({ kind: z.literal("EXTERNAL"), fullName: TEXT(160), documentId: RUT, company: TEXT(160) }).strict(),
+    ]),
+    reason: TEXT(2000),
+    requestedType: z.enum(ROOM_ACCESS_TYPES),
+    requestedFrom: DATETIME,
+    requestedUntil: DATETIME.nullable().optional(),
+  })
+  .strict();

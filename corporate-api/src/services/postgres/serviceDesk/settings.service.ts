@@ -400,8 +400,12 @@ export interface CatalogItemInput {
 
 function catalogReplacements(input: CatalogItemInput) {
   // Una solicitud de equipo la aprueba el aprobador de la compra: dos aprobaciones seguidas no (plan 010).
-  if (input.fulfillment && input.approvalGroupId) {
+  if (input.fulfillment === "PURCHASE_REQUEST" && input.approvalGroupId) {
     throw new BadRequestError("Un servicio que genera una solicitud de compra no lleva grupo aprobador: la aprueba el aprobador de la compra");
+  }
+  // El acceso a sala lo aprueba el grupo del item despues de que el Service Desk lo valida (plan 016).
+  if (input.fulfillment === "ROOM_ACCESS" && !input.approvalGroupId) {
+    throw new BadRequestError("Un acceso a sala requiere grupo aprobador (Responsable TI / Seguridad)");
   }
   return {
     name: input.name,

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>016 — Acceso a Salas de Comunicaciones</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:900px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.5rem; font-size:1.25rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  h3 { margin-top:1.6rem; font-size:1.05rem; }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }
+  th, td { border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="doc-header">
+  <span class="badge">PLAN 016</span>
+  <h1>Acceso a Salas de Comunicaciones</h1>
+  <div class="meta">corporate-app · corporate-api + corporate-front · Estado: aprobado · 2026-09-29</div>
+</header>
+<h2>Contexto</h2>
+<p>Se pide un módulo en <strong>Gerencia de TI › Serv. Productivos › Comunicaciones › Acceso Sala</strong> para registrar quién puede entrar a las salas de comunicaciones de cada centro de costo y quién entró realmente.</p>
+<p>El acceso <strong>solo se pide por ticket</strong>, con este flujo:</p>
+<ol><li>El usuario abre el ticket.
+</li><li>El Service Desk valida la sala y el motivo, y define el período y el tipo de acceso.
+</li><li>El grupo Responsable TI/Seguridad aprueba o rechaza.
+</li><li>Si aprueba, queda un <strong>registro de acceso</strong> que expira solo.
+</li></ol>
+<p>El módulo tiene que responder: quién tiene acceso hoy a una sala, quién lo autorizó, por qué, desde y hasta cuándo, qué ticket lo originó, quién ingresó físicamente, qué accesos están vencidos, quién tiene acceso a varias salas o tiendas y qué accesos temporales llevan demasiado tiempo activos.</p>
+<p>Decisiones del usuario (2026-09-29):</p>
+<ul><li><strong>Beneficiario:</strong> un colaborador (buscado por RUT exacto) o un externo (nombre, RUT y empresa).
+</li><li><strong>Ingresos físicos:</strong> pantalla <strong>Registrar Ingreso</strong>, que registra entrada y salida y rechaza a quien no tenga acceso vigente.
+</li><li><strong>Tipos de acceso:</strong> <strong>Temporal / Permanente / Única vez</strong>. Temporal y Única vez llevan fecha de término y expiran solos. Un temporal cuenta como «prolongado» si lleva más de N días activo (N configurable, por defecto 30).
+</li><li><strong>Orden:</strong> el de la solicitud. Primero valida el Service Desk y después aprueba el Responsable TI/Seguridad. El rechazo termina el ticket como Cancelado, que es como el sistema ya cierra un rechazo.
+</li></ul>
+<h2>Paso 0</h2>
+<p>Copiar este plan a <code>.claude/planes/016-acceso-salas-comunicaciones.html</code> y agregar la entrada en la bitácora <code>.claude/README.md</code>.</p>
+<h2>1. Modelo de datos</h2>
+<p>Nueva función <code>migrateCommRooms()</code> en <code>databases/postgres/migrate.ts</code>, registrada después de <code>migrateServiceDesk()</code> y con el patrón <code>runDdl</code>.</p>
+<ul><li><strong><code>comm_rooms</code>:</strong> <code>name</code>, <code>cost_center_id</code> (FK a <code>cost_centers</code>), <code>address</code>, <code>is_active</code> y auditoría. Índice único por (centro de costo, <code>lower(name)</code>).
+</li><li><strong><code>comm_room_access_requests</code></strong> (1:1 con el ticket):
+<ul><li>sala y beneficiario: <code>INTERNAL</code> con <code>person_id</code>, o <code>EXTERNAL</code> con empresa; más nombre y RUT como snapshot;
+</li><li>motivo, tipo y período solicitados;
+</li><li>estado <code>REQUESTED/VALIDATED/APPROVED/REJECTED/CANCELLED</code>;
+</li><li>datos de validación (quién, cuándo, tipo, <code>valid_from/valid_until</code>, notas) y de decisión.
+</li></ul>
+</li><li><strong><code>comm_room_access_grants</code></strong> (el registro oficial):
+<ul><li>request y ticket únicos, sala, snapshot del beneficiario, motivo;
+</li><li><code>access_type</code>, <code>valid_from</code>, <code>valid_until</code> (nulo si y solo si es PERMANENT);
+</li><li>estado <code>ACTIVE/EXPIRED/REVOKED</code>, con <code>validated_by</code>, <code>approved_by</code>, <code>revoked_by</code> y <code>revoke_reason</code>.
+</li><li>«Vigente» se calcula siempre en SQL con el reloj de la base, así el retraso del barrido nunca deja pasar a alguien vencido.
+</li><li>Índices por (sala, estado), (RUT, estado), uno parcial para el barrido y otro para los temporales prolongados.
+</li></ul>
+</li><li><strong><code>comm_room_entries</code>:</strong> <code>grant_id</code>, sala, entrada y salida con quién registró cada una, notas. Un índice único parcial permite <strong>un solo ingreso abierto por acceso</strong>.
+</li><li><strong><code>comm_room_settings</code>:</strong> una sola fila con <code>temporary_max_active_days</code> (por defecto 30).
+</li><li><strong>Service Desk:</strong>
+<ul><li>El CHECK de <code>service_catalog_items.fulfillment</code> se amplía a <code>ROOM_ACCESS</code>. Se revisa antes en <code>pg_constraint</code>, para no tomar un lock en cada arranque de las 3 réplicas.
+</li><li>Se siembra el grupo «Responsable TI / Seguridad», sin miembros: los asigna el admin.
+</li><li>Se siembra el ítem «Acceso a sala de comunicaciones» (categoría Accesos y cuentas, grupo Infraestructura, <code>fulfillment=ROOM_ACCESS</code>, grupo aprobador el nuevo). Solo se inserta si no existe, para no pisar cambios del admin.
+</li></ul>
+</li></ul>
+<h2>2. Integración con el Service Desk (<code>services/postgres/serviceDesk/ticket.service.ts</code>)</h2>
+<ul><li><strong>Reglas:</strong>
+<ul><li><code>ticketRules.ts</code>: <code>CATALOG_FULFILLMENTS</code> suma <code>ROOM_ACCESS</code>, más los tipos y estados nuevos.
+</li><li><code>settings.service.ts</code> (<code>catalogReplacements</code>): <code>ROOM_ACCESS</code> exige grupo aprobador; <code>PURCHASE_REQUEST</code> sigue sin él.
+</li></ul>
+</li><li><strong>Crear el ticket:</strong> <code>CreateTicketInput.roomAccess</code> trae sala, beneficiario, motivo, tipo y período solicitados.
+<ul><li>Un beneficiario INTERNAL se resuelve en el servidor por RUT exacto (MSSQL). El <code>personId</code> que manda el cliente no se usa.
+</li><li>En <code>insertTicket</code>, los chequeos de consistencia pasan a ser por tipo de fulfillment. Hoy tratan cualquier fulfillment como compra y romperían el ítem nuevo.
+</li><li><code>openEquipmentPurchase</code> solo corre para <code>PURCHASE_REQUEST</code>.
+</li><li>El ticket de acceso nace <code>NEW</code> y sin aprobación al crearse. La solicitud se inserta en la misma transacción, con el evento <code>ROOM_ACCESS_REQUESTED</code>.
+</li></ul>
+</li><li><strong>Validar y enviar a aprobación:</strong> <code>submitRoomAccessForApproval</code>, vía <code>POST /service-tickets/:id/room-access/validate</code> (<code>service-tickets:update</code>).
+<ul><li>Condiciones: ticket ASSIGNED o IN_PROGRESS, sala activa y reglas de tipo y fechas.
+</li><li>El ticket pasa a <code>PENDING_APPROVAL</code> con el grupo del ítem, y el SLA se pausa con <code>on_hold_since</code>.
+</li><li>La solicitud queda <code>VALIDATED</code> y se registran los eventos. Se notifica al grupo aprobador.
+</li><li>Avisos que no bloquean: «ya tiene acceso vigente a esta sala» y «el temporal supera N días».
+</li></ul>
+</li><li><strong><code>applyTransition</code>:</strong>
+<ul><li>Al salir de PENDING_APPROVAL se reanuda la pausa del SLA, solo si existía. La aprobación al crear un ticket no cambia.
+</li><li>Al pasar a CANCELLED, la solicitud abierta queda CANCELLED. Esto cubre la cancelación del solicitante, la del agente y el rechazo.
+</li></ul>
+</li><li><strong><code>decideApproval</code></strong> con solicitud de sala:
+<ul><li>Además de las reglas actuales, <strong>quien validó no puede aprobar</strong>.
+</li><li><strong>Aprobar:</strong>
+<ul><li>si la sala se desactivó o el período ya venció, responde 409;
+</li><li>si no, crea el grant y la solicitud queda APPROVED;
+</li><li>el ticket pasa a RESOLVED/FULFILLED con el detalle del acceso;
+</li><li>se envía el correo «Acceso autorizado».
+</li></ul>
+</li><li><strong>Rechazar:</strong> exige comentario. La solicitud queda REJECTED, el ticket CANCELLED y se envía el correo con el motivo.
+</li></ul>
+</li><li><strong>Bloqueo y detalle:</strong>
+<ul><li>No se puede poner RESOLVED a mano si la solicitud no está aprobada. Es el mismo patrón que <code>isBlockedByPurchase</code>.
+</li><li><code>getTicketDetail</code> incluye <code>roomAccess</code>, visible también para el aprobador.
+</li></ul>
+</li></ul>
+<h2>3. Expiración automática</h2>
+<p><code>services/postgres/commRooms/accessSweeper.ts</code>, con el mismo patrón que <code>slaSweeper.ts</code> (cada 60 s, lock de Redis <code>SET NX PX 55000</code>, <code>FOR UPDATE SKIP LOCKED</code>, lotes de 200). Se arranca y se detiene en <code>corporate-api/index.ts</code>.</p>
+<ul><li>Marca <code>ACTIVE → EXPIRED</code> cuando pasa <code>valid_until</code> y deja un evento interno en el ticket.
+</li><li><strong>Única vez:</strong> expira al registrar la salida (en la misma transacción) o por fecha.
+</li></ul>
+<h2>4. Permisos y menú</h2>
+<ul><li><strong>Permisos base</strong> (ninguno <code>grantToUser</code>):
+<ul><li><code>comm-rooms:read/create/update</code>;
+</li><li><code>comm-room-accesses:read/revoke</code>;
+</li><li><code>comm-room-entries:read/create</code>.
+</li></ul>
+</li><li><strong>Bundles de pantalla</strong> (en <code>SCREEN_ACCESS_CATALOG</code>):
+<ul><li><code>comm-room-creation:access</code> para <strong>Crear Sala</strong>;
+</li><li><code>comm-room-admin:access</code> para <strong>Administrar Salas</strong> (editar, desactivar, accesos vigentes, revocar, configuración de N días);
+</li><li><code>comm-room-entry:access</code> para <strong>Registrar Ingreso</strong>;
+</li><li><code>comm-room-access-report:access</code> para <strong>Consulta de Accesos</strong>.
+</li></ul>
+</li><li><strong>Menú</strong> (<code>menu-catalog.ts</code>): carpeta «Comunicaciones» dentro de «Serv. Productivos», subcarpeta «Acceso Sala» y las 4 hojas: <code>/comm-rooms/create</code>, <code>/comm-rooms</code>, <code>/comm-rooms/entries</code> y <code>/comm-rooms/report</code>.
+</li><li>La aprobación sigue en Gestión de Tickets, con <code>service-tickets:approve</code>.
+</li></ul>
+<h2>5. API (<code>routes/commRoom.routes.ts</code>: zod + <code>validateBody</code>, <code>parsePaginationParams</code>/<code>sendList</code>)</h2>
+<ul><li><strong>Salas:</strong>
+<ul><li><code>GET/POST /comm-rooms</code>, <code>GET/PUT /comm-rooms/:id</code>. Una sala con accesos activos no se puede desactivar (409).
+</li><li><code>GET/PUT /comm-rooms/settings</code>.
+</li></ul>
+</li><li><strong>Accesos:</strong>
+<ul><li><code>GET /comm-room-accesses</code>, con filtros: sala, centro de costo, estado, tipo, vigente ahora, RUT exacto, vencidos entre fechas, ticket.
+</li><li><code>GET /comm-room-accesses/:id</code>: detalle con ticket, motivo, quién validó, aprobó o revocó, e ingresos.
+</li><li><code>POST /comm-room-accesses/:id/revoke {reason}</code>.
+</li><li>Reportes:
+<ul><li><code>GET /comm-room-accesses/reports/multi-room?by=room|costCenter</code>;
+</li><li><code>GET /comm-room-accesses/reports/long-temporary</code>.
+</li></ul>
+</li></ul>
+</li><li><strong>Ingresos:</strong>
+<ul><li><code>POST /comm-room-entries/check-in {roomId, documentId}</code>:
+<ul><li>necesita un acceso vigente, con lock;
+</li><li>un «Única vez» ya usado responde 409, y también quien ya está adentro;
+</li><li>tiene rate limit;
+</li><li>el nombre solo se muestra cuando el RUT coincide exacto.
+</li></ul>
+</li><li><code>POST /comm-room-entries/:id/check-out</code>.
+</li><li><code>GET /comm-room-entries</code>.
+</li></ul>
+</li><li><strong>Portal:</strong>
+<ul><li><code>GET /service-portal/comm-rooms</code> devuelve id, nombre y dependencia, sin la dirección.
+</li><li>El beneficiario interno se busca con el lookup existente por RUT exacto.
+</li></ul>
+</li><li><strong>RUT:</strong> nuevo <code>library/rut.ts normalizeRut()</code> (sin puntos ni espacios, K en mayúscula). Se aplica al guardar y al buscar, y antes se revisa el formato real de <code>documentId</code> en MSSQL.
+</li></ul>
+<h2>6. Front (<code>corporate-front</code>)</h2>
+<ul><li><strong>Base:</strong> servicio <code>services/commRoomService.ts</code>. Rutas en <code>MODULE_PAGES</code> (<code>AppRoutes.tsx</code>) y cada página con <code>REQUIRED_PERMISSIONS</code> + <code>RequirePermissions</code>, igual que <code>DecommissionAsset.tsx</code>.
+</li><li><strong>Páginas nuevas en <code>pages/comunicaciones/</code>:</strong>
+<ul><li><strong><code>CreateCommRoom.tsx</code>:</strong> nombre, dependencia y dirección. El combobox de centros de costo usa el mismo patrón que <code>ReassignAsset.tsx</code>: <code>costCenterService.list</code> + <code>ui/Select</code>.
+</li><li><strong><code>CommRoomAdmin.tsx</code>:</strong>
+<ul><li>tabla de salas con filtros, edición y activar/desactivar;
+</li><li>panel «Accesos vigentes» con Revocar (motivo obligatorio);
+</li><li>configuración de N días.
+</li></ul>
+</li><li><strong><code>RegisterRoomEntry.tsx</code>:</strong> sala, RUT exacto y «Registrar ingreso», más la lista «Personas dentro de la sala» con «Registrar salida».
+</li><li><strong><code>CommRoomAccessReport.tsx</code></strong>, con pestañas: Vigentes por sala · Buscar por RUT · Vencidos · Múltiples salas/tiendas · Temporales prolongados · Ingresos. Columnas: beneficiario, tipo, sala, dependencia, desde/hasta, motivo, validó, autorizó y ticket (con enlace).
+</li></ul>
+</li><li><strong>Pantallas del Service Desk:</strong>
+<ul><li><strong><code>GenerateTicket.tsx</code>:</strong> <code>RoomAccessFields.tsx</code> + <code>roomAccessDraft.ts</code> cuando <code>fulfillment === "ROOM_ACCESS"</code>: sala, beneficiario interno o externo, motivo, tipo y período. El portal muestra el estado de la solicitud.
+</li><li><strong><code>TicketWorkspace.tsx</code>:</strong> panel «Acceso a sala», botón <strong>Validar y enviar a aprobación</strong> con su modal, y los datos validados en la sección de aprobación.
+</li><li><strong><code>ServiceDeskSettings.tsx</code>:</strong> el checkbox de compra pasa a un selector «Tipo de atención» (Ninguno / Solicitud de compra / Acceso a sala). Hoy, guardar el ítem borraría su fulfillment.
+</li><li><strong><code>serviceDeskLabels.ts</code>:</strong> etiquetas de los eventos <code>ROOM_ACCESS_*</code>.
+</li></ul>
+</li></ul>
+<h2>7. Riesgos</h2>
+<ul><li>Se modifican funciones compartidas del Service Desk. Lo cubren pruebas de regresión del flujo de compra y de la aprobación al crear, más las suites actuales.
+</li><li>Pausar el SLA en PENDING_APPROVAL reutiliza <code>on_hold_since</code>. Hay que revisar que <code>report.service.ts</code> no lo cuente como tiempo en espera.
+</li><li><strong>Zona horaria:</strong> las columnas son TIMESTAMPTZ, y una fecha de término sin hora significa 23:59 America/Santiago.
+</li><li><strong>Alcance fuera del plan:</strong>
+<ul><li>no hay custodios por sala: Registrar Ingreso se controla por permiso;
+</li><li>se permiten accesos solapados a la misma sala, con aviso;
+</li><li>un ticket enviado a aprobación no vuelve al agente: si hubo un error, se rechaza y se abre otro.
+</li></ul>
+</li></ul>
+<h2>Archivos críticos</h2>
+<ul><li><strong>API:</strong>
+<ul><li><code>databases/postgres/migrate.ts</code>, <code>permission-catalog.ts</code>, <code>menu-catalog.ts</code>;
+</li><li><code>services/postgres/serviceDesk/ticket.service.ts</code>, <code>settings.service.ts</code>, <code>library/serviceDesk/ticketRules.ts</code>;
+</li><li>nuevos: <code>services/postgres/commRooms/*</code> (service y sweeper), <code>models/postgres/commRoom*.model.ts</code>, <code>controllers/commRoom.controller.ts</code>, <code>routes/commRoom.routes.ts</code>, <code>library/rut.ts</code>;
+</li><li>modificados: <code>routes/serviceDesk.routes.ts</code> y <code>index.ts</code>.
+</li></ul>
+</li><li><strong>Front:</strong>
+<ul><li>nuevos: <code>pages/comunicaciones/*</code>, <code>services/commRoomService.ts</code>;
+</li><li>modificados: <code>pages/serviceDesk/GenerateTicket.tsx</code>, <code>TicketWorkspace.tsx</code>, <code>ServiceDeskSettings.tsx</code>, <code>routes/AppRoutes.tsx</code>.
+</li></ul>
+</li></ul>
+<h2>Verificación</h2>
+<ol><li><code>tsc</code> en la API y el front (<code>tsc -p tsconfig.app.json --noEmit</code>), lint, pruebas unitarias.
+</li><li><code>commRoomAccess.service.integration.test.ts</code>:
+<ul><li>crear un ticket de acceso (colaborador por RUT exacto, externo sin empresa da 400);
+</li><li>consistencia de fulfillment y regresión del flujo de compra;
+</li><li>validar: estados permitidos, reglas de tipo y fechas, paso a PENDING_APPROVAL con SLA pausado;
+</li><li>separación de funciones: quien no es miembro, el solicitante y quien validó reciben 403;
+</li><li>aprobar: grant ACTIVE y ticket RESOLVED con el SLA corrido;
+</li><li>rechazar: exige comentario, ticket CANCELLED;
+</li><li>que el solicitante cancele;
+</li><li>RESOLVED manual bloqueado;
+</li><li>regresión de la aprobación al crear;
+</li><li>ingresos: vigente / futuro / vencido / revocado / ya adentro / Única vez; dos ingresos concurrentes, solo uno pasa;
+</li><li>barrido idempotente, sin tocar los permanentes;
+</li><li>reportes de múltiples salas y temporales prolongados;
+</li><li>revocar, y desactivar una sala con accesos activos (409).
+</li></ul>
+</li><li><code>commRoom.routes.integration.test.ts</code>:
+<ul><li>cada bundle habilita solo sus endpoints;
+</li><li>un no-admin no otorga <code>comm-room-*</code> que no tiene;
+</li><li>el portal no expone la dirección;
+</li><li>el rate limit de ingresos.
+</li></ul>
+</li><li>Suite completa: API y front.
+</li><li>Revisión de seguridad con los dos agentes antes de master.
+</li></ol>
+<footer class="doc-footer">Plan 016 · aprobado por el usuario el 2026-09-29</footer>
+</div>
+</body>
+</html>
