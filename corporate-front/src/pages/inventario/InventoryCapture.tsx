@@ -18,8 +18,10 @@ import type {
 import { LINE_STATUS_OPTIONS, isLineStatusCode, statusLabel } from "./inventoryLabels";
 import { LineBadges } from "./LineBadges";
 
-const TH = "px-4 py-2 text-left font-semibold text-slate-600";
+const TH = "whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600";
 const INPUT_CLASS = "bg-zinc-100 focus:bg-indigo-100";
+// Se usa en terreno desde el telefono: botones altos en movil
+const FIELD_BUTTON = "w-full py-3 sm:w-auto sm:py-2";
 
 interface CaptureForm {
   lookupBy: InventoryLookupBy;
@@ -348,9 +350,9 @@ export function InventoryCapture({ count, onClosed }: { count: InventoryCountDet
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-4">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-800">{count.number}</h2>
+      <div className="mb-4 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="break-words text-lg font-semibold text-slate-800">{count.number}</h2>
           <p className="text-sm text-slate-600">
             Toma abierta · {lines.length} equipo(s) ingresado(s)
           </p>
@@ -361,7 +363,7 @@ export function InventoryCapture({ count, onClosed }: { count: InventoryCountDet
           )}
         </div>
         {canEdit && (
-          <Button type="button" variant="success" loading={closing} onClick={() => void handleClose()}>
+          <Button type="button" variant="success" className={FIELD_BUTTON} loading={closing} onClick={() => void handleClose()}>
             Fin Inventario
           </Button>
         )}
@@ -371,11 +373,12 @@ export function InventoryCapture({ count, onClosed }: { count: InventoryCountDet
         <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4">
           <fieldset className="mb-3">
             <legend className="mb-1 text-sm font-medium text-slate-700">Identificar el equipo por</legend>
-            <div className="flex gap-6">
+            <div className="flex flex-wrap gap-x-6 gap-y-1">
               {(["TAG", "SERIAL"] as const).map((by) => (
-                <label key={by} className="flex items-center gap-2 text-sm text-slate-700">
+                <label key={by} className="flex items-center gap-2 py-2 text-sm text-slate-700">
                   <input
                     type="radio"
+                    className="h-5 w-5"
                     name="lookupBy"
                     value={by}
                     checked={form.lookupBy === by}
@@ -395,7 +398,7 @@ export function InventoryCapture({ count, onClosed }: { count: InventoryCountDet
             }
             htmlFor="lookupValue"
           >
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 id="lookupValue"
                 ref={scanInputRef}
@@ -408,10 +411,10 @@ export function InventoryCapture({ count, onClosed }: { count: InventoryCountDet
                     void handleLookup();
                   }
                 }}
-                className={INPUT_CLASS}
+                className={`${INPUT_CLASS} py-3 text-lg sm:py-2`}
                 autoComplete="off"
               />
-              <Button type="button" variant="secondary" loading={scanning} onClick={() => void handleLookup()}>
+              <Button type="button" variant="secondary" className={FIELD_BUTTON} loading={scanning} onClick={() => void handleLookup()}>
                 Validar
               </Button>
             </div>
@@ -527,7 +530,7 @@ export function InventoryCapture({ count, onClosed }: { count: InventoryCountDet
                 label={`Usuario (RUT)${form.statusCode === "ASSIGNED" ? " *" : ""}`}
                 htmlFor="holderRut"
               >
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <Input
                     id="holderRut"
                     placeholder="12345678-9"
@@ -546,6 +549,7 @@ export function InventoryCapture({ count, onClosed }: { count: InventoryCountDet
                   <Button
                     type="button"
                     variant="secondary"
+                    className={FIELD_BUTTON}
                     loading={validatingHolder}
                     onClick={() => void handleValidateHolder()}
                   >
@@ -554,13 +558,13 @@ export function InventoryCapture({ count, onClosed }: { count: InventoryCountDet
                 </div>
               </Field>
               {form.holderUserId !== null && (
-                <p className="mt-1 text-sm text-emerald-700">Usuario: {form.holderName}</p>
+                <p className="mt-1 break-words text-sm text-emerald-700">Usuario: {form.holderName}</p>
               )}
             </div>
           </div>
 
           <div className="mt-4 flex justify-end">
-            <Button type="button" loading={saving} onClick={() => void handleSubmit()}>
+            <Button type="button" className={FIELD_BUTTON} loading={saving} onClick={() => void handleSubmit()}>
               Agregar equipo
             </Button>
           </div>
@@ -591,12 +595,12 @@ export function InventoryCapture({ count, onClosed }: { count: InventoryCountDet
             <tbody className="divide-y divide-slate-100">
               {lines.map((line) => (
                 <tr key={line.id}>
-                  <td className="px-4 py-2 font-medium text-slate-900">{line.tag}</td>
-                  <td className="px-4 py-2 text-slate-600">{line.productName ?? "-"}</td>
-                  <td className="px-4 py-2 text-slate-600">{line.serialNumber ?? "-"}</td>
-                  <td className="px-4 py-2 text-slate-600">{statusLabel(line.statusCode)}</td>
-                  <td className="px-4 py-2 text-slate-600">{line.holder?.fullName ?? "-"}</td>
-                  <td className="px-4 py-2">
+                  <td className="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{line.tag}</td>
+                  <td className="min-w-[10rem] px-4 py-2 text-slate-600">{line.productName ?? "-"}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-slate-600">{line.serialNumber ?? "-"}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-slate-600">{statusLabel(line.statusCode)}</td>
+                  <td className="min-w-[10rem] px-4 py-2 text-slate-600">{line.holder?.fullName ?? "-"}</td>
+                  <td className="min-w-[12rem] px-4 py-2">
                     <LineBadges line={line} />
                   </td>
                   {canEdit && (

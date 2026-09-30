@@ -24,7 +24,7 @@ import { Pager } from "./Pager";
 // asset-depreciation:delete; editar parametros, asset-accounting:update.
 const REQUIRED_PERMISSIONS = ["asset-accounting:read", "asset-depreciation:read"] as const;
 const PAGE_SIZE = 20;
-const TH = "px-3 py-2 text-left font-semibold text-slate-600";
+const TH = "whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600";
 
 export default function Depreciacion() {
     return (
@@ -194,10 +194,10 @@ function DepreciationContent() {
     );
 
     return (
-        <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+        <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
             <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">Depreciación</h1>
 
-            <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+            <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8 space-y-6">
                 {/* CIERRE MENSUAL */}
                 <section className="rounded-lg border border-slate-200 bg-white p-4 space-y-4">
                     <h2 className="text-base font-semibold text-slate-800">Cierre mensual</h2>
@@ -207,7 +207,7 @@ function DepreciationContent() {
                         <p className="text-sm text-slate-500">{preview.reason ?? "No hay períodos para cerrar."}</p>
                     ) : (
                         <>
-                            <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                                 <div className="text-sm text-slate-700">
                                     <p>
                                         Próximo período: <span className="font-semibold">{formatPeriod(preview.period)}</span>
@@ -218,7 +218,7 @@ function DepreciationContent() {
                                     </p>
                                     {!preview.canClose && <p className="text-amber-700">{preview.reason}</p>}
                                 </div>
-                                <div className="flex gap-2">
+                                <div className="flex flex-col gap-2 sm:flex-row">
                                     {preview.lines.length > 0 && (
                                         <Button type="button" variant="ghost" onClick={() => setShowLines((value) => !value)}>
                                             {showLines ? "Ocultar detalle" : "Ver detalle"}
@@ -244,7 +244,7 @@ function DepreciationContent() {
                                         {preview.lines.length} activos ({formatMoney(preview.totalAmount)}) en el Kardex. Solo se
                                         podrá anular mientras sea el último cierre.
                                     </p>
-                                    <div className="mt-3 flex justify-end gap-2">
+                                    <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                                         <Button type="button" variant="secondary" onClick={() => setConfirmClose(false)} disabled={closing}>
                                             Cancelar
                                         </Button>
@@ -256,7 +256,7 @@ function DepreciationContent() {
                             )}
 
                             {showLines && (
-                                <div className="max-h-72 overflow-y-auto rounded border border-slate-200">
+                                <div className="max-h-72 overflow-auto rounded border border-slate-200">
                                     <table className="min-w-full divide-y divide-slate-200 text-sm">
                                         <thead className="bg-slate-50">
                                             <tr>
@@ -269,10 +269,10 @@ function DepreciationContent() {
                                         <tbody className="divide-y divide-slate-100">
                                             {preview.lines.map((line) => (
                                                 <tr key={line.assetId}>
-                                                    <td className="px-3 py-1.5">{line.tag}</td>
-                                                    <td className="px-3 py-1.5 text-right">{formatMoney(line.amount)}</td>
-                                                    <td className="px-3 py-1.5 text-right">{formatMoney(line.accumulated)}</td>
-                                                    <td className="px-3 py-1.5 text-right">{formatMoney(line.bookValue)}</td>
+                                                    <td className="whitespace-nowrap px-3 py-1.5">{line.tag}</td>
+                                                    <td className="whitespace-nowrap px-3 py-1.5 text-right">{formatMoney(line.amount)}</td>
+                                                    <td className="whitespace-nowrap px-3 py-1.5 text-right">{formatMoney(line.accumulated)}</td>
+                                                    <td className="whitespace-nowrap px-3 py-1.5 text-right">{formatMoney(line.bookValue)}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -288,7 +288,7 @@ function DepreciationContent() {
                                 ¿Anular el cierre de {formatPeriod(pendingVoid.period)}? Se escribirá una reversa por cada asiento
                                 ({formatMoney(pendingVoid.totalAmount)}) y el período quedará abierto de nuevo.
                             </p>
-                            <div className="mt-3 flex justify-end gap-2">
+                            <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                                 <Button type="button" variant="secondary" onClick={() => setPendingVoid(null)} disabled={closing}>
                                     Cancelar
                                 </Button>
@@ -311,6 +311,7 @@ function DepreciationContent() {
                     ) : (
                         <>
                             {runsPager}
+                            <div className="overflow-x-auto">
                             <table className="min-w-full divide-y divide-slate-200 text-sm">
                                 <thead className="bg-slate-50">
                                     <tr>
@@ -324,10 +325,10 @@ function DepreciationContent() {
                                 <tbody className="divide-y divide-slate-100">
                                     {runs.map((run) => (
                                         <tr key={run.id}>
-                                            <td className="px-3 py-2 text-slate-800">{formatPeriod(run.period)}</td>
+                                            <td className="whitespace-nowrap px-3 py-2 text-slate-800">{formatPeriod(run.period)}</td>
                                             <td className="px-3 py-2">
                                                 <span
-                                                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                                                    className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${
                                                         run.status === "CLOSED"
                                                             ? "bg-emerald-100 text-emerald-700"
                                                             : "bg-slate-200 text-slate-500"
@@ -336,14 +337,14 @@ function DepreciationContent() {
                                                     {run.status === "CLOSED" ? "Cerrado" : "Anulado"}
                                                 </span>
                                             </td>
-                                            <td className="px-3 py-2 text-right">{run.assetCount}</td>
-                                            <td className="px-3 py-2 text-right">{formatMoney(run.totalAmount)}</td>
+                                            <td className="whitespace-nowrap px-3 py-2 text-right">{run.assetCount}</td>
+                                            <td className="whitespace-nowrap px-3 py-2 text-right">{formatMoney(run.totalAmount)}</td>
                                             <td className="px-3 py-2 text-right">
                                                 {canVoid && run.id === lastClosedId && runsPage === 1 && (
                                                     <Button
                                                         type="button"
                                                         variant="ghost"
-                                                        className="px-2! py-1! text-xs text-rose-600 hover:bg-rose-100"
+                                                        className="whitespace-nowrap px-3! py-2! text-xs sm:px-2! sm:py-1! text-rose-600 hover:bg-rose-100"
                                                         onClick={() => setPendingVoid(run)}
                                                     >
                                                         Anular
@@ -354,6 +355,7 @@ function DepreciationContent() {
                                     ))}
                                 </tbody>
                             </table>
+                            </div>
                             {runsPager}
                         </>
                     )}
@@ -401,26 +403,26 @@ function DepreciationContent() {
                                                 key={record.assetId}
                                                 className={selected?.assetId === record.assetId ? "bg-indigo-50" : undefined}
                                             >
-                                                <td className="px-3 py-2">
+                                                <td className="whitespace-nowrap px-3 py-2">
                                                     <p className="font-medium text-slate-900">{record.tag}</p>
                                                     <p className="text-xs text-slate-500">{record.className ?? "-"}</p>
                                                 </td>
-                                                <td className="px-3 py-2 text-slate-600">
+                                                <td className="whitespace-nowrap px-3 py-2 text-slate-600">
                                                     {record.usefulLifeMonths} meses ·{" "}
                                                     {record.depreciationMethod ? METHOD_LABEL[record.depreciationMethod] : "-"}
                                                     <p className="text-xs text-slate-500">
                                                         desde {formatPeriod(record.depreciationStartPeriod)}
                                                     </p>
                                                 </td>
-                                                <td className="px-3 py-2 text-right">{formatMoney(record.capitalizedCost)}</td>
-                                                <td className="px-3 py-2 text-right">{formatMoney(record.accumulatedDepreciation)}</td>
-                                                <td className="px-3 py-2 text-right font-medium">{formatMoney(record.bookValue)}</td>
-                                                <td className="px-3 py-2 text-slate-600">{STAGE_LABEL[record.stage]}</td>
+                                                <td className="whitespace-nowrap px-3 py-2 text-right">{formatMoney(record.capitalizedCost)}</td>
+                                                <td className="whitespace-nowrap px-3 py-2 text-right">{formatMoney(record.accumulatedDepreciation)}</td>
+                                                <td className="whitespace-nowrap px-3 py-2 text-right font-medium">{formatMoney(record.bookValue)}</td>
+                                                <td className="whitespace-nowrap px-3 py-2 text-slate-600">{STAGE_LABEL[record.stage]}</td>
                                                 <td className="px-3 py-2 text-right">
                                                     <Button
                                                         type="button"
                                                         variant="ghost"
-                                                        className="px-2! py-1! text-xs"
+                                                        className="whitespace-nowrap px-3! py-2! text-xs sm:px-2! sm:py-1!"
                                                         onClick={() => void select(record)}
                                                     >
                                                         Ver tabla
@@ -437,10 +439,10 @@ function DepreciationContent() {
 
                     {selected && (
                         <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-4">
-                            <h3 className="text-base font-semibold text-slate-800">
+                            <h3 className="break-words text-base font-semibold text-slate-800">
                                 {selected.tag} · costo {formatMoney(selected.capitalizedCost)}
                             </h3>
-                            <div className="grid grid-cols-1 items-end gap-3 min-[800px]:grid-cols-5">
+                            <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 min-[800px]:grid-cols-5">
                                 <Field label="Vida útil (meses)" htmlFor="depLife">
                                     <Input
                                         id="depLife"
@@ -499,7 +501,7 @@ function DepreciationContent() {
                                 </p>
                             )}
 
-                            <div className="max-h-80 overflow-y-auto rounded border border-slate-200">
+                            <div className="max-h-80 overflow-auto rounded border border-slate-200">
                                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                                     <thead className="sticky top-0 bg-slate-50">
                                         <tr>
@@ -514,10 +516,10 @@ function DepreciationContent() {
                                         {schedule.map((row) => (
                                             <tr key={row.installment}>
                                                 <td className="px-3 py-1.5 text-slate-500">{row.installment}</td>
-                                                <td className="px-3 py-1.5">{formatPeriod(row.period)}</td>
-                                                <td className="px-3 py-1.5 text-right">{formatMoney(row.amount)}</td>
-                                                <td className="px-3 py-1.5 text-right">{formatMoney(row.accumulated)}</td>
-                                                <td className="px-3 py-1.5 text-right">{formatMoney(row.bookValue)}</td>
+                                                <td className="whitespace-nowrap px-3 py-1.5">{formatPeriod(row.period)}</td>
+                                                <td className="whitespace-nowrap px-3 py-1.5 text-right">{formatMoney(row.amount)}</td>
+                                                <td className="whitespace-nowrap px-3 py-1.5 text-right">{formatMoney(row.accumulated)}</td>
+                                                <td className="whitespace-nowrap px-3 py-1.5 text-right">{formatMoney(row.bookValue)}</td>
                                             </tr>
                                         ))}
                                     </tbody>

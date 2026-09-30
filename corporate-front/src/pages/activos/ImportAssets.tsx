@@ -169,7 +169,7 @@ function ImportContent() {
   const percent = meta && meta.validRows > 0 ? Math.min(100, Math.round((meta.cursor / meta.validRows) * 100)) : 0;
 
   return (
-    <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+    <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
       <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-2 text-center text-gray-600">Carga Masiva de Activos</h1>
       <p className="mb-6 max-w-3xl text-center text-sm text-slate-600">
         Da de alta activos desde un archivo CSV. Solo crea activos nuevos: una serie que ya existe se rechaza. El valor se
@@ -204,9 +204,9 @@ function ImportContent() {
                   <tbody className="divide-y divide-slate-100">
                     {COLUMNS_HELP.map((row) => (
                       <tr key={row.column}>
-                        <td className="px-3 py-1 font-mono">{row.column}</td>
-                        <td className="px-3 py-1">{row.required}</td>
-                        <td className="px-3 py-1">{row.description}</td>
+                        <td className="whitespace-nowrap px-3 py-1 font-mono">{row.column}</td>
+                        <td className="whitespace-nowrap px-3 py-1">{row.required}</td>
+                        <td className="min-w-[12rem] px-3 py-1">{row.description}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -225,7 +225,7 @@ function ImportContent() {
         ) : (
           <section className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-semibold text-slate-700">2. Carga «{meta.filename}»</h2>
+              <h2 className="min-w-0 break-words font-semibold text-slate-700">2. Carga «{meta.filename}»</h2>
               <span className="text-sm font-medium text-slate-600">{STATUS_LABELS[meta.status]}</span>
             </div>
 
@@ -292,8 +292,8 @@ function ImportContent() {
                       {job.issues.map((issue, index) => (
                         <tr key={`${issue.row}-${issue.column}-${index}`}>
                           <td className="px-3 py-1 font-medium">{issue.row}</td>
-                          <td className="px-3 py-1 font-mono">{issue.column}</td>
-                          <td className="px-3 py-1">{issue.message}</td>
+                          <td className="whitespace-nowrap px-3 py-1 font-mono">{issue.column}</td>
+                          <td className="min-w-[12rem] px-3 py-1">{issue.message}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -307,7 +307,7 @@ function ImportContent() {
               </div>
             )}
 
-            <div className="flex flex-wrap gap-2 pt-1">
+            <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap">
               {canCreate && meta.status === "VALIDATED" && meta.invalidRows === 0 && meta.validRows > 0 && (
                 <Button type="button" variant="success" loading={busy} onClick={() => void run(() => assetImportService.start(meta.id, false), "Carga iniciada")}>
                   Iniciar carga ({meta.validRows} filas)

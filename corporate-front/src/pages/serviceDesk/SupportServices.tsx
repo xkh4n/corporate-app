@@ -43,9 +43,9 @@ function idParam(value: string | null): number | null {
 export default function SupportServices() {
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">Gestión de Tickets</h1>
-        <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
           <Workspace />
         </div>
       </div>
@@ -262,37 +262,43 @@ function Queue({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Vista de la cola">
-        {VIEWS.map((item) => (
-          <Button
-            key={item.key}
-            type="button"
-            variant={view === item.key ? "primary" : "secondary"}
-            onClick={() => {
-              setView(item.key);
-              setPage(1);
-            }}
-          >
-            {item.label}
-          </Button>
-        ))}
+      {/* Movil: accion principal arriba, chips de vista en una fila con scroll,
+          busqueda a ancho completo y filtros en grilla. Escritorio: chips y
+          accion en una fila, filtros en una sola linea. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         {can("service-tickets:update") && (
-          <Button type="button" className="ml-auto" onClick={() => setCreating(true)}>
+          <Button type="button" className="w-full shrink-0 sm:order-last sm:ml-auto sm:w-auto" onClick={() => setCreating(true)}>
             Registrar ticket
           </Button>
         )}
+        <div className="flex min-w-0 gap-2 overflow-x-auto pb-1 sm:pb-0" role="group" aria-label="Vista de la cola">
+          {VIEWS.map((item) => (
+            <Button
+              key={item.key}
+              type="button"
+              variant={view === item.key ? "primary" : "secondary"}
+              className="shrink-0 whitespace-nowrap"
+              onClick={() => {
+                setView(item.key);
+                setPage(1);
+              }}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
       </div>
-      <div className="flex flex-wrap items-end gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))_auto] lg:items-stretch">
         <form
-          className="flex gap-2"
+          className="flex gap-2 sm:col-span-2 lg:col-span-1"
           onSubmit={(event) => {
             event.preventDefault();
             setPage(1);
             setReload((value) => value + 1);
           }}
         >
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Número o asunto" aria-label="Buscar tickets" />
-          <Button type="submit" variant="secondary">
+          <Input className="min-w-0 flex-1" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Número o asunto" aria-label="Buscar tickets" />
+          <Button type="submit" variant="secondary" className="shrink-0">
             Buscar
           </Button>
         </form>
@@ -317,7 +323,7 @@ function Queue({
             </option>
           ))}
         </Select>
-        <label className="flex items-center gap-2 text-sm text-slate-700">
+        <label className="flex items-center gap-2 whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
           <input type="checkbox" checked={includeClosed} onChange={(e) => { setIncludeClosed(e.target.checked); setPage(1); }} />
           Incluir cerrados
         </label>

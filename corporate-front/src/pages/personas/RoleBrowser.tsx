@@ -177,10 +177,10 @@ export function RoleBrowser({ title, mode = "read" }: { title: string; mode?: Ro
     }
 
     return (
-        <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+        <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
             <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">{title}</h1>
 
-            <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
                 <div className="mb-4 max-w-sm">
                     <Input
                         placeholder="Buscar por nombre o descripción..."
@@ -203,7 +203,7 @@ export function RoleBrowser({ title, mode = "read" }: { title: string; mode?: Ro
                             {statusAction.question} <span className="font-semibold">{pendingStatusChange.name}</span>?{" "}
                             {statusAction.warning}
                         </p>
-                        <div className="mt-3 flex justify-end gap-2">
+                        <div className="mt-3 flex flex-wrap justify-end gap-2">
                             <Button
                                 type="button"
                                 variant="secondary"
@@ -248,9 +248,9 @@ export function RoleBrowser({ title, mode = "read" }: { title: string; mode?: Ro
                             <table className="min-w-full divide-y divide-slate-200 text-sm">
                                 <thead className="bg-slate-50">
                                     <tr>
-                                        <th className="px-4 py-2 text-left font-semibold text-slate-600">Rol</th>
-                                        <th className="px-4 py-2 text-left font-semibold text-slate-600">Descripción</th>
-                                        <th className="px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
+                                        <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Rol</th>
+                                        <th className="min-w-[12rem] px-4 py-2 text-left font-semibold text-slate-600">Descripción</th>
+                                        <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
                                         <th className="px-4 py-2" />
                                     </tr>
                                 </thead>
@@ -265,9 +265,9 @@ export function RoleBrowser({ title, mode = "read" }: { title: string; mode?: Ro
                                             role.isActive === (mode === "deactivate");
                                         return (
                                             <tr key={role.id} className={isSelected ? "bg-indigo-50" : undefined}>
-                                                <td className="px-4 py-2 font-medium text-slate-900">{role.name}</td>
+                                                <td className="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{role.name}</td>
                                                 <td className="px-4 py-2 text-slate-600">{role.description ?? "-"}</td>
-                                                <td className="px-4 py-2">
+                                                <td className="whitespace-nowrap px-4 py-2">
                                                     <span
                                                         className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                                                             role.isActive
@@ -283,7 +283,7 @@ export function RoleBrowser({ title, mode = "read" }: { title: string; mode?: Ro
                                                         <Button
                                                             type="button"
                                                             variant="ghost"
-                                                            className={`mr-2 px-2! py-1! text-xs ${
+                                                            className={`mr-2 px-2! py-2! sm:py-1! text-xs ${
                                                                 statusAction.tone === "rose"
                                                                     ? "text-rose-600 hover:bg-rose-100"
                                                                     : "text-emerald-700 hover:bg-emerald-100"
@@ -296,7 +296,7 @@ export function RoleBrowser({ title, mode = "read" }: { title: string; mode?: Ro
                                                     <Button
                                                         type="button"
                                                         variant={isSelected ? "secondary" : "ghost"}
-                                                        className="px-2! py-1! text-xs"
+                                                        className="px-2! py-2! sm:py-1! text-xs"
                                                         onClick={() => handleToggleRole(role)}
                                                     >
                                                         {isSelected ? "Ocultar permisos" : "Ver permisos"}
@@ -310,7 +310,7 @@ export function RoleBrowser({ title, mode = "read" }: { title: string; mode?: Ro
                         </div>
 
                         {pagination && pagination.totalPages > 1 && (
-                            <div className="mt-4 flex items-center justify-between text-sm text-slate-600">
+                            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-sm text-slate-600">
                                 <span>
                                     Página {pagination.currentPage} de {pagination.totalPages} ({pagination.totalItems} roles)
                                 </span>
@@ -340,7 +340,7 @@ export function RoleBrowser({ title, mode = "read" }: { title: string; mode?: Ro
                 {/* PERMISOS DEL ROL SELECCIONADO: por descripcion, sin la clave recurso:accion */}
                 {selectedRole && (
                     <div className="mt-6">
-                        <h2 className="mb-3 text-sm font-semibold text-slate-700">Permisos asignados a {selectedRole.name}</h2>
+                        <h2 className="mb-3 break-words text-sm font-semibold text-slate-700">Permisos asignados a {selectedRole.name}</h2>
                         {loadingPermissions ? (
                             <div className="flex justify-center py-6">
                                 <Spinner />
@@ -352,7 +352,8 @@ export function RoleBrowser({ title, mode = "read" }: { title: string; mode?: Ro
                                 {rolePermissions.map((permission) => (
                                     <li
                                         key={permission.id}
-                                        className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-900"
+                                        className="break-words rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-900"
+
                                     >
                                         {/* description es opcional en la tabla: sin ella, recurso y accion
                                             por separado como ultimo recurso para no dejar la tarjeta vacia. */}

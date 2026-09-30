@@ -117,16 +117,16 @@ export default function PrintAssetLabels() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">
           Generar Etiquetas de Activos
         </h1>
 
-        <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
           <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4">
             <LabelConfigFields config={config} onChange={setConfig} />
 
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <Button type="button" variant="secondary" loading={previewing} onClick={() => void handlePreview()}>
                 Previsualizar
               </Button>
@@ -147,12 +147,12 @@ export default function PrintAssetLabels() {
 
             {previewUrl && (
               <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
-                <img src={previewUrl} alt="Vista previa de la etiqueta" className="mx-auto" />
+                <img src={previewUrl} alt="Vista previa de la etiqueta" className="mx-auto max-w-full" />
               </div>
             )}
           </div>
 
-          <div className="mb-4 flex max-w-md gap-2">
+          <div className="mb-4 flex w-full max-w-md gap-2">
             <Input
               placeholder="Buscar por tag o N° de serie..."
               value={search}
@@ -179,12 +179,13 @@ export default function PrintAssetLabels() {
                     <th className="px-4 py-2 text-left font-semibold text-slate-600">
                       <input
                         type="checkbox"
+                        className="h-5 w-5"
                         checked={assets.length > 0 && selectedIds.size === assets.length}
                         onChange={(e) => setSelectedIds(e.target.checked ? new Set(assets.map((a) => a.id)) : new Set())}
                       />
                     </th>
                     <th className="px-4 py-2 text-left font-semibold text-slate-600">Tag</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">N° de serie</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">N° de serie</th>
                     <th className="px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
                   </tr>
                 </thead>
@@ -194,13 +195,14 @@ export default function PrintAssetLabels() {
                       <td className="px-4 py-2">
                         <input
                           type="checkbox"
+                          className="h-5 w-5"
                           checked={selectedIds.has(asset.id)}
                           onChange={() => toggleSelected(asset.id)}
                         />
                       </td>
-                      <td className="px-4 py-2 font-medium text-slate-900">{asset.tag}</td>
-                      <td className="px-4 py-2 text-slate-600">{asset.serialNumber ?? "-"}</td>
-                      <td className="px-4 py-2 text-slate-600">{asset.status.name}</td>
+                      <td className="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{asset.tag}</td>
+                      <td className="whitespace-nowrap px-4 py-2 text-slate-600">{asset.serialNumber ?? "-"}</td>
+                      <td className="whitespace-nowrap px-4 py-2 text-slate-600">{asset.status.name}</td>
                     </tr>
                   ))}
                 </tbody>

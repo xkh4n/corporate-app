@@ -56,16 +56,16 @@ export function HandoverFields({ value, onChange }: { value: HandoverForm; onCha
         </Field>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-6">
-        <label className="flex items-center gap-1.5 text-sm text-slate-700">
+      <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
+        <label className="flex items-center gap-1.5 py-1 text-sm text-slate-700">
           <input type="checkbox" checked={value.hasBag} onChange={(e) => onChange({ hasBag: e.target.checked })} />
           ¿Incluye bolso?
         </label>
-        <label className="flex items-center gap-1.5 text-sm text-slate-700">
+        <label className="flex items-center gap-1.5 py-1 text-sm text-slate-700">
           <input type="checkbox" checked={value.hasLock} onChange={(e) => onChange({ hasLock: e.target.checked })} />
           ¿Incluye candado?
         </label>
-        <label className="flex items-center gap-1.5 text-sm text-slate-700">
+        <label className="flex items-center gap-1.5 py-1 text-sm text-slate-700">
           <input type="checkbox" checked={value.hasCharger} onChange={(e) => onChange({ hasCharger: e.target.checked })} />
           ¿Incluye cargador?
         </label>

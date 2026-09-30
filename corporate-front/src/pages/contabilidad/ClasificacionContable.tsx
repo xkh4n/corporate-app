@@ -22,7 +22,7 @@ import { Pager } from "./Pager";
 // contable (asset-accounting-policy:read, incluido en el permiso de pantalla).
 const REQUIRED_PERMISSIONS = ["asset-accounting:read", "asset-accounting-policy:read"] as const;
 const PAGE_SIZE = 20;
-const TH = "px-3 py-2 text-left font-semibold text-slate-600";
+const TH = "whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600";
 
 type Tab = "pending" | "classified";
 type RowAsset = PendingAccountingAsset & Partial<Pick<AccountingRecord, "classification" | "classId" | "stage">>;
@@ -150,28 +150,28 @@ function ClassificationContent() {
     );
 
     return (
-        <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+        <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
             <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-2 text-center text-gray-600">Clasificación Contable</h1>
             <p className="mb-6 text-sm text-slate-600 text-center max-w-3xl">
                 Determine si cada activo es activo fijo (se capitaliza y deprecia), gasto o inventario.
                 {threshold > 0 && ` Umbral de capitalización: ${formatMoney(threshold)}.`}
             </p>
 
-            <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
-                <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex rounded-lg border border-slate-300 bg-white p-1 text-sm">
+            <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8 space-y-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                    <div className="flex max-w-full self-start overflow-x-auto rounded-lg border border-slate-300 bg-white p-1 text-sm sm:self-auto">
                         {(["pending", "classified"] as const).map((value) => (
                             <button
                                 key={value}
                                 type="button"
                                 onClick={() => changeTab(value)}
-                                className={`rounded-md px-3 py-1 ${tab === value ? "bg-indigo-600 text-white" : "text-slate-700"}`}
+                                className={`shrink-0 whitespace-nowrap rounded-md px-3 py-2 sm:py-1 ${tab === value ? "bg-indigo-600 text-white" : "text-slate-700"}`}
                             >
                                 {value === "pending" ? "Pendientes" : "Clasificados (editables)"}
                             </button>
                         ))}
                     </div>
-                    <div className="max-w-sm flex-1">
+                    <div className="w-full sm:max-w-sm sm:flex-1">
                         <Input
                             placeholder="Buscar por tag o serie..."
                             value={search}
@@ -202,7 +202,7 @@ function ClassificationContent() {
                                     <tr>
                                         <th className={TH}>Activo</th>
                                         <th className={TH}>Producto</th>
-                                        <th className={TH}>Centro de costo</th>
+                                        <th className={`${TH} hidden sm:table-cell`}>Centro de costo</th>
                                         <th className={`${TH} text-right`}>Valor</th>
                                         {tab === "classified" && <th className={TH}>Actual</th>}
                                         <th className={TH}>Clasificación</th>
@@ -221,13 +221,13 @@ function ClassificationContent() {
                                             (!needsConfirm || draft.confirmBelow);
                                         return (
                                             <tr key={row.assetId} className="align-top">
-                                                <td className="px-3 py-2">
+                                                <td className="whitespace-nowrap px-3 py-2">
                                                     <p className="font-medium text-slate-900">{row.tag}</p>
                                                     <p className="text-xs text-slate-500">{row.serialNumber ?? "Sin serie"}</p>
                                                 </td>
-                                                <td className="px-3 py-2 text-slate-600">{row.productName ?? "-"}</td>
-                                                <td className="px-3 py-2 text-slate-600">{row.costCenterName ?? "-"}</td>
-                                                <td className="px-3 py-2 text-right text-slate-700">
+                                                <td className="min-w-[10rem] px-3 py-2 text-slate-600">{row.productName ?? "-"}</td>
+                                                <td className="hidden min-w-[8rem] px-3 py-2 text-slate-600 sm:table-cell">{row.costCenterName ?? "-"}</td>
+                                                <td className="whitespace-nowrap px-3 py-2 text-right text-slate-700">
                                                     {row.value === null ? (
                                                         <span className="text-xs text-amber-700">Sin valor</span>
                                                     ) : (
@@ -236,14 +236,14 @@ function ClassificationContent() {
                                                     {below && <p className="text-xs text-amber-700">Bajo el umbral</p>}
                                                 </td>
                                                 {tab === "classified" && (
-                                                    <td className="px-3 py-2 text-slate-600">
+                                                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">
                                                         {row.classification ? CLASSIFICATION_LABEL[row.classification] : "-"}
                                                         {row.stage && (
                                                             <p className="text-xs text-slate-500">{STAGE_LABEL[row.stage]}</p>
                                                         )}
                                                     </td>
                                                 )}
-                                                <td className="px-3 py-2">
+                                                <td className="min-w-[10rem] px-3 py-2">
                                                     <Select
                                                         aria-label={`Clasificación de ${row.tag}`}
                                                         value={draft?.classification ?? ""}
@@ -264,7 +264,7 @@ function ClassificationContent() {
                                                         ))}
                                                     </Select>
                                                     {needsConfirm && (
-                                                        <label className="mt-1 flex items-center gap-1 text-xs text-amber-800">
+                                                        <label className="mt-1 flex items-center gap-1 py-1 text-xs text-amber-800">
                                                             <input
                                                                 type="checkbox"
                                                                 checked={draft.confirmBelow}
@@ -276,7 +276,7 @@ function ClassificationContent() {
                                                         </label>
                                                     )}
                                                 </td>
-                                                <td className="px-3 py-2">
+                                                <td className="min-w-[12rem] px-3 py-2">
                                                     {draft?.classification === "FIXED_ASSET" ? (
                                                         <Select
                                                             aria-label={`Clase contable de ${row.tag}`}
@@ -301,7 +301,7 @@ function ClassificationContent() {
                                                         <Button
                                                             type="button"
                                                             variant="success"
-                                                            className="px-3! py-1! text-xs"
+                                                            className="whitespace-nowrap px-3! py-2! text-xs sm:py-1!"
                                                             disabled={!ready}
                                                             loading={savingId === row.assetId}
                                                             onClick={() => void handleClassify(row)}

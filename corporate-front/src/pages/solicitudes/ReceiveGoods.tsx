@@ -275,8 +275,8 @@ export default function ReceiveGoods() {
   if (selectedRequest) {
     return (
       <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-        <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
-          <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
+          <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
             <Button type="button" variant="secondary" onClick={handleBackToList} className="mb-4">
               Volver al listado
             </Button>
@@ -299,9 +299,9 @@ export default function ReceiveGoods() {
             ) : (
               <div className="space-y-6">
                 {linesByOrder.map(({ order, lines: orderLines }) => (
-                  <div key={order.id} className="rounded-lg border border-slate-200 bg-white p-4">
+                  <div key={order.id} className="rounded-lg border border-slate-200 bg-white p-3 sm:p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h2 className="font-semibold text-slate-800">
+                      <h2 className="min-w-0 break-words font-semibold text-slate-800">
                         Orden {order.orderNumber}{" "}
                         <span className="text-slate-500 font-normal">— {supplierName(order.supplierId)}</span>
                       </h2>
@@ -320,9 +320,10 @@ export default function ReceiveGoods() {
                       {orderLines.map((line) => {
                         const key = lineKey(line.order.id, line.quote.id);
                         return (
-                          <div key={key} className="rounded-md border border-slate-100 p-3">
+                          <div key={key} className="rounded-md border border-slate-100 p-2 sm:p-3">
+
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <h3 className="text-sm font-semibold text-slate-700">{quoteLabel(line.quote)}</h3>
+                              <h3 className="min-w-0 break-words text-sm font-semibold text-slate-700">{quoteLabel(line.quote)}</h3>
                               <span
                                 className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                                   line.remaining > 0 ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
@@ -348,17 +349,17 @@ export default function ReceiveGoods() {
                                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                                   <thead className="bg-slate-50">
                                     <tr>
-                                      <th className="px-3 py-2 text-left font-semibold text-slate-600">Documento</th>
-                                      <th className="px-3 py-2 text-left font-semibold text-slate-600">N°</th>
-                                      <th className="px-3 py-2 text-left font-semibold text-slate-600">Cantidad</th>
+                                      <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600">Documento</th>
+                                      <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600">N°</th>
+                                      <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600">Cantidad</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-100">
                                     {line.receipts.map((receipt) => (
                                       <tr key={receipt.id}>
-                                        <td className="px-3 py-2 text-slate-600">{receipt.documentType}</td>
-                                        <td className="px-3 py-2 text-slate-600">{receipt.documentNumber}</td>
-                                        <td className="px-3 py-2 text-slate-600">{receipt.receivedQuantity}</td>
+                                        <td className="whitespace-nowrap px-3 py-2 text-slate-600">{receipt.documentType}</td>
+                                        <td className="whitespace-nowrap px-3 py-2 text-slate-600">{receipt.documentNumber}</td>
+                                        <td className="whitespace-nowrap px-3 py-2 text-slate-600">{receipt.receivedQuantity}</td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -461,7 +462,7 @@ export default function ReceiveGoods() {
                                     variant="success"
                                     loading={line.submitting}
                                     onClick={() => void handleReceive(line)}
-                                    className="w-60"
+                                    className="w-full sm:w-60"
                                   >
                                     Registrar recepción
                                   </Button>
@@ -484,12 +485,12 @@ export default function ReceiveGoods() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">
           Recepcionar Mercadería
         </h1>
 
-        <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
           <div className="mb-4 max-w-sm">
             <Input
               placeholder="Buscar por numero, notas o prioridad..."
@@ -510,21 +511,21 @@ export default function ReceiveGoods() {
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">N° Solicitud</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Solicitante</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Prioridad</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Acciones</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">N° Solicitud</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Solicitante</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Prioridad</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {requests.map((request) => (
                     <tr key={request.id}>
-                      <td className="px-4 py-2 font-medium text-slate-900">{request.requestNumber}</td>
-                      <td className="px-4 py-2 text-slate-600">
+                      <td className="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{request.requestNumber}</td>
+                      <td className="whitespace-nowrap px-4 py-2 text-slate-600">
                         {request.requester.firstName} {request.requester.lastName}
                       </td>
-                      <td className="px-4 py-2 text-slate-600">{request.priority}</td>
-                      <td className="px-4 py-2">
+                      <td className="whitespace-nowrap px-4 py-2 text-slate-600">{request.priority}</td>
+                      <td className="whitespace-nowrap px-4 py-2">
                         <Button type="button" variant="secondary" onClick={() => void handleViewRequest(request)}>
                           Ver
                         </Button>

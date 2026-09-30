@@ -191,8 +191,8 @@ export default function ApproveQuote() {
   if (selectedRequest) {
     return (
       <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-        <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
-          <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
+          <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
             <Button type="button" variant="secondary" onClick={handleBackToList} className="mb-4">
               Volver al listado
             </Button>
@@ -216,7 +216,7 @@ export default function ApproveQuote() {
             ) : (
               <div className="space-y-4">
                 {lineDetails.map((detail) => (
-                  <div key={detail.line.id} className="rounded-lg border border-slate-200 bg-white p-4">
+                  <div key={detail.line.id} className="rounded-lg border border-slate-200 bg-white p-3 sm:p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <h2 className="font-semibold text-slate-800">
                         {detail.productName} <span className="text-slate-500 font-normal">(cant. {detail.line.quantity})</span>
@@ -236,9 +236,9 @@ export default function ApproveQuote() {
                           <thead className="bg-slate-50">
                             <tr>
                               <th className="px-3 py-2 text-left font-semibold text-slate-600"></th>
-                              <th className="px-3 py-2 text-left font-semibold text-slate-600">Proveedor</th>
-                              <th className="px-3 py-2 text-left font-semibold text-slate-600">Modelo</th>
-                              <th className="px-3 py-2 text-left font-semibold text-slate-600">Valor</th>
+                              <th className="min-w-[10rem] px-3 py-2 text-left font-semibold text-slate-600">Proveedor</th>
+                              <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600">Modelo</th>
+                              <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600">Valor</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
@@ -256,8 +256,8 @@ export default function ApproveQuote() {
                                   {quote.status === "SELECTED" && <span className="text-emerald-600">✓</span>}
                                 </td>
                                 <td className="px-3 py-2 text-slate-700">{supplierName(quote.supplierId)}</td>
-                                <td className="px-3 py-2 text-slate-600">{quote.model ?? "-"}</td>
-                                <td className="px-3 py-2 text-slate-600">${quote.purchaseValue}</td>
+                                <td className="whitespace-nowrap px-3 py-2 text-slate-600">{quote.model ?? "-"}</td>
+                                <td className="whitespace-nowrap px-3 py-2 text-slate-600">${quote.purchaseValue}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -301,12 +301,12 @@ export default function ApproveQuote() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">
           Cotizaciones por Autorizar
         </h1>
 
-        <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
           <div className="mb-4 max-w-sm">
             <Input
               placeholder="Buscar por número, notas o prioridad..."
@@ -327,25 +327,25 @@ export default function ApproveQuote() {
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">N° Solicitud</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Solicitante</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Beneficiario</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Prioridad</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Acciones</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">N° Solicitud</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Solicitante</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Beneficiario</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Prioridad</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {requests.map((request) => (
                     <tr key={request.id}>
-                      <td className="px-4 py-2 font-medium text-slate-900">{request.requestNumber}</td>
-                      <td className="px-4 py-2 text-slate-600">
+                      <td className="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{request.requestNumber}</td>
+                      <td className="whitespace-nowrap px-4 py-2 text-slate-600">
                         {request.requester.firstName} {request.requester.lastName}
                       </td>
-                      <td className="px-4 py-2 text-slate-600">
+                      <td className="whitespace-nowrap px-4 py-2 text-slate-600">
                         {request.beneficiary.firstName} {request.beneficiary.lastName}
                       </td>
-                      <td className="px-4 py-2 text-slate-600">{request.priority}</td>
-                      <td className="px-4 py-2">
+                      <td className="whitespace-nowrap px-4 py-2 text-slate-600">{request.priority}</td>
+                      <td className="whitespace-nowrap px-4 py-2">
                         <Button type="button" variant="secondary" onClick={() => void handleViewRequest(request)}>
                           Ver
                         </Button>

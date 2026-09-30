@@ -18,7 +18,7 @@ import { Pager } from "./Pager";
 // fijado: hay que volver a fijarlo antes de capitalizar.
 const REQUIRED_PERMISSIONS = ["asset-accounting:read"] as const;
 const PAGE_SIZE = 20;
-const TH = "px-3 py-2 text-left font-semibold text-slate-600";
+const TH = "whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600";
 
 export default function DeterminarCosto() {
     return (
@@ -152,13 +152,13 @@ function CostContent() {
     const projected = selected?.value !== null && selected ? Number(selected.value) + Number(selected.attributableTotal) : null;
 
     return (
-        <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+        <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
             <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-2 text-center text-gray-600">Determinar Costo</h1>
             <p className="mb-6 text-sm text-slate-600 text-center max-w-3xl">
                 Costo capitalizable = valor de adquisición + costos directamente atribuibles, según la política contable.
             </p>
 
-            <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
+            <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8 space-y-4">
                 <div className="max-w-sm">
                     <Input
                         placeholder="Buscar por tag o serie..."
@@ -201,27 +201,27 @@ function CostContent() {
                                             key={record.assetId}
                                             className={selected?.assetId === record.assetId ? "bg-indigo-50" : undefined}
                                         >
-                                            <td className="px-3 py-2">
-                                                <p className="font-medium text-slate-900">{record.tag}</p>
+                                            <td className="min-w-[10rem] px-3 py-2">
+                                                <p className="whitespace-nowrap font-medium text-slate-900">{record.tag}</p>
                                                 <p className="text-xs text-slate-500">{record.productName ?? "-"}</p>
                                             </td>
-                                            <td className="px-3 py-2 text-slate-600">{record.className ?? "-"}</td>
-                                            <td className="px-3 py-2 text-right text-slate-700">
+                                            <td className="whitespace-nowrap px-3 py-2 text-slate-600">{record.className ?? "-"}</td>
+                                            <td className="whitespace-nowrap px-3 py-2 text-right text-slate-700">
                                                 {record.value === null ? (
                                                     <span className="text-xs text-amber-700">Sin valor</span>
                                                 ) : (
                                                     formatMoney(record.value)
                                                 )}
                                             </td>
-                                            <td className="px-3 py-2 text-right text-slate-700">
+                                            <td className="whitespace-nowrap px-3 py-2 text-right text-slate-700">
                                                 {formatMoney(record.attributableTotal)}
                                             </td>
-                                            <td className="px-3 py-2 text-slate-600">{STAGE_LABEL[record.stage]}</td>
+                                            <td className="whitespace-nowrap px-3 py-2 text-slate-600">{STAGE_LABEL[record.stage]}</td>
                                             <td className="px-3 py-2 text-right">
                                                 <Button
                                                     type="button"
                                                     variant="ghost"
-                                                    className="px-2! py-1! text-xs"
+                                                    className="whitespace-nowrap px-3! py-2! text-xs sm:px-2! sm:py-1!"
                                                     onClick={() => void select(record)}
                                                 >
                                                     Ver costos
@@ -239,7 +239,7 @@ function CostContent() {
                 {selected && (
                     <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-4">
                         <div className="flex flex-wrap items-baseline justify-between gap-2">
-                            <h2 className="text-base font-semibold text-slate-800">
+                            <h2 className="min-w-0 break-words text-base font-semibold text-slate-800">
                                 {selected.tag} · {selected.className}
                             </h2>
                             <span className="text-xs text-slate-500">{STAGE_LABEL[selected.stage]}</span>
@@ -273,6 +273,7 @@ function CostContent() {
                         ) : costs.length === 0 ? (
                             <p className="text-sm text-slate-500">Sin costos atribuibles registrados.</p>
                         ) : (
+                            <div className="overflow-x-auto">
                             <table className="min-w-full divide-y divide-slate-200 text-sm">
                                 <thead className="bg-slate-50">
                                     <tr>
@@ -285,15 +286,15 @@ function CostContent() {
                                 <tbody className="divide-y divide-slate-100">
                                     {costs.map((cost) => (
                                         <tr key={cost.id}>
-                                            <td className="px-3 py-2 text-slate-800">{cost.concept}</td>
-                                            <td className="px-3 py-2 text-slate-600">{cost.documentRef ?? "-"}</td>
-                                            <td className="px-3 py-2 text-right text-slate-800">{formatMoney(cost.amount)}</td>
+                                            <td className="min-w-[10rem] px-3 py-2 text-slate-800">{cost.concept}</td>
+                                            <td className="whitespace-nowrap px-3 py-2 text-slate-600">{cost.documentRef ?? "-"}</td>
+                                            <td className="whitespace-nowrap px-3 py-2 text-right text-slate-800">{formatMoney(cost.amount)}</td>
                                             <td className="px-3 py-2 text-right">
                                                 {canUpdate && (
                                                     <Button
                                                         type="button"
                                                         variant="ghost"
-                                                        className="px-2! py-1! text-xs text-rose-600 hover:bg-rose-100"
+                                                        className="whitespace-nowrap px-3! py-2! text-xs sm:px-2! sm:py-1! text-rose-600 hover:bg-rose-100"
                                                         disabled={busy}
                                                         onClick={() => void handleRemove(cost)}
                                                     >
@@ -305,6 +306,7 @@ function CostContent() {
                                     ))}
                                 </tbody>
                             </table>
+                            </div>
                         )}
 
                         {canUpdate && (
@@ -352,6 +354,7 @@ function CostContent() {
                                 <Button
                                     type="button"
                                     variant="success"
+                                    className="w-full sm:w-auto"
                                     disabled={busy || selected.value === null}
                                     onClick={() => void handleConfirm()}
                                 >

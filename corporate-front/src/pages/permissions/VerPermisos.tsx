@@ -52,10 +52,10 @@ export default function VerPermisos() {
 
     return (
         <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-            <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+            <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
                 <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">Permisos</h1>
 
-                <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
                     <div className="mb-4 max-w-sm">
                         <Input
                             placeholder="Buscar por recurso, acción o descripción..."
@@ -77,22 +77,22 @@ export default function VerPermisos() {
                                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                                     <thead className="bg-slate-50">
                                         <tr>
-                                            <th className="px-4 py-2 text-left font-semibold text-slate-600">Clave</th>
-                                            <th className="px-4 py-2 text-left font-semibold text-slate-600">Recurso</th>
-                                            <th className="px-4 py-2 text-left font-semibold text-slate-600">Acción</th>
-                                            <th className="px-4 py-2 text-left font-semibold text-slate-600">Descripción</th>
-                                            <th className="px-4 py-2 text-left font-semibold text-slate-600">Incluye</th>
-                                            <th className="px-4 py-2 text-left font-semibold text-slate-600">Creado</th>
+                                            <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Clave</th>
+                                            <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Recurso</th>
+                                            <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Acción</th>
+                                            <th className="min-w-[12rem] px-4 py-2 text-left font-semibold text-slate-600">Descripción</th>
+                                            <th className="min-w-[12rem] px-4 py-2 text-left font-semibold text-slate-600">Incluye</th>
+                                            <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Creado</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {permissions.map((permission) => (
                                             <tr key={permission.id}>
-                                                <td className="px-4 py-2 font-medium text-slate-900">
+                                                <td className="whitespace-nowrap px-4 py-2 font-medium text-slate-900">
                                                     <code>{`${permission.resource}:${permission.action}`}</code>
                                                 </td>
-                                                <td className="px-4 py-2 text-slate-600">{permission.resource}</td>
-                                                <td className="px-4 py-2 text-slate-600">{permission.action}</td>
+                                                <td className="whitespace-nowrap px-4 py-2 text-slate-600">{permission.resource}</td>
+                                                <td className="whitespace-nowrap px-4 py-2 text-slate-600">{permission.action}</td>
                                                 <td className="px-4 py-2 text-slate-600">{permission.description ?? "-"}</td>
                                                 {/* Solo los permisos de pantalla ("access", plan 006) incluyen otros */}
                                                 <td className="px-4 py-2 text-slate-600">
@@ -108,7 +108,7 @@ export default function VerPermisos() {
                                                         "-"
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-2 text-slate-600">
+                                                <td className="whitespace-nowrap px-4 py-2 text-slate-600">
                                                     {new Date(permission.createdAt).toLocaleDateString("es-CL")}
                                                 </td>
                                             </tr>
@@ -118,7 +118,8 @@ export default function VerPermisos() {
                             </div>
 
                             {pagination && pagination.totalPages > 1 && (
-                                <div className="mt-4 flex items-center justify-between text-sm text-slate-600">
+                                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-sm text-slate-600">
+
                                     <span>
                                         Página {pagination.currentPage} de {pagination.totalPages} ({pagination.totalItems} permisos)
                                     </span>

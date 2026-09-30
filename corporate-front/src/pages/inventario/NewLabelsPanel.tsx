@@ -51,7 +51,7 @@ export function NewLabelsPanel({ countId, labelCount }: { countId: number; label
         La toma dio de alta {labelCount} equipo(s) con etiqueta nueva. Imprímalas y péguelas en cada equipo.
       </p>
       <LabelConfigFields config={config} onChange={setConfig} />
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         <Button type="button" variant="secondary" loading={downloading} onClick={() => void handleDownload()}>
           Descargar etiquetas.txt
         </Button>

@@ -7,7 +7,7 @@ import type { AssetReturnCandidate, AssetReturnScope } from "../../types/assetRe
 import { statusLabel } from "../inventario/inventoryLabels";
 
 const PAGE_SIZE = 100;
-const TH = "px-4 py-2 text-left font-semibold text-slate-600";
+const TH = "whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600";
 
 // Selector de activos devolvibles (asignados y sin otra devolucion vigente). Lo usan "Nueva devolucion" y
 // "Agregar activos" de un borrador. Una devolucion admite hasta 100 activos (limite del servidor).
@@ -87,8 +87,8 @@ export function CandidatePicker({
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="flex max-w-md flex-1 gap-2">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex w-full max-w-md gap-2 sm:flex-1">
           <Input
             placeholder="Buscar por tag o N° de serie..."
             value={search}
@@ -102,6 +102,7 @@ export function CandidatePicker({
         </div>
         <Button
           type="button"
+          className="w-full sm:w-auto"
           loading={busy}
           disabled={selected.size === 0}
           onClick={() => void onConfirm([...selected])}
@@ -137,6 +138,7 @@ export function CandidatePicker({
                   <th className={TH}>
                     <input
                       type="checkbox"
+                      className="h-5 w-5"
                       aria-label="Seleccionar todos"
                       checked={allSelected}
                       onChange={() =>
@@ -158,6 +160,7 @@ export function CandidatePicker({
                     <td className="px-4 py-2">
                       <input
                         type="checkbox"
+                        className="h-5 w-5"
                         aria-label={`Seleccionar ${item.tag}`}
                         checked={selected.has(item.assetId)}
                         disabled={!isSelectable(item)}
@@ -165,13 +168,13 @@ export function CandidatePicker({
                         onChange={() => toggle(item.assetId)}
                       />
                     </td>
-                    <td className="px-4 py-2 font-medium text-slate-900">{item.tag}</td>
-                    <td className="px-4 py-2 text-slate-600">{item.productName ?? "-"}</td>
-                    <td className="px-4 py-2 text-slate-600">{item.serialNumber ?? "-"}</td>
-                    <td className="px-4 py-2 text-slate-600">{statusLabel(item.statusCode)}</td>
-                    <td className="px-4 py-2 text-slate-600">{item.holder?.fullName ?? "-"}</td>
+                    <td className="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{item.tag}</td>
+                    <td className="min-w-[10rem] px-4 py-2 text-slate-600">{item.productName ?? "-"}</td>
+                    <td className="whitespace-nowrap px-4 py-2 text-slate-600">{item.serialNumber ?? "-"}</td>
+                    <td className="whitespace-nowrap px-4 py-2 text-slate-600">{statusLabel(item.statusCode)}</td>
+                    <td className="min-w-[10rem] px-4 py-2 text-slate-600">{item.holder?.fullName ?? "-"}</td>
                     {scope === "OWN" && (
-                      <td className="px-4 py-2 text-slate-600">
+                      <td className="min-w-[10rem] px-4 py-2 text-slate-600">
                         {item.costCenter ? `${item.costCenter.code} · ${item.costCenter.name}` : "-"}
                       </td>
                     )}
