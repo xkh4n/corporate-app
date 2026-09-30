@@ -18,6 +18,42 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-09-30 — Front responsivo para teléfono y galería de productos
+
+### Hecho
+- **Layout compartido:**
+  - `AppLayout`: `px-3` en móvil; el saludo se oculta bajo `md`; «Cerrar sesión» pasa a ícono; hamburguesa visible sobre el azul.
+  - `index.css`: tablas compactas bajo 640 px, más las utilidades `scrollbar-none` y `scrollbar-thin`.
+  - `Input`, `Textarea` y `Select` con texto de 16 px en móvil (evita el zoom de iOS).
+  - `Tabs` de Service Desk en una fila con scroll horizontal.
+- **Pantallas (84 archivos):** los ajustes por módulo los hicieron 3 agentes UX/UI, en carpetas disjuntas.
+  - Sin padding apilado: contenedor `sm:max-w-[95%] sm:px-4` y envoltorio `px-0 py-4 sm:p-4`.
+  - Tablas: celdas cortas con `whitespace-nowrap` y columnas de texto con `min-w-*`; columnas secundarias ocultas en móvil.
+  - Filtros y chips de vista en grilla o en una fila con scroll.
+  - Botones principales a ancho completo en móvil.
+- **Productos:** en teléfono se ve una galería de fotos (200 px). Tocar una abre la ficha del producto, con «Editar marca/modelo» si el rol tiene `products:update`. Desde `sm` se mantiene la tabla.
+
+### Decisiones
+- Ocultar columnas en móvil es solo presentación, no control de acceso. Solo se ocultaron datos secundarios.
+
+### Verificación
+- Front: tsc, lint, 69 pruebas y build.
+- Revisión de seguridad con `cybersecurity-orchestrator` sobre `59ca199..35e409d`: **GO**, sin hallazgos.
+- El usuario probó dev en el teléfono y confirmó la mejora.
+
+### Promoción
+- PR #48 `develop → testing`: lo mergeó el usuario.
+- PR #50 `release/master → master`: pasó el CI («Verificar rutas prohibidas»). El gate de seguridad quedó marcado sobre `a7cb954` y `master` quedó en `6b82325`.
+
+### Pendiente
+- Redesplegar Testing y producción.
+- Mejoras posibles:
+  - la acción «Adjuntar» sigue dentro de la tabla en Adjuntar OC;
+  - el wrapper de `Select` no tiene ancho propio dentro de un `flex`;
+  - tablas anchas de acceso a salas.
+
+---
+
 ## 2026-09-29 (6) — Redespliegue de los 3 ambientes con volúmenes nuevos
 
 ### Hecho
