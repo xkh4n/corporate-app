@@ -58,6 +58,31 @@ div:has(> table) {
   border-color: #006699;
 }
 
+/* Telefono: las tablas ya scrollean en horizontal dentro de su contenedor
+   overflow-x-auto; aqui se compactan celdas y letra para que quepan mas
+   columnas a la vista sin tocar cada pantalla. Sin capa, gana a px-4/py-2. */
+@media (max-width: 639px) {
+  table {
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+  }
+
+  table th,
+  table td {
+    padding: 0.5rem 0.625rem;
+  }
+
+  table td img {
+    max-width: 3rem;
+    max-height: 3rem;
+  }
+}
+
+/* Los contenedores de tabla no deben ensanchar la pagina. */
+div:has(> table) {
+  max-width: 100%;
+}
+
 /* Used by ImagePreviewThumbnail (components/ui) for its hover preview and
    tap-to-fullscreen modal enter transitions. */
 @keyframes ui-preview-in {
@@ -78,4 +103,17 @@ div:has(> table) {
   to {
     opacity: 1;
   }
+}
+
+/* Barras de scroll: scrollbar-none oculta la barra en filas de pestanas/chips
+   con scroll horizontal; scrollbar-thin la afina (sidebar). */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
 }

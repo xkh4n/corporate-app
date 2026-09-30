@@ -45,7 +45,7 @@ export function IconPicker({ value, onChange }: { value: string; onChange: (name
     // Arriba y abajo de la grilla, igual que en los listados paginados.
     const pagination =
         totalPages > 1 ? (
-            <div className="flex items-center justify-between gap-2 text-xs text-slate-600">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
                 <span>
                     Página {currentPage} de {totalPages} ({filtered.length} iconos)
                 </span>
@@ -53,7 +53,7 @@ export function IconPicker({ value, onChange }: { value: string; onChange: (name
                     <Button
                         type="button"
                         variant="secondary"
-                        className="px-2! py-1! text-xs"
+                        className="px-3! py-2! sm:px-2! sm:py-1! text-xs"
                         disabled={currentPage <= 1}
                         onClick={() => setPage(currentPage - 1)}
                     >
@@ -62,7 +62,7 @@ export function IconPicker({ value, onChange }: { value: string; onChange: (name
                     <Button
                         type="button"
                         variant="secondary"
-                        className="px-2! py-1! text-xs"
+                        className="px-3! py-2! sm:px-2! sm:py-1! text-xs"
                         disabled={currentPage >= totalPages}
                         onClick={() => setPage(currentPage + 1)}
                     >
@@ -73,7 +73,7 @@ export function IconPicker({ value, onChange }: { value: string; onChange: (name
         ) : null;
 
     return (
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <div className="rounded-lg border border-slate-200 bg-white p-3 sm:p-4">
             <div className="flex flex-wrap items-center gap-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-md border border-slate-200 bg-slate-50">
                     {SelectedIcon ? <SelectedIcon className="h-7 w-7 text-indigo-700" aria-hidden /> : null}

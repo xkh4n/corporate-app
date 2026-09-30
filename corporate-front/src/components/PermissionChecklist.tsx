@@ -32,7 +32,7 @@ export function PermissionChecklist({
     }, [permissions, search]);
 
     return (
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <div className="rounded-lg border border-slate-200 bg-white p-3 sm:p-4">
             <h2 className="text-sm font-semibold text-slate-700">Permisos que incluye ({selected.size} seleccionados)</h2>
             <p className="mt-1 text-xs text-slate-500">
                 Al asignar este permiso de pantalla a un rol, el rol obtiene todos los permisos marcados.
@@ -62,7 +62,7 @@ export function PermissionChecklist({
                                 />
                                 <span>
                                     <span className="text-slate-800">{permissionLabel(permission)}</span>
-                                    <code className="ml-1 text-xs text-slate-500">
+                                    <code className="ml-1 break-all text-xs text-slate-500">
                                         {permission.resource}:{permission.action}
                                     </code>
                                 </span>
