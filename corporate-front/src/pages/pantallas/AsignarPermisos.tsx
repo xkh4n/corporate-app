@@ -46,17 +46,17 @@ export default function AsignarPermisos() {
 
     return (
         <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-            <div className="flex flex-col items-center justify-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+            <div className="flex flex-col items-center justify-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
                 <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">Asignar Permisos</h1>
                 {catalogsLoading ? (
                     <div className="flex justify-center py-12">
                         <Spinner />
                     </div>
                 ) : (
-                    <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
                         <form onSubmit={(event) => void handleSubmit(event)} className="w-full">
                             <div className="flex flex-1 row-auto justify-center mt-6">
-                                <Button type="submit" loading={submitting} className="w-60">
+                                <Button type="submit" loading={submitting} className="w-full sm:w-60">
                                     Guardar
                                 </Button>
                             </div>

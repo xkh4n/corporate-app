@@ -18,7 +18,7 @@ import { WriteOffPanel } from "./WriteOffPanel";
 // certificado; la foto de cada activo ya viene de Dar de Baja Activos.
 const REQUIRED_PERMISSIONS = ["asset-write-offs:read"] as const;
 const PAGE_SIZE = 20;
-const TH = "px-3 py-2 text-left font-semibold text-slate-600";
+const TH = "whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600";
 
 type Tab = "new" | "drafts" | "history";
 
@@ -61,7 +61,7 @@ function WriteOffContent() {
     }
 
     return (
-        <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+        <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
             <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-2 text-center text-gray-600">Baja Contable</h1>
             <p className="mb-6 text-sm text-slate-600 text-center max-w-3xl">
                 Registra la baja contable de los activos pendientes (dados de baja en Dar de Baja Activos), de a uno o por
@@ -69,14 +69,14 @@ function WriteOffContent() {
                 confirmada es definitiva y deja el activo «De baja».
             </p>
 
-            <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
-                <div className="flex rounded-lg border border-slate-300 bg-white p-1 text-sm w-fit">
+            <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8 space-y-4">
+                <div className="flex max-w-full overflow-x-auto rounded-lg border border-slate-300 bg-white p-1 text-sm w-fit">
                     {tabs.map((value) => (
                         <button
                             key={value}
                             type="button"
                             onClick={() => changeTab(value)}
-                            className={`rounded-md px-3 py-1 ${tab === value ? "bg-indigo-600 text-white" : "text-slate-700"}`}
+                            className={`shrink-0 whitespace-nowrap rounded-md px-3 py-2 sm:py-1 ${tab === value ? "bg-indigo-600 text-white" : "text-slate-700"}`}
                         >
                             {TAB_LABEL[value]}
                         </button>
@@ -173,8 +173,8 @@ function EligibleAssets({ onCreated }: { onCreated: (id: number) => void }) {
 
     return (
         <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="max-w-sm flex-1">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                <div className="w-full sm:max-w-sm sm:flex-1">
                     <Input
                         placeholder="Buscar por tag o serie..."
                         value={search}
@@ -185,7 +185,7 @@ function EligibleAssets({ onCreated }: { onCreated: (id: number) => void }) {
                         className="bg-white"
                     />
                 </div>
-                <div className="flex items-center gap-3 text-sm text-slate-700">
+                <div className="flex flex-col gap-2 text-sm text-slate-700 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
                     <span>
                         {selected.size} seleccionado(s) · valor libro {formatMoney(selectedTotal)}
                     </span>
@@ -245,25 +245,26 @@ function EligibleAssets({ onCreated }: { onCreated: (id: number) => void }) {
                                         <td className="px-3 py-2">
                                             <input
                                                 type="checkbox"
+                                                className="h-5 w-5"
                                                 checked={selected.has(asset.assetId)}
                                                 onChange={() => toggle(asset)}
                                                 onClick={(e) => e.stopPropagation()}
                                                 aria-label={`Seleccionar ${asset.tag}`}
                                             />
                                         </td>
-                                        <td className="px-3 py-2">
-                                            <p className="font-medium text-slate-900">{asset.tag}</p>
+                                        <td className="min-w-[10rem] px-3 py-2">
+                                            <p className="whitespace-nowrap font-medium text-slate-900">{asset.tag}</p>
                                             <p className="text-xs text-slate-500">{asset.productName ?? asset.serialNumber ?? "-"}</p>
                                         </td>
-                                        <td className="px-3 py-2 text-slate-600">{asset.costCenterName ?? "-"}</td>
-                                        <td className="px-3 py-2 text-slate-600">{CLASSIFICATION_LABEL[asset.classification]}</td>
-                                        <td className="px-3 py-2 text-slate-600">{STAGE_LABEL[asset.stage]}</td>
-                                        <td className="px-3 py-2 text-right text-slate-800">{formatMoney(asset.bookValue)}</td>
+                                        <td className="min-w-[8rem] px-3 py-2 text-slate-600">{asset.costCenterName ?? "-"}</td>
+                                        <td className="whitespace-nowrap px-3 py-2 text-slate-600">{CLASSIFICATION_LABEL[asset.classification]}</td>
+                                        <td className="whitespace-nowrap px-3 py-2 text-slate-600">{STAGE_LABEL[asset.stage]}</td>
+                                        <td className="whitespace-nowrap px-3 py-2 text-right text-slate-800">{formatMoney(asset.bookValue)}</td>
                                         <td className="px-3 py-2 text-right">
                                             <Button
                                                 type="button"
                                                 variant="ghost"
-                                                className="px-2! py-1! text-xs"
+                                                className="whitespace-nowrap px-3! py-2! text-xs sm:px-2! sm:py-1!"
                                                 disabled={creating !== null}
                                                 loading={creating === asset.assetId}
                                                 onClick={(e) => {
@@ -349,20 +350,20 @@ function WriteOffList({ status, onOpen }: { status: "DRAFT" | "CONFIRMED"; onOpe
                     <tbody className="divide-y divide-slate-100">
                         {items.map((item) => (
                             <tr key={item.id}>
-                                <td className="px-3 py-2 font-medium text-slate-900">#{item.id}</td>
-                                <td className="px-3 py-2 text-slate-600">{item.writeOffDate ?? "-"}</td>
-                                <td className="px-3 py-2 text-slate-600">{item.reason ?? "-"}</td>
+                                <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900">#{item.id}</td>
+                                <td className="whitespace-nowrap px-3 py-2 text-slate-600">{item.writeOffDate ?? "-"}</td>
+                                <td className="min-w-[12rem] px-3 py-2 text-slate-600">{item.reason ?? "-"}</td>
                                 <td className="px-3 py-2 text-right text-slate-800">
                                     {status === "CONFIRMED" ? item.assetCount : item.lineCount}
                                 </td>
                                 {status === "CONFIRMED" && (
-                                    <td className="px-3 py-2 text-right text-slate-800">{formatMoney(item.totalBookValue)}</td>
+                                    <td className="whitespace-nowrap px-3 py-2 text-right text-slate-800">{formatMoney(item.totalBookValue)}</td>
                                 )}
                                 <td className="px-3 py-2 text-right">
                                     <Button
                                         type="button"
                                         variant="ghost"
-                                        className="px-2! py-1! text-xs"
+                                        className="whitespace-nowrap px-3! py-2! text-xs sm:px-2! sm:py-1!"
                                         onClick={() => onOpen(item.id)}
                                     >
                                         {status === "DRAFT" ? "Continuar" : "Ver"}

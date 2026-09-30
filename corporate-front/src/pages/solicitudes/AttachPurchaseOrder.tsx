@@ -281,8 +281,8 @@ export default function AttachPurchaseOrder() {
   if (selectedRequest) {
     return (
       <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-        <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
-          <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
+          <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
             <Button type="button" variant="secondary" onClick={handleBackToList} className="mb-4">
               Volver al listado
             </Button>
@@ -302,7 +302,7 @@ export default function AttachPurchaseOrder() {
             ) : (
               <>
                 {pendingQuotes.length > 0 && (
-                  <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <div className="rounded-lg border border-slate-200 bg-white p-3 sm:p-4">
                     <h2 className="mb-3 text-sm font-semibold text-slate-600">Emitir Orden de Compra</h2>
                     <div className="grid grid-cols-1 max-[799px]:grid-cols-1 min-[800px]:grid-cols-6 min-[1000px]:grid-cols-8 min-[1200px]:grid-cols-10 min-[1400px]:grid-cols-12 gap-4">
                       <div className="w-full min-[800px]:col-span-6 min-[1000px]:col-span-4 min-[1200px]:col-span-4 min-[1400px]:col-span-5">
@@ -336,7 +336,8 @@ export default function AttachPurchaseOrder() {
                               Cotizaciones a incluir en esta OC
                             </label>
                             {supplierQuotes.map((quote) => (
-                              <label key={quote.id} className="flex items-center gap-2 py-1 text-sm text-slate-700">
+                              <label key={quote.id} className="flex items-start gap-2 py-1 text-sm text-slate-700 break-words">
+
                                 <input
                                   type="checkbox"
                                   checked={selectedQuoteIds.has(quote.id)}
@@ -378,7 +379,7 @@ export default function AttachPurchaseOrder() {
                         variant="success"
                         loading={submitting}
                         onClick={() => void handleIssueOrder()}
-                        className="w-60"
+                        className="w-full sm:w-60"
                       >
                         Emitir y Adjuntar
                       </Button>
@@ -395,19 +396,19 @@ export default function AttachPurchaseOrder() {
                       <table className="min-w-full divide-y divide-slate-200 text-sm">
                         <thead className="bg-slate-50">
                           <tr>
-                            <th className="px-4 py-2 text-left font-semibold text-slate-600">N° Orden</th>
-                            <th className="px-4 py-2 text-left font-semibold text-slate-600">Producto(s)</th>
-                            <th className="px-4 py-2 text-left font-semibold text-slate-600">Proveedor</th>
-                            <th className="px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
+                            <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">N° Orden</th>
+                            <th className="min-w-[10rem] px-4 py-2 text-left font-semibold text-slate-600">Producto(s)</th>
+                            <th className="min-w-[10rem] px-4 py-2 text-left font-semibold text-slate-600">Proveedor</th>
+                            <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {orderRows.map((row) => (
                             <tr key={row.order.id}>
-                              <td className="px-4 py-2 font-medium text-slate-900">{row.order.orderNumber}</td>
+                              <td className="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{row.order.orderNumber}</td>
                               <td className="px-4 py-2 text-slate-600">{row.productNames.join(", ") || "-"}</td>
                               <td className="px-4 py-2 text-slate-600">{supplierName(row.order.supplierId)}</td>
-                              <td className="px-4 py-2">
+                              <td className="whitespace-nowrap px-4 py-2">
                                 <div className="flex items-center gap-2">
                                   <span
                                     className={`rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -462,12 +463,12 @@ export default function AttachPurchaseOrder() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">
           Adjuntar Orden de Compra
         </h1>
 
-        <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
           <div className="mb-4 max-w-sm">
             <Input
               placeholder="Buscar por numero, notas o prioridad..."
@@ -488,21 +489,21 @@ export default function AttachPurchaseOrder() {
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">N° Solicitud</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Solicitante</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Prioridad</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Acciones</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">N° Solicitud</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Solicitante</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Prioridad</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {requests.map((request) => (
                     <tr key={request.id}>
-                      <td className="px-4 py-2 font-medium text-slate-900">{request.requestNumber}</td>
-                      <td className="px-4 py-2 text-slate-600">
+                      <td className="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{request.requestNumber}</td>
+                      <td className="whitespace-nowrap px-4 py-2 text-slate-600">
                         {request.requester.firstName} {request.requester.lastName}
                       </td>
-                      <td className="px-4 py-2 text-slate-600">{request.priority}</td>
-                      <td className="px-4 py-2">
+                      <td className="whitespace-nowrap px-4 py-2 text-slate-600">{request.priority}</td>
+                      <td className="whitespace-nowrap px-4 py-2">
                         <Button type="button" variant="secondary" onClick={() => void handleViewRequest(request)}>
                           Ver
                         </Button>

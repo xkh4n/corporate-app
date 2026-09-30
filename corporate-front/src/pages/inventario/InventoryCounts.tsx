@@ -18,7 +18,7 @@ import { formatDateTime } from "./inventoryLabels";
 // listado (sin count), captura (toma abierta) y reporte (toma cerrada).
 const REQUIRED_PERMISSIONS = ["inventory-counts:read"] as const;
 
-const TH = "px-4 py-2 text-left font-semibold text-slate-600";
+const TH = "whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600";
 
 export default function InventoryCounts() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -31,10 +31,10 @@ export default function InventoryCounts() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">Toma de Inventario</h1>
 
-        <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
           {countId === null ? (
             <CountList onOpen={openCount} />
           ) : (
@@ -91,7 +91,7 @@ function CountList({ onOpen }: { onOpen: (id: number) => void }) {
     <div>
       {can("inventory-counts:create") && (
         <div className="mb-4">
-          <Button type="button" loading={starting} onClick={() => void handleStart()}>
+          <Button type="button" className="w-full py-3 sm:w-auto sm:py-2" loading={starting} onClick={() => void handleStart()}>
             Inicio de Inventario
           </Button>
         </div>
@@ -119,21 +119,21 @@ function CountList({ onOpen }: { onOpen: (id: number) => void }) {
             <tbody className="divide-y divide-slate-100">
               {counts.map((count) => (
                 <tr key={count.id}>
-                  <td className="px-4 py-2 font-medium text-slate-900">{count.number}</td>
-                  <td className="px-4 py-2 text-slate-600">{count.name}</td>
+                  <td className="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{count.number}</td>
+                  <td className="min-w-[10rem] px-4 py-2 text-slate-600">{count.name}</td>
                   <td className="px-4 py-2">
                     <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                      className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${
                         count.status === "OPEN" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
                       }`}
                     >
                       {count.status === "OPEN" ? "Abierta" : "Cerrada"}
                     </span>
                   </td>
-                  <td className="px-4 py-2 text-slate-600">{formatDateTime(count.startedAt)}</td>
-                  <td className="px-4 py-2 text-slate-600">{formatDateTime(count.closedAt)}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-slate-600">{formatDateTime(count.startedAt)}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-slate-600">{formatDateTime(count.closedAt)}</td>
                   <td className="px-4 py-2 text-right">
-                    <Button type="button" variant="secondary" onClick={() => onOpen(count.id)}>
+                    <Button type="button" variant="secondary" className="whitespace-nowrap" onClick={() => onOpen(count.id)}>
                       {count.status === "OPEN" ? "Abrir" : "Ver informe"}
                     </Button>
                   </td>

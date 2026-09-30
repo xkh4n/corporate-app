@@ -129,9 +129,9 @@ export function EquipmentRequestFields({ value, onChange }: { value: EquipmentDr
                   placeholder="Ej: 12.667.399-4"
                   value={value.beneficiaryDocumentId}
                   onChange={(e) => set({ beneficiaryDocumentId: e.target.value, beneficiary: null })}
-                  className="bg-zinc-100 focus:bg-indigo-100"
+                  className="min-w-0 flex-1 bg-zinc-100 focus:bg-indigo-100"
                 />
-                <Button type="button" variant="secondary" loading={validating} onClick={() => void validateBeneficiary()}>
+                <Button type="button" variant="secondary" className="shrink-0" loading={validating} onClick={() => void validateBeneficiary()}>
                   Validar
                 </Button>
               </div>
@@ -213,7 +213,7 @@ export function EquipmentRequestFields({ value, onChange }: { value: EquipmentDr
           <ul className="mt-3 divide-y divide-slate-100 rounded-md border border-slate-200 text-sm">
             {value.lines.map((line) => (
               <li key={line.clientId} className="flex items-center justify-between gap-2 px-3 py-2">
-                <span>
+                <span className="min-w-0 break-words">
                   <span className="font-medium text-slate-800">{line.productName}</span>{" "}
                   <span className="text-slate-500">
                     · {line.categoryName} · {line.quantity} u.
@@ -223,7 +223,7 @@ export function EquipmentRequestFields({ value, onChange }: { value: EquipmentDr
                   type="button"
                   aria-label={`Quitar ${line.productName}`}
                   onClick={() => set({ lines: value.lines.filter((item) => item.clientId !== line.clientId) })}
-                  className="text-slate-500 hover:text-red-600"
+                  className="shrink-0 p-2 text-slate-500 hover:text-red-600"
                 >
                   ×
                 </button>

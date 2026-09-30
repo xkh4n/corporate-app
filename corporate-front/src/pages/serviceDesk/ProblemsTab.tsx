@@ -43,33 +43,36 @@ export function ProblemsTab({ onOpen, groups, categories }: { onOpen: (id: numbe
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-end gap-3">
+      {/* Movil: accion principal arriba, busqueda a ancho completo y filtros debajo */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+        {can("service-problems:create") && (
+          <Button type="button" className="w-full shrink-0 sm:order-last sm:ml-auto sm:w-auto" onClick={() => setCreating(true)}>
+            Nuevo problema
+          </Button>
+        )}
         <form
-          className="flex gap-2"
+          className="flex gap-2 sm:w-auto"
           onSubmit={(event) => {
             event.preventDefault();
             setPage(1);
             setReload((value) => value + 1);
           }}
         >
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por número o título" aria-label="Buscar problemas" />
-          <Button type="submit" variant="secondary">
+          <Input className="min-w-0 flex-1" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por número o título" aria-label="Buscar problemas" />
+          <Button type="submit" variant="secondary" className="shrink-0">
             Buscar
           </Button>
         </form>
-        <label className="flex items-center gap-2 text-sm text-slate-700">
-          <input type="checkbox" checked={knownOnly} onChange={(e) => { setKnownOnly(e.target.checked); setPage(1); }} />
-          Solo errores conocidos
-        </label>
-        <label className="flex items-center gap-2 text-sm text-slate-700">
-          <input type="checkbox" checked={includeClosed} onChange={(e) => { setIncludeClosed(e.target.checked); setPage(1); }} />
-          Incluir cerrados
-        </label>
-        {can("service-problems:create") && (
-          <Button type="button" className="ml-auto" onClick={() => setCreating(true)}>
-            Nuevo problema
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={knownOnly} onChange={(e) => { setKnownOnly(e.target.checked); setPage(1); }} />
+            Solo errores conocidos
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={includeClosed} onChange={(e) => { setIncludeClosed(e.target.checked); setPage(1); }} />
+            Incluir cerrados
+          </label>
+        </div>
       </div>
       {loading ? (
         <Loading />
@@ -93,12 +96,12 @@ export function ProblemsTab({ onOpen, groups, categories }: { onOpen: (id: numbe
               <tbody className="divide-y divide-slate-100">
                 {problems.map((problem) => (
                   <tr key={problem.id}>
-                    <td className={TD}>
+                    <td className={`${TD} whitespace-nowrap`}>
                       <button type="button" className="font-semibold text-brand-700 hover:underline" onClick={() => onOpen(problem.id)}>
                         {problem.number}
                       </button>
                     </td>
-                    <td className={TD}>
+                    <td className={`${TD} min-w-[12rem]`}>
                       {problem.title}
                       <div className="text-xs text-slate-500">{problem.categoryName ?? ""}</div>
                     </td>
@@ -109,7 +112,7 @@ export function ProblemsTab({ onOpen, groups, categories }: { onOpen: (id: numbe
                       <PriorityBadge priority={problem.priority} />
                     </td>
                     <td className={TD}>{problem.incidentCount}</td>
-                    <td className={TD}>
+                    <td className={`${TD} min-w-[8rem]`}>
                       <div>{problem.assignedGroupName ?? "-"}</div>
                       <div className="text-xs text-slate-500">{problem.assigneeName ?? ""}</div>
                     </td>
@@ -435,11 +438,11 @@ export function ProblemDetailView({
       <BackButton onBack={onBack} label="Volver a problemas" />
       <div className={`${CARD} mb-4`}>
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-semibold text-slate-800">{detail.number}</h2>
+          <h2 className="break-all text-lg font-semibold text-slate-800">{detail.number}</h2>
           <Badge className={PROBLEM_STATUS_CLASSES[detail.status]}>{PROBLEM_STATUS_LABELS[detail.status]}</Badge>
           <PriorityBadge priority={detail.priority} />
         </div>
-        <p className="mt-2 font-medium text-slate-800">{detail.title}</p>
+        <p className="mt-2 break-words font-medium text-slate-800">{detail.title}</p>
         <p className="text-sm text-slate-600">
           {detail.categoryName ?? "Sin categoría"} · {detail.assignedGroupName ?? "Sin grupo"}
           {detail.assigneeName ? ` (${detail.assigneeName})` : ""} · Creado {formatDateTime(detail.createdAt)}
@@ -483,7 +486,7 @@ export function ProblemDetailView({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div className="min-w-0 lg:col-span-2">
           <Section title="Análisis">
             <h4 className="text-sm font-medium text-slate-700">Síntoma</h4>
             <PlainText text={detail.description} />
@@ -503,8 +506,8 @@ export function ProblemDetailView({
           <Section title={`Incidentes (${detail.incidents.length})`}>
             {canUpdate && !isFinal && (
               <div className="mb-3 flex gap-2">
-                <Input value={linkNumber} onChange={(e) => setLinkNumber(e.target.value)} placeholder="INC202602000123" aria-label="Número de incidente" />
-                <Button type="button" variant="secondary" loading={busy === "link"} onClick={() => void linkIncident()}>
+                <Input className="min-w-0 flex-1" value={linkNumber} onChange={(e) => setLinkNumber(e.target.value)} placeholder="INC202602000123" aria-label="Número de incidente" />
+                <Button type="button" variant="secondary" className="shrink-0" loading={busy === "link"} onClick={() => void linkIncident()}>
                   Vincular
                 </Button>
               </div>
@@ -523,7 +526,7 @@ export function ProblemDetailView({
                   <div className="flex flex-wrap gap-2 text-xs text-slate-500">
                     <span className="font-semibold text-slate-700">{EVENT_LABELS[event.eventType] ?? event.eventType}</span>
                     {typeof event.payload.to === "string" && <span>→ {PROBLEM_STATUS_LABELS[event.payload.to as ProblemStatus] ?? event.payload.to}</span>}
-                    <span className="ml-auto">
+                    <span className="ml-auto text-right">
                       {event.actorName ?? "Sistema"} · {formatDateTime(event.createdAt)}
                     </span>
                   </div>
@@ -534,7 +537,7 @@ export function ProblemDetailView({
           </Section>
         </div>
 
-        <div>
+        <div className="min-w-0">
           <Section
             title="Activos"
             actions={
@@ -564,7 +567,7 @@ export function ProblemDetailView({
                       <span className="font-semibold">{asset.tag}</span> · {ASSET_STATUS_LABELS[asset.statusCode] ?? asset.statusCode}
                     </span>
                     {canUpdate && !isFinal && (
-                      <button type="button" className="text-xs text-slate-500 hover:text-red-600" onClick={() => void run("asset", () => serviceProblemService.unlinkAsset(id, asset.assetId), `${asset.tag} desvinculado`)}>
+                      <button type="button" className="shrink-0 p-2 text-xs text-slate-500 hover:text-red-600" onClick={() => void run("asset", () => serviceProblemService.unlinkAsset(id, asset.assetId), `${asset.tag} desvinculado`)}>
                         Quitar
                       </button>
                     )}

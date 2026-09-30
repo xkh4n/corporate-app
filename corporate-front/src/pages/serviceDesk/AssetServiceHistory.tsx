@@ -82,7 +82,7 @@ export function AssetServiceHistory({ assetId }: { assetId: number }) {
                   const link = linkOf(record);
                   return (
                     <tr key={`${record.kind}-${record.id}`}>
-                      <td className={TD}>
+                      <td className={`${TD} whitespace-nowrap`}>
                         <span className="sr-only">{KIND_LABELS[record.kind]} </span>
                         {link ? (
                           <Link to={link} className="font-semibold text-brand-700 hover:underline">
@@ -93,7 +93,7 @@ export function AssetServiceHistory({ assetId }: { assetId: number }) {
                         )}
                       </td>
                       <td className={TD}>{typeText(record)}</td>
-                      <td className={TD}>{record.title}</td>
+                      <td className={`${TD} min-w-[12rem]`}>{record.title}</td>
                       <td className={TD}>{statusText(record)}</td>
                       <td className={`${TD} whitespace-nowrap`}>{formatDateTime(record.createdAt)}</td>
                       <td className={`${TD} whitespace-nowrap`}>{formatDateTime(record.closedAt)}</td>

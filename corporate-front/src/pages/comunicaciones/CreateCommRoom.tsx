@@ -52,7 +52,7 @@ export default function CreateCommRoom() {
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
       <div className={PAGE_CLASS}>
         <h1 className={TITLE_CLASS}>Crear Sala</h1>
-        <div className="w-full max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full max-w-2xl mx-auto sm:px-6 lg:px-8">
           <form
             className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-4"
             onSubmit={(e) => {
@@ -77,7 +77,7 @@ export default function CreateCommRoom() {
               <Input id="roomAddress" value={address} maxLength={255} placeholder="Calle, número, piso u oficina" onChange={(e) => setAddress(e.target.value)} />
             </Field>
             <div className="flex justify-end">
-              <Button type="submit" loading={saving} disabled={!canSubmit} className="w-48">
+              <Button type="submit" loading={saving} disabled={!canSubmit} className="w-full sm:w-48">
                 Crear sala
               </Button>
             </div>

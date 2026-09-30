@@ -168,7 +168,7 @@ export function TicketWorkspace({
 
       <div className={`${CARD} mb-4`}>
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-semibold text-slate-800">{detail.number}</h2>
+          <h2 className="break-all text-lg font-semibold text-slate-800">{detail.number}</h2>
           <Badge className="bg-slate-100 text-slate-700">{TYPE_LABELS[detail.type]}</Badge>
           <StatusBadge status={detail.status} />
           {detail.onHoldReason && <Badge className="bg-amber-50 text-amber-800">{ON_HOLD_LABELS[detail.onHoldReason]}</Badge>}
@@ -177,7 +177,7 @@ export function TicketWorkspace({
           <SlaBadge state={detail.slaState} dueAt={detail.resolutionDueAt} />
           {detail.reopenCount > 0 && <Badge className="bg-orange-100 text-orange-800">Reabierto {detail.reopenCount}×</Badge>}
         </div>
-        <p className="mt-2 font-medium text-slate-800">{detail.title}</p>
+        <p className="mt-2 break-words font-medium text-slate-800">{detail.title}</p>
 
         {canUpdate && !isFinal && (
           <div className="mt-4 flex flex-wrap gap-2">
@@ -212,8 +212,9 @@ export function TicketWorkspace({
         )}
       </div>
 
+      {/* Movil: paneles apilados; min-w-0 evita que un texto largo ensanche la columna */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div className="min-w-0 lg:col-span-2">
           {canApprove && (
             <Section title="Aprobación pendiente">
               <p className="mb-2 text-sm text-slate-700">
@@ -248,7 +249,7 @@ export function TicketWorkspace({
                 {Object.entries(detail.variables).map(([key, value]) => (
                   <div key={key}>
                     <dt className="inline font-medium text-slate-600">{humanizeKey(key)}: </dt>
-                    <dd className="inline text-slate-800">{typeof value === "boolean" ? (value ? "Sí" : "No") : String(value)}</dd>
+                    <dd className="inline break-words text-slate-800">{typeof value === "boolean" ? (value ? "Sí" : "No") : String(value)}</dd>
                   </div>
                 ))}
               </dl>
@@ -272,7 +273,7 @@ export function TicketWorkspace({
           <Section title="Actividad">
             {canUpdate && !isFinal && (
               <div className="mb-4 space-y-2">
-                <div role="radiogroup" aria-label="Visibilidad" className="flex gap-2 text-sm">
+                <div role="radiogroup" aria-label="Visibilidad" className="flex flex-wrap gap-2 text-sm">
                   <label className={`cursor-pointer rounded-md border px-3 py-1 ${isPublic ? "border-brand-600 bg-sky-50" : "border-slate-200"}`}>
                     <input type="radio" className="sr-only" checked={isPublic} onChange={() => setIsPublic(true)} />
                     Respuesta al solicitante
@@ -316,7 +317,7 @@ export function TicketWorkspace({
           </Section>
         </div>
 
-        <div>
+        <div className="min-w-0">
           <Section title="SLA">
             <dl className="space-y-1 text-sm">
               <SlaRow label="Primera respuesta" due={detail.responseDueAt} done={detail.firstResponseAt} breached={detail.responseBreached} />
@@ -478,8 +479,8 @@ export function TicketWorkspace({
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-2">
-      <dt className="text-slate-500">{label}</dt>
-      <dd className="text-right text-slate-800">{value}</dd>
+      <dt className="shrink-0 text-slate-500">{label}</dt>
+      <dd className="min-w-0 break-words text-right text-slate-800">{value}</dd>
     </div>
   );
 }
@@ -950,7 +951,7 @@ function ClassifyModal({
     >
       <div className="space-y-3">
         <Field label="Asunto" htmlFor="classify-title">
-          <input id="classify-title" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" maxLength={160} value={title} onChange={(e) => setTitle(e.target.value)} />
+          <input id="classify-title" className="w-full rounded-md border border-slate-300 px-3 py-2 text-base sm:text-sm" maxLength={160} value={title} onChange={(e) => setTitle(e.target.value)} />
         </Field>
         <Field label="Categoría" htmlFor="classify-category">
           <Select id="classify-category" value={categoryId === "" ? "" : String(categoryId)} onChange={(e) => setCategoryId(e.target.value ? Number(e.target.value) : "")}>
@@ -962,7 +963,7 @@ function ClassifyModal({
             ))}
           </Select>
         </Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Impacto" htmlFor="classify-impact">
             <Select id="classify-impact" value={String(impact)} onChange={(e) => setImpact(Number(e.target.value))}>
               {[1, 2, 3].map((level) => (

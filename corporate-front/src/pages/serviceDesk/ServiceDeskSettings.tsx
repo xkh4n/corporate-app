@@ -51,9 +51,9 @@ export default function ServiceDeskSettings() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">Configuración Service Desk</h1>
-        <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
           <Tabs tabs={tabs} active={tab} onChange={(key) => setSearchParams({ tab: key })} />
           <SettingsData tab={tab} />
         </div>
@@ -117,7 +117,7 @@ function GroupsSettings({ groups, onChanged }: { groups: SupportGroup[]; onChang
     <div className="space-y-3">
       {canEdit && (
         <div className="flex justify-end">
-          <Button type="button" onClick={() => setEditing("new")}>
+          <Button type="button" className="w-full sm:w-auto" onClick={() => setEditing("new")}>
             Nuevo grupo
           </Button>
         </div>
@@ -132,7 +132,7 @@ function GroupsSettings({ groups, onChanged }: { groups: SupportGroup[]; onChang
               {!group.isActive && <Badge className="bg-slate-100 text-slate-500">Inactivo</Badge>}
             </div>
             <p className="text-sm text-slate-600">{group.description ?? ""}</p>
-            <p className="text-xs text-slate-500">Buzón: {group.email ?? "sin correo (se avisa a los líderes)"}</p>
+            <p className="break-words text-xs text-slate-500">Buzón: {group.email ?? "sin correo (se avisa a los líderes)"}</p>
             <ul className="mt-2 text-sm">
               {group.members.length === 0 && <li className="text-slate-500">Sin miembros</li>}
               {group.members.map((member) => (
@@ -290,8 +290,8 @@ function MembersModal({
         <ul className="divide-y divide-slate-100 text-sm">
           {list.map((member) => (
             <li key={member.userId} className="flex items-center justify-between gap-2 py-2">
-              <span>{member.fullName}</span>
-              <span className="flex items-center gap-3">
+              <span className="min-w-0 break-words">{member.fullName}</span>
+              <span className="flex shrink-0 items-center gap-3">
                 <label className="flex items-center gap-1">
                   <input
                     type="checkbox"
@@ -300,7 +300,7 @@ function MembersModal({
                   />
                   Líder
                 </label>
-                <button type="button" className="text-xs text-slate-500 hover:text-red-600" onClick={() => setList((prev) => prev.filter((item) => item.userId !== member.userId))}>
+                <button type="button" className="p-2 text-xs text-slate-500 hover:text-red-600" onClick={() => setList((prev) => prev.filter((item) => item.userId !== member.userId))}>
                   Quitar
                 </button>
               </span>
@@ -332,7 +332,7 @@ function CategoriesSettings({ categories, groups, onChanged }: { categories: Ser
     <div className="space-y-3">
       {canEdit && (
         <div className="flex justify-end">
-          <Button type="button" onClick={() => setEditing("new")}>
+          <Button type="button" className="w-full sm:w-auto" onClick={() => setEditing("new")}>
             Nueva categoría
           </Button>
         </div>
@@ -351,7 +351,7 @@ function CategoriesSettings({ categories, groups, onChanged }: { categories: Ser
           <tbody className="divide-y divide-slate-100">
             {categories.map((category) => (
               <tr key={category.id}>
-                <td className={TD}>{category.parentId ? `${nameOf(category.parentId)} › ${category.name}` : category.name}</td>
+                <td className={`${TD} min-w-[10rem]`}>{category.parentId ? `${nameOf(category.parentId)} › ${category.name}` : category.name}</td>
                 <td className={TD}>{groupOf(category.defaultGroupId)}</td>
                 <td className={TD}>{category.appliesTo.map((value) => APPLIES_TO_LABELS[value] ?? value).join(", ")}</td>
                 <td className={TD}>{category.isActive ? "Activa" : "Inactiva"}</td>
@@ -521,7 +521,7 @@ function CatalogSettings({ categories, groups }: { categories: ServiceCategory[]
     <div className="space-y-3">
       {canEdit && (
         <div className="flex justify-end">
-          <Button type="button" onClick={() => setEditing("new")}>
+          <Button type="button" className="w-full sm:w-auto" onClick={() => setEditing("new")}>
             Nuevo servicio
           </Button>
         </div>
@@ -544,7 +544,7 @@ function CatalogSettings({ categories, groups }: { categories: ServiceCategory[]
             <tbody className="divide-y divide-slate-100">
               {items.map((item) => (
                 <tr key={item.id}>
-                  <td className={TD}>
+                  <td className={`${TD} min-w-[12rem]`}>
                     <span className="font-medium">{item.name}</span>
                     <div className="text-xs text-slate-500">{item.description ?? ""}</div>
                   </td>
@@ -733,7 +733,7 @@ function CatalogItemModal({
           </p>
         </div>
         <div className="sm:col-span-2">
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-medium text-slate-700">Campos del formulario</p>
             <Button
               type="button"
@@ -762,7 +762,7 @@ function CatalogItemModal({
                     <input type="checkbox" checked={field.required} onChange={(e) => updateField(index, { required: e.target.checked })} />
                     Obligatorio
                   </label>
-                  <button type="button" className="text-xs text-slate-500 hover:text-red-600" onClick={() => setFields((prev) => prev.filter((_, i) => i !== index))}>
+                  <button type="button" className="p-2 text-xs text-slate-500 hover:text-red-600" onClick={() => setFields((prev) => prev.filter((_, i) => i !== index))}>
                     Quitar
                   </button>
                 </div>
@@ -860,7 +860,7 @@ function CalendarSettings() {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
       <Section title="Horario hábil">
         <div className="mb-3 grid gap-2 sm:grid-cols-2">
           <Field label="Nombre" htmlFor="calendar-name">
@@ -872,18 +872,20 @@ function CalendarSettings() {
         </div>
         <ul className="space-y-2">
           {hours.map((hour, index) => (
-            <li key={index} className="flex flex-wrap items-center gap-2 text-sm">
-              <Select aria-label="Día" disabled={!canEdit} value={String(hour.weekday)} onChange={(e) => setHours((prev) => prev.map((item, i) => (i === index ? { ...item, weekday: Number(e.target.value) } : item)))}>
-                {Object.entries(WEEKDAY_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </Select>
-              <Input aria-label="Desde" type="time" disabled={!canEdit} value={hour.start} onChange={(e) => setHours((prev) => prev.map((item, i) => (i === index ? { ...item, start: e.target.value } : item)))} className="w-32" />
-              <Input aria-label="Hasta" type="time" disabled={!canEdit} value={hour.end} onChange={(e) => setHours((prev) => prev.map((item, i) => (i === index ? { ...item, end: e.target.value } : item)))} className="w-32" />
+            <li key={index} className="grid grid-cols-2 items-center gap-2 text-sm sm:flex sm:flex-wrap">
+              <div className="col-span-2 sm:w-40">
+                <Select aria-label="Día" disabled={!canEdit} value={String(hour.weekday)} onChange={(e) => setHours((prev) => prev.map((item, i) => (i === index ? { ...item, weekday: Number(e.target.value) } : item)))}>
+                  {Object.entries(WEEKDAY_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <Input aria-label="Desde" type="time" disabled={!canEdit} value={hour.start} onChange={(e) => setHours((prev) => prev.map((item, i) => (i === index ? { ...item, start: e.target.value } : item)))} className="sm:w-32" />
+              <Input aria-label="Hasta" type="time" disabled={!canEdit} value={hour.end} onChange={(e) => setHours((prev) => prev.map((item, i) => (i === index ? { ...item, end: e.target.value } : item)))} className="sm:w-32" />
               {canEdit && (
-                <button type="button" className="text-xs text-slate-500 hover:text-red-600" onClick={() => setHours((prev) => prev.filter((_, i) => i !== index))}>
+                <button type="button" className="col-span-2 justify-self-end p-2 text-xs text-slate-500 hover:text-red-600" onClick={() => setHours((prev) => prev.filter((_, i) => i !== index))}>
                   Quitar
                 </button>
               )}
@@ -904,9 +906,9 @@ function CalendarSettings() {
       </Section>
       <Section title={`Feriados (${calendar.holidays.length})`}>
         {canEdit && (
-          <div className="mb-3 flex flex-wrap gap-2">
-            <Input aria-label="Fecha" type="date" value={holidayDate} onChange={(e) => setHolidayDate(e.target.value)} className="w-40" />
-            <Input aria-label="Nombre del feriado" placeholder="Nombre" value={holidayName} maxLength={120} onChange={(e) => setHolidayName(e.target.value)} className="flex-1" />
+          <div className="mb-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+            <Input aria-label="Fecha" type="date" value={holidayDate} onChange={(e) => setHolidayDate(e.target.value)} className="sm:w-40" />
+            <Input aria-label="Nombre del feriado" placeholder="Nombre" value={holidayName} maxLength={120} onChange={(e) => setHolidayName(e.target.value)} className="sm:w-auto sm:min-w-0 sm:flex-1" />
             <Button type="button" disabled={!holidayDate || !holidayName.trim()} onClick={() => void addHoliday()}>
               Agregar
             </Button>
@@ -915,11 +917,11 @@ function CalendarSettings() {
         <ul className="max-h-96 divide-y divide-slate-100 overflow-y-auto text-sm">
           {calendar.holidays.map((holiday) => (
             <li key={holiday.date} className="flex items-center justify-between gap-2 py-1">
-              <span>
+              <span className="min-w-0 break-words">
                 {holiday.date} · {holiday.name}
               </span>
               {canEdit && (
-                <button type="button" className="text-xs text-slate-500 hover:text-red-600" onClick={() => void removeHoliday(holiday.date)}>
+                <button type="button" className="shrink-0 p-2 text-xs text-slate-500 hover:text-red-600" onClick={() => void removeHoliday(holiday.date)}>
                   Quitar
                 </button>
               )}
@@ -992,8 +994,9 @@ function SlaSettings() {
   const priorities: Priority[] = ["P1", "P2", "P3", "P4"];
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
       <Section title="Matriz de prioridad (impacto × urgencia)">
+        <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead>
             <tr>
@@ -1034,15 +1037,17 @@ function SlaSettings() {
             ))}
           </tbody>
         </table>
+        </div>
         {canEdit && (
           <div className="mt-3 flex justify-end">
-            <Button type="button" loading={saving === "matrix"} onClick={() => void saveMatrix()}>
+            <Button type="button" className="w-full sm:w-auto" loading={saving === "matrix"} onClick={() => void saveMatrix()}>
               Guardar matriz
             </Button>
           </div>
         )}
       </Section>
       <Section title="Objetivos de SLA (minutos hábiles)">
+        <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead>
             <tr>
@@ -1058,8 +1063,8 @@ function SlaSettings() {
                 const policy = policies.find((item) => item.ticketType === ticketType && item.priority === priority);
                 return (
                   <tr key={`${ticketType}-${priority}`}>
-                    <td className={TD}>{TYPE_LABELS[ticketType]}</td>
-                    <td className={TD}>{PRIORITY_LABELS[priority]}</td>
+                    <td className={`${TD} whitespace-nowrap`}>{TYPE_LABELS[ticketType]}</td>
+                    <td className={`${TD} whitespace-nowrap`}>{PRIORITY_LABELS[priority]}</td>
                     {(["responseMinutes", "resolutionMinutes"] as const).map((key) => (
                       <td key={key} className={TD}>
                         {canEdit ? (
@@ -1081,9 +1086,10 @@ function SlaSettings() {
             )}
           </tbody>
         </table>
+        </div>
         {canEdit && (
           <div className="mt-3 flex justify-end">
-            <Button type="button" loading={saving === "sla"} onClick={() => void savePolicies()}>
+            <Button type="button" className="w-full sm:w-auto" loading={saving === "sla"} onClick={() => void savePolicies()}>
               Guardar SLA
             </Button>
           </div>
@@ -1123,7 +1129,7 @@ function TemplateSettings({ categories }: { categories: ServiceCategory[] }) {
       </p>
       {canEdit && (
         <div className="flex justify-end">
-          <Button type="button" onClick={() => setEditing("new")}>
+          <Button type="button" className="w-full sm:w-auto" onClick={() => setEditing("new")}>
             Nueva plantilla
           </Button>
         </div>
@@ -1134,7 +1140,7 @@ function TemplateSettings({ categories }: { categories: ServiceCategory[] }) {
         <ul className="grid gap-3 md:grid-cols-2">
           {templates.map((template) => (
             <li key={template.id} className={CARD}>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h3 className="font-semibold text-slate-800">{template.name}</h3>
                 {!template.isActive && <Badge className="bg-slate-100 text-slate-500">Inactiva</Badge>}
               </div>

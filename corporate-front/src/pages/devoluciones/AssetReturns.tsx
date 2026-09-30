@@ -26,7 +26,7 @@ import {
 // return) y detalle de una devolucion (borrador, enviada o recibida).
 const REQUIRED_PERMISSIONS = ["asset-returns:read"] as const;
 
-const TH = "px-4 py-2 text-left font-semibold text-slate-600";
+const TH = "whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600";
 
 export default function AssetReturns() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -35,12 +35,12 @@ export default function AssetReturns() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">
           Devoluciones de Activos
         </h1>
 
-        <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
           {returnId === null ? (
             <ReturnList onOpen={(id) => setSearchParams({ return: String(id) })} />
           ) : (
@@ -91,13 +91,13 @@ function ReturnList({ onOpen }: { onOpen: (id: number) => void }) {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         {can("asset-returns:create") && (
-          <Button type="button" onClick={() => setCreating(true)}>
+          <Button type="button" className="w-full sm:w-auto" onClick={() => setCreating(true)}>
             Nueva devolución
           </Button>
         )}
-        <div className="flex max-w-md flex-1 gap-2">
+        <div className="flex w-full max-w-md flex-col gap-2 sm:flex-1 sm:flex-row">
           <Input
             placeholder="Buscar por código..."
             value={search}
@@ -113,7 +113,7 @@ function ReturnList({ onOpen }: { onOpen: (id: number) => void }) {
               setStatusFilter(value);
               void load(value);
             }}
-            className="w-44 bg-white"
+            className="w-full bg-white sm:w-44 sm:shrink-0"
           >
             <option value="">Todos los estados</option>
             {RETURN_STATUS_OPTIONS.map((option) => (
@@ -149,23 +149,23 @@ function ReturnList({ onOpen }: { onOpen: (id: number) => void }) {
             <tbody className="divide-y divide-slate-100">
               {returns.map((item) => (
                 <tr key={item.id}>
-                  <td className="px-4 py-2 font-medium text-slate-900">{item.code ?? "Sin guía"}</td>
-                  <td className="px-4 py-2 text-slate-600">
+                  <td className="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{item.code ?? "Sin guía"}</td>
+                  <td className="min-w-[10rem] px-4 py-2 text-slate-600">
                     {item.costCenter ? `${item.costCenter.code} · ${item.costCenter.name}` : "-"}
                   </td>
                   <td className="px-4 py-2">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${RETURN_STATUS_CLASSES[item.status]}`}>
+                    <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${RETURN_STATUS_CLASSES[item.status]}`}>
                       {RETURN_STATUS_LABELS[item.status]}
                     </span>
                   </td>
-                  <td className="px-4 py-2 text-slate-600">
+                  <td className="whitespace-nowrap px-4 py-2 text-slate-600">
                     {item.status === "SENT" || item.status === "RECEIVED"
                       ? `${item.receivedCount} de ${item.lineCount} recibidos`
                       : item.lineCount}
                   </td>
-                  <td className="px-4 py-2 text-slate-600">{item.requestedBy?.fullName ?? "-"}</td>
-                  <td className="px-4 py-2 text-slate-600">{formatDateTime(item.createdAt)}</td>
-                  <td className="px-4 py-2 text-slate-600">{formatDateTime(item.sentAt)}</td>
+                  <td className="min-w-[10rem] px-4 py-2 text-slate-600">{item.requestedBy?.fullName ?? "-"}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-slate-600">{formatDateTime(item.createdAt)}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-slate-600">{formatDateTime(item.sentAt)}</td>
                   <td className="px-4 py-2 text-right">
                     <Button type="button" variant="secondary" onClick={() => onOpen(item.id)}>
                       Abrir
@@ -238,9 +238,9 @@ function NewReturn({ onCancel, onCreated }: { onCancel: () => void; onCreated: (
 
       <fieldset className="mb-4 rounded-lg border border-slate-200 bg-white p-4">
         <legend className="px-1 text-sm font-medium text-slate-700">¿Qué equipos devuelve?</legend>
-        <div className="flex flex-wrap gap-6">
+        <div className="flex flex-wrap gap-x-6 gap-y-2">
           {(["OWN", "OTHERS"] as const).map((option) => (
-            <label key={option} className="flex items-center gap-2 text-sm text-slate-700">
+            <label key={option} className="flex items-center gap-2 py-1 text-sm text-slate-700">
               <input
                 type="radio"
                 name="returnScope"
@@ -263,7 +263,7 @@ function NewReturn({ onCancel, onCreated }: { onCancel: () => void; onCreated: (
         )}
       </fieldset>
 
-      <div className="mb-4 grid gap-4 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-2">
+      <div className="mb-4 grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-2">
         {scope === "OTHERS" && (
           <Field label="Centro de costo de origen" htmlFor="returnCostCenter">
             <Select

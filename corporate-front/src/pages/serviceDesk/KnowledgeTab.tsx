@@ -41,7 +41,13 @@ export function KnowledgeTab({ onOpen, categories }: { onOpen: (id: number) => v
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-end gap-3">
+      {/* Movil: accion principal arriba, busqueda y estado a ancho completo */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+        {can("kb-articles:create") && (
+          <Button type="button" className="w-full shrink-0 sm:order-last sm:ml-auto sm:w-auto" onClick={() => setCreating(true)}>
+            Nuevo artículo
+          </Button>
+        )}
         <form
           className="flex gap-2"
           onSubmit={(event) => {
@@ -50,24 +56,21 @@ export function KnowledgeTab({ onOpen, categories }: { onOpen: (id: number) => v
             setReload((value) => value + 1);
           }}
         >
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar artículos" aria-label="Buscar artículos" />
-          <Button type="submit" variant="secondary">
+          <Input className="min-w-0 flex-1" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar artículos" aria-label="Buscar artículos" />
+          <Button type="submit" variant="secondary" className="shrink-0">
             Buscar
           </Button>
         </form>
-        <Select aria-label="Estado" value={status} onChange={(e) => { setStatus(e.target.value as KbStatus | ""); setPage(1); }}>
-          <option value="">Todos los estados</option>
-          {(Object.keys(KB_STATUS_LABELS) as KbStatus[]).map((value) => (
-            <option key={value} value={value}>
-              {KB_STATUS_LABELS[value]}
-            </option>
-          ))}
-        </Select>
-        {can("kb-articles:create") && (
-          <Button type="button" className="ml-auto" onClick={() => setCreating(true)}>
-            Nuevo artículo
-          </Button>
-        )}
+        <div className="sm:w-56">
+          <Select aria-label="Estado" value={status} onChange={(e) => { setStatus(e.target.value as KbStatus | ""); setPage(1); }}>
+            <option value="">Todos los estados</option>
+            {(Object.keys(KB_STATUS_LABELS) as KbStatus[]).map((value) => (
+              <option key={value} value={value}>
+                {KB_STATUS_LABELS[value]}
+              </option>
+            ))}
+          </Select>
+        </div>
       </div>
       {loading ? (
         <Loading />
@@ -83,21 +86,21 @@ export function KnowledgeTab({ onOpen, categories }: { onOpen: (id: number) => v
                   <th className={TH}>Título</th>
                   <th className={TH}>Estado</th>
                   <th className={TH}>Audiencia</th>
-                  <th className={TH}>Versión</th>
-                  <th className={TH}>Útil sí/no</th>
-                  <th className={TH}>Vistas</th>
-                  <th className={TH}>Actualizado</th>
+                  <th className={`${TH} hidden sm:table-cell`}>Versión</th>
+                  <th className={`${TH} hidden sm:table-cell`}>Útil sí/no</th>
+                  <th className={`${TH} hidden sm:table-cell`}>Vistas</th>
+                  <th className={`${TH} hidden sm:table-cell`}>Actualizado</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {articles.map((article) => (
                   <tr key={article.id}>
-                    <td className={TD}>
+                    <td className={`${TD} whitespace-nowrap`}>
                       <button type="button" className="font-semibold text-brand-700 hover:underline" onClick={() => onOpen(article.id)}>
                         {article.number}
                       </button>
                     </td>
-                    <td className={TD}>
+                    <td className={`${TD} min-w-[12rem]`}>
                       {article.title}
                       <div className="text-xs text-slate-500">{article.categoryName ?? ""}</div>
                     </td>
@@ -105,12 +108,12 @@ export function KnowledgeTab({ onOpen, categories }: { onOpen: (id: number) => v
                       <Badge className={KB_STATUS_CLASSES[article.status]}>{KB_STATUS_LABELS[article.status]}</Badge>
                     </td>
                     <td className={TD}>{KB_AUDIENCE_LABELS[article.audience]}</td>
-                    <td className={TD}>{article.version || "-"}</td>
-                    <td className={TD}>
+                    <td className={`${TD} hidden sm:table-cell`}>{article.version || "-"}</td>
+                    <td className={`${TD} hidden whitespace-nowrap sm:table-cell`}>
                       {article.helpfulYes}/{article.helpfulNo}
                     </td>
-                    <td className={TD}>{article.views}</td>
-                    <td className={`${TD} whitespace-nowrap`}>{formatDateTime(article.updatedAt)}</td>
+                    <td className={`${TD} hidden sm:table-cell`}>{article.views}</td>
+                    <td className={`${TD} hidden whitespace-nowrap sm:table-cell`}>{formatDateTime(article.updatedAt)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -284,12 +287,12 @@ export function ArticleDetailView({
       <BackButton onBack={onBack} label="Volver a conocimiento" />
       <div className={`${CARD} mb-4`}>
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-semibold text-slate-800">{article.number}</h2>
+          <h2 className="break-all text-lg font-semibold text-slate-800">{article.number}</h2>
           <Badge className={KB_STATUS_CLASSES[article.status]}>{KB_STATUS_LABELS[article.status]}</Badge>
           <Badge className="bg-slate-100 text-slate-700">{KB_AUDIENCE_LABELS[article.audience]}</Badge>
           {article.version > 0 && <Badge className="bg-slate-100 text-slate-700">v{article.version}</Badge>}
         </div>
-        <p className="mt-2 font-medium text-slate-800">{article.title}</p>
+        <p className="mt-2 break-words font-medium text-slate-800">{article.title}</p>
         <p className="text-sm text-slate-600">
           Autor: {article.authorName ?? "-"} · {article.categoryName ?? "Sin categoría"} · Útil {article.helpfulYes} / No útil {article.helpfulNo} · {article.views} vistas
           {article.sourceProblemNumber && (

@@ -158,7 +158,7 @@ export default function LinkSupplierProducts() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center justify-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center justify-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">
           Vincular Productos a Proveedor
         </h1>
@@ -167,7 +167,7 @@ export default function LinkSupplierProducts() {
             <Spinner />
           </div>
         ) : (
-          <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
             <div className="grid grid-cols-1 max-[799px]:grid-cols-1 min-[800px]:grid-cols-6 min-[1000px]:grid-cols-8 min-[1200px]:grid-cols-10 min-[1400px]:grid-cols-12 gap-4">
               {/* PROVEEDOR */}
               <div className="w-full min-[800px]:col-span-6 min-[1000px]:col-span-8 min-[1200px]:col-span-10 min-[1400px]:col-span-6">
@@ -219,7 +219,7 @@ export default function LinkSupplierProducts() {
                   ¿Desea vincular el producto <span className="font-semibold">{pendingProduct.name}</span> al
                   proveedor <span className="font-semibold">{selectedSupplier.businessPartner.legalName}</span>?
                 </p>
-                <div className="mt-3 flex justify-end gap-2">
+                <div className="mt-3 flex flex-wrap justify-end gap-2">
                   <Button type="button" variant="secondary" onClick={handleCancelPending} disabled={confirming}>
                     Cancelar
                   </Button>
@@ -243,7 +243,7 @@ export default function LinkSupplierProducts() {
                   <span className="font-semibold">{pendingRemoval.product?.name ?? pendingRemoval.productId}</span>{" "}
                   del proveedor <span className="font-semibold">{selectedSupplier.businessPartner.legalName}</span>?
                 </p>
-                <div className="mt-3 flex justify-end gap-2">
+                <div className="mt-3 flex flex-wrap justify-end gap-2">
                   <Button type="button" variant="secondary" onClick={handleCancelRemoval} disabled={removing}>
                     Cancelar
                   </Button>
@@ -263,7 +263,7 @@ export default function LinkSupplierProducts() {
             {/* PRODUCTOS YA VINCULADOS AL PROVEEDOR */}
             {supplierSelected && (
               <div className="mt-6">
-                <h2 className="mb-3 text-sm font-semibold text-slate-700">
+                <h2 className="mb-3 text-sm font-semibold text-slate-700 break-words">
                   Productos vinculados a {selectedSupplier?.businessPartner.legalName}
                 </h2>
                 {loadingAssigned ? (
@@ -279,13 +279,14 @@ export default function LinkSupplierProducts() {
                         key={link.id}
                         className="flex items-start justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3"
                       >
-                        <p className="text-sm font-medium text-emerald-900">
+                        <p className="min-w-0 break-words text-sm font-medium text-emerald-900">
                           {link.product?.name ?? link.productId}
                         </p>
                         <Button
                           type="button"
                           variant="ghost"
-                          className="shrink-0 px-2! py-1! text-xs text-rose-600 hover:bg-rose-100"
+                          className="shrink-0 px-3! py-2! sm:px-2! sm:py-1! text-xs text-rose-600 hover:bg-rose-100"
+
                           onClick={() => handleRequestRemoval(link)}
                         >
                           Quitar

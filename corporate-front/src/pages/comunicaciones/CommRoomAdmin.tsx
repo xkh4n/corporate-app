@@ -8,7 +8,7 @@ import { costCenterService } from "../../services";
 import { commRoomService } from "../../services/commRoomService";
 import type { CostCenter } from "../../types/costCenter";
 import { ROOM_ACCESS_TYPE_LABELS, type CommRoom, type RoomAccessGrant } from "../../types/commRoom";
-import { formatPeriod, grantStatusClass, grantStatusLabel, PAGE_CLASS, TABLE_WRAP, TD, TH, TITLE_CLASS } from "./commRoomUi";
+import { FILTER_BAR, formatPeriod, grantStatusClass, grantStatusLabel, PAGE_CLASS, TABLE_WRAP, TD, TH, TITLE_CLASS } from "./commRoomUi";
 
 // Administrar Salas (plan 016): editar y desactivar salas, ver quien tiene acceso hoy y revocarlo, y
 // fijar desde cuantos dias un acceso temporal se considera prolongado.
@@ -82,8 +82,8 @@ export default function CommRoomAdmin() {
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
       <div className={PAGE_CLASS}>
         <h1 className={TITLE_CLASS}>Administrar Salas</h1>
-        <div className="w-full max-w-6xl mx-auto flex flex-col gap-4 px-2 sm:px-4">
-          <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4">
+        <div className="w-full max-w-6xl mx-auto flex flex-col gap-4 sm:px-4">
+          <div className={FILTER_BAR}>
             <Field label="Buscar" htmlFor="roomSearch">
               <Input id="roomSearch" value={search} placeholder="Sala, dependencia o dirección" onChange={(e) => setSearch(e.target.value)} />
             </Field>
@@ -97,11 +97,14 @@ export default function CommRoomAdmin() {
                 ))}
               </Select>
             </Field>
-            <div className="ml-auto flex items-end gap-2">
-              <Field label="Temporal prolongado desde (días)" htmlFor="maxDays">
-                <Input id="maxDays" type="number" min={1} value={maxDays} onChange={(e) => setMaxDays(e.target.value)} className="w-28" />
-              </Field>
-              <Button type="button" variant="secondary" onClick={() => void saveSettings()}>
+            {/* Ajuste global separado de los filtros: en movil ocupa su propia fila */}
+            <div className="flex items-end gap-2 border-t border-slate-200 pt-3 sm:ml-auto sm:border-0 sm:pt-0">
+              <div className="min-w-0 flex-1 sm:flex-none">
+                <Field label="Temporal prolongado desde (días)" htmlFor="maxDays">
+                  <Input id="maxDays" type="number" min={1} value={maxDays} onChange={(e) => setMaxDays(e.target.value)} className="sm:w-28" />
+                </Field>
+              </div>
+              <Button type="button" variant="secondary" className="shrink-0" onClick={() => void saveSettings()}>
                 Guardar
               </Button>
             </div>
@@ -125,11 +128,11 @@ export default function CommRoomAdmin() {
                 <tbody className="divide-y divide-slate-100">
                   {rooms.map((room) => (
                     <tr key={room.id} className={selected?.id === room.id ? "bg-indigo-50" : undefined}>
-                      <td className={`${TD} font-medium text-slate-900`}>{room.name}</td>
-                      <td className={TD}>
+                      <td className={`${TD} min-w-[8rem] font-medium text-slate-900`}>{room.name}</td>
+                      <td className={`${TD} min-w-[10rem]`}>
                         {room.costCenterCode} - {room.costCenterName}
                       </td>
-                      <td className={TD}>{room.address}</td>
+                      <td className={`${TD} min-w-[10rem]`}>{room.address}</td>
                       <td className={TD}>{room.activeGrants}</td>
                       <td className={TD}>{room.isActive ? "Activa" : "Desactivada"}</td>
                       <td className={`${TD} whitespace-nowrap`}>
@@ -285,12 +288,12 @@ function RoomAccessesPanel({ room, onChanged, onClose }: { room: CommRoom; onCha
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-slate-700">
+    <div className="rounded-lg border border-slate-200 bg-white p-3 sm:p-4">
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <h2 className="min-w-0 break-words text-base font-semibold text-slate-700 sm:text-lg">
           Accesos activos — {room.name} ({room.costCenterName})
         </h2>
-        <Button type="button" variant="ghost" onClick={onClose}>
+        <Button type="button" variant="ghost" className="shrink-0" onClick={onClose}>
           Cerrar
         </Button>
       </div>
@@ -314,18 +317,18 @@ function RoomAccessesPanel({ room, onChanged, onClose }: { room: CommRoom; onCha
             <tbody className="divide-y divide-slate-100">
               {grants.map((grant) => (
                 <tr key={grant.id}>
-                  <td className={TD}>
+                  <td className={`${TD} min-w-[10rem]`}>
                     <p className="font-medium text-slate-900">{grant.beneficiaryName}</p>
                     <p className="text-xs text-slate-500">
                       {grant.beneficiaryDocumentId}
                       {grant.beneficiaryCompany ? ` · ${grant.beneficiaryCompany}` : ""}
                     </p>
                   </td>
-                  <td className={TD}>{ROOM_ACCESS_TYPE_LABELS[grant.accessType]}</td>
-                  <td className={TD}>{formatPeriod(grant.validFrom, grant.validUntil)}</td>
-                  <td className={`${TD} max-w-xs`}>{grant.reason}</td>
+                  <td className={`${TD} whitespace-nowrap`}>{ROOM_ACCESS_TYPE_LABELS[grant.accessType]}</td>
+                  <td className={`${TD} whitespace-nowrap`}>{formatPeriod(grant.validFrom, grant.validUntil)}</td>
+                  <td className={`${TD} min-w-[12rem] max-w-xs`}>{grant.reason}</td>
                   <td className={TD}>{grant.approvedByName ?? "-"}</td>
-                  <td className={TD}>{grant.ticketNumber}</td>
+                  <td className={`${TD} whitespace-nowrap`}>{grant.ticketNumber}</td>
                   <td className={TD}>
                     <span className={`rounded px-2 py-0.5 text-xs font-medium ${grantStatusClass(grant)}`}>{grantStatusLabel(grant)}</span>
                   </td>
