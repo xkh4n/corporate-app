@@ -35,7 +35,8 @@ import {
 
 export const TH = "px-4 py-2 text-left font-semibold text-slate-600";
 export const TD = "px-4 py-2 align-top";
-export const CARD = "rounded-lg border border-slate-200 bg-white p-4";
+// Padding menor en movil: la pagina y el layout ya aportan margen lateral.
+export const CARD = "rounded-lg border border-slate-200 bg-white p-3 sm:p-4";
 
 export function Badge({ className, children }: { className: string; children: ReactNode }) {
   return <span className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${className}`}>{children}</span>;
@@ -98,7 +99,10 @@ export function Tabs<T extends string>({
   onChange: (key: T) => void;
 }) {
   return (
-    <div role="tablist" className="mb-4 flex flex-wrap gap-1 border-b border-slate-300">
+    // Una sola fila con scroll horizontal: en movil las pestanas no se apilan
+    // en renglones sueltos (subrayado en vez de pestana con borde, que el
+    // overflow recortaria).
+    <div role="tablist" className="mb-4 flex gap-1 overflow-x-auto border-b border-slate-300 scrollbar-none">
       {tabs.map((tab) => (
         <button
           key={tab.key}
@@ -106,8 +110,8 @@ export function Tabs<T extends string>({
           role="tab"
           aria-selected={active === tab.key}
           onClick={() => onChange(tab.key)}
-          className={`-mb-px rounded-t-md border px-4 py-2 text-sm font-medium ${
-            active === tab.key ? "border-slate-300 border-b-white bg-white text-brand-700" : "border-transparent text-slate-600 hover:text-slate-900"
+          className={`shrink-0 whitespace-nowrap rounded-t-md border-b-2 px-3 py-2 text-sm font-medium sm:px-4 ${
+            active === tab.key ? "border-brand-600 bg-white text-brand-700" : "border-transparent text-slate-600 hover:text-slate-900"
           }`}
         >
           {tab.label}
@@ -183,7 +187,7 @@ export function Timeline({ events }: { events: TicketEvent[] }) {
               {internal && <IoLockClosedOutline aria-label="Interno" className="text-amber-700" />}
               <span className="font-semibold text-slate-700">{EVENT_LABELS[event.eventType] ?? event.eventType}</span>
               {detail && <span>· {detail}</span>}
-              <span className="ml-auto">
+              <span className="ml-auto text-right">
                 {event.actorName ?? "Sistema"} · {formatDateTime(event.createdAt)}
               </span>
             </div>
@@ -207,7 +211,7 @@ export function AttachmentList({
     <ul className="space-y-1 text-sm">
       {attachments.map((attachment) => (
         <li key={attachment.id} className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => onDownload(attachment)} className="text-brand-700 hover:underline">
+          <button type="button" onClick={() => onDownload(attachment)} className="min-w-0 break-all text-left text-brand-700 hover:underline">
             {attachment.originalName}
           </button>
           <span className="text-xs text-slate-500">
@@ -351,7 +355,7 @@ export function UserSearch({
                   onPick(user);
                   setTerm("");
                 }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-sky-50"
+                className="flex w-full flex-wrap items-center gap-x-2 px-3 py-2 text-left hover:bg-sky-50"
               >
                 <span className="font-medium text-slate-800">{user.fullName}</span>
                 <span className="text-xs text-slate-500">{user.username}</span>
@@ -391,7 +395,7 @@ export function TicketTable({
             <th className={TH}>SLA</th>
             {showRequester && <th className={TH}>Solicitante</th>}
             {showAssignee && <th className={TH}>Grupo / agente</th>}
-            <th className={TH}>Actualizado</th>
+            <th className={`${TH} hidden sm:table-cell`}>Actualizado</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -407,13 +411,13 @@ export function TicketTable({
                   />
                 </td>
               )}
-              <td className={TD}>
+              <td className={`${TD} whitespace-nowrap`}>
                 <button type="button" onClick={() => onOpen(ticket)} className="font-semibold text-brand-700 hover:underline">
                   {ticket.number}
                 </button>
                 <div className="text-xs text-slate-500">{TYPE_LABELS[ticket.type]}</div>
               </td>
-              <td className={`${TD} max-w-xs`}>
+              <td className={`${TD} min-w-[12rem] max-w-xs`}>
                 <span className="line-clamp-2">{ticket.title}</span>
                 {ticket.isMajor && <Badge className="mt-1 bg-red-600 text-white">Incidente mayor</Badge>}
                 <div className="text-xs text-slate-500">{ticket.catalogItemName ?? ticket.categoryName ?? ""}</div>
@@ -427,14 +431,14 @@ export function TicketTable({
               <td className={TD}>
                 <SlaBadge state={ticket.slaState} dueAt={ticket.resolutionDueAt} />
               </td>
-              {showRequester && <td className={TD}>{ticket.requesterName}</td>}
+              {showRequester && <td className={`${TD} min-w-[8rem]`}>{ticket.requesterName}</td>}
               {showAssignee && (
-                <td className={TD}>
+                <td className={`${TD} min-w-[8rem]`}>
                   <div>{ticket.assignedGroupName ?? "Sin grupo"}</div>
                   <div className="text-xs text-slate-500">{ticket.assigneeName ?? "Sin agente"}</div>
                 </td>
               )}
-              <td className={`${TD} whitespace-nowrap`}>{formatDateTime(ticket.updatedAt)}</td>
+              <td className={`${TD} hidden whitespace-nowrap sm:table-cell`}>{formatDateTime(ticket.updatedAt)}</td>
             </tr>
           ))}
         </tbody>

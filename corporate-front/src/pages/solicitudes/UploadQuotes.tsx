@@ -219,8 +219,8 @@ export default function UploadQuotes() {
   if (selectedRequest) {
     return (
       <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-        <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
-          <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
+          <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
             <Button type="button" variant="secondary" onClick={handleBackToList} className="mb-4">
               Volver al listado
             </Button>
@@ -240,7 +240,7 @@ export default function UploadQuotes() {
             ) : (
               <>
                 {/* CARGAR COTIZACION */}
-                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                <div className="rounded-lg border border-slate-200 bg-white p-3 sm:p-4">
                   <h2 className="mb-3 text-sm font-semibold text-slate-600">Cargar Cotización</h2>
                   <div className="grid grid-cols-1 max-[799px]:grid-cols-1 min-[800px]:grid-cols-6 min-[1000px]:grid-cols-8 min-[1200px]:grid-cols-10 min-[1400px]:grid-cols-12 gap-4">
                     <div className="w-full min-[800px]:col-span-3 min-[1000px]:col-span-4 min-[1200px]:col-span-3 min-[1400px]:col-span-4">
@@ -318,7 +318,7 @@ export default function UploadQuotes() {
                       variant="success"
                       loading={submitting}
                       onClick={() => void handleAddQuote()}
-                      className="w-60"
+                      className="w-full sm:w-60"
                     >
                       Agregar Cotización
                     </Button>
@@ -335,17 +335,17 @@ export default function UploadQuotes() {
                       <table className="min-w-full divide-y divide-slate-200 text-sm">
                         <thead className="bg-slate-50">
                           <tr>
-                            <th className="px-4 py-2 text-left font-semibold text-slate-600">N° Cotización</th>
-                            <th className="px-4 py-2 text-left font-semibold text-slate-600">Producto</th>
-                            <th className="px-4 py-2 text-left font-semibold text-slate-600">Proveedor</th>
-                            <th className="px-4 py-2 text-left font-semibold text-slate-600">Valor</th>
-                            <th className="px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
+                            <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">N° Cotización</th>
+                            <th className="min-w-[10rem] px-4 py-2 text-left font-semibold text-slate-600">Producto</th>
+                            <th className="min-w-[10rem] px-4 py-2 text-left font-semibold text-slate-600">Proveedor</th>
+                            <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Valor</th>
+                            <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {quotes.map((quote) => (
                             <tr key={quote.id}>
-                              <td className="px-4 py-2 font-medium text-slate-900">{quote.quoteNumber}</td>
+                              <td className="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{quote.quoteNumber}</td>
                               <td className="px-4 py-2 text-slate-600">
                                 {productNames.get(quote.productId) ?? quote.productId}
                               </td>
@@ -353,8 +353,8 @@ export default function UploadQuotes() {
                                 {suppliers.find((supplier) => supplier.id === quote.supplierId)?.businessPartner
                                   .legalName ?? quote.supplierId}
                               </td>
-                              <td className="px-4 py-2 text-slate-600">{quote.purchaseValue}</td>
-                              <td className="px-4 py-2 text-slate-600">{quote.status}</td>
+                              <td className="whitespace-nowrap px-4 py-2 text-slate-600">{quote.purchaseValue}</td>
+                              <td className="whitespace-nowrap px-4 py-2 text-slate-600">{quote.status}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -369,7 +369,7 @@ export default function UploadQuotes() {
                     loading={requestingApproval}
                     disabled={quotes.length === 0}
                     onClick={() => void handleRequestApproval()}
-                    className="w-60"
+                    className="w-full sm:w-60"
                   >
                     Solicitar Autorización
                   </Button>
@@ -384,12 +384,12 @@ export default function UploadQuotes() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">
           Cargar Cotizaciones
         </h1>
 
-        <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
           <div className="mb-4 max-w-sm">
             <Input
               placeholder="Buscar por numero, notas o prioridad..."
@@ -413,21 +413,21 @@ export default function UploadQuotes() {
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">N° Solicitud</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Solicitante</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Prioridad</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Acciones</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">N° Solicitud</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Solicitante</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Prioridad</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {requests.map((request) => (
                     <tr key={request.id}>
-                      <td className="px-4 py-2 font-medium text-slate-900">{request.requestNumber}</td>
-                      <td className="px-4 py-2 text-slate-600">
+                      <td className="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{request.requestNumber}</td>
+                      <td className="whitespace-nowrap px-4 py-2 text-slate-600">
                         {request.requester.firstName} {request.requester.lastName}
                       </td>
-                      <td className="px-4 py-2 text-slate-600">{request.priority}</td>
-                      <td className="px-4 py-2">
+                      <td className="whitespace-nowrap px-4 py-2 text-slate-600">{request.priority}</td>
+                      <td className="whitespace-nowrap px-4 py-2">
                         <Button type="button" variant="secondary" onClick={() => void handleViewRequest(request)}>
                           Ver
                         </Button>

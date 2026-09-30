@@ -102,10 +102,10 @@ export default function AssetKardex() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">Kardex de Activos</h1>
 
-        <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
           <div className="mb-4 flex gap-2">
             <Button type="button" variant={view === "asset" ? "primary" : "secondary"} onClick={() => setView("asset")}>
               Por activo
@@ -121,7 +121,7 @@ export default function AssetKardex() {
 
           {view === "asset" ? (
             <>
-              <div className="mb-4 flex max-w-md gap-2">
+              <div className="mb-4 flex w-full max-w-md gap-2">
                 <Input
                   placeholder="Buscar por tag o N° de serie..."
                   value={search}
@@ -148,11 +148,11 @@ export default function AssetKardex() {
                     <tbody className="divide-y divide-slate-100">
                       {results.map((asset) => (
                         <tr key={asset.id}>
-                          <td className="px-4 py-2 font-medium text-slate-900">{asset.tag}</td>
-                          <td className="px-4 py-2 text-slate-600">{asset.serialNumber ?? "-"}</td>
-                          <td className="px-4 py-2 text-slate-600">{asset.status.name}</td>
+                          <td className="px-4 py-2 whitespace-nowrap font-medium text-slate-900">{asset.tag}</td>
+                          <td className="px-4 py-2 whitespace-nowrap text-slate-600">{asset.serialNumber ?? "-"}</td>
+                          <td className="px-4 py-2 whitespace-nowrap text-slate-600">{asset.status.name}</td>
                           <td className="px-4 py-2">
-                            <Button type="button" variant="secondary" onClick={() => void handleSelectAsset(asset)}>
+                            <Button type="button" variant="secondary" className="whitespace-nowrap" onClick={() => void handleSelectAsset(asset)}>
                               Ver kardex
                             </Button>
                           </td>
@@ -166,7 +166,7 @@ export default function AssetKardex() {
               {selectedAsset && (
                 <div>
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-4">
-                    <h2 className="font-semibold text-slate-800">
+                    <h2 className="min-w-0 break-words font-semibold text-slate-800">
                       {selectedAsset.tag}
                       {selectedAsset.serialNumber && (
                         <span className="text-slate-500 font-normal"> — N/S {selectedAsset.serialNumber}</span>
@@ -190,7 +190,7 @@ export default function AssetKardex() {
                           <tr>
                             <th className="px-3 py-2 text-left font-semibold text-slate-600">Fecha</th>
                             <th className="px-3 py-2 text-left font-semibold text-slate-600">Tipo</th>
-                            <th className="px-3 py-2 text-right font-semibold text-slate-600">Costo unitario</th>
+                            <th className="px-3 py-2 whitespace-nowrap text-right font-semibold text-slate-600">Costo unitario</th>
                             <th className="px-3 py-2 text-right font-semibold text-slate-600">Monto</th>
                             <th className="px-3 py-2 text-right font-semibold text-slate-600">Saldo</th>
                             <th className="px-3 py-2 text-left font-semibold text-slate-600">Referencia</th>
@@ -199,16 +199,16 @@ export default function AssetKardex() {
                         <tbody className="divide-y divide-slate-100">
                           {entries.map((entry) => (
                             <tr key={entry.id}>
-                              <td className="px-3 py-2 text-slate-600">
+                              <td className="px-3 py-2 whitespace-nowrap text-slate-600">
                                 {new Date(entry.entryDate).toLocaleDateString("es-CL")}
                               </td>
-                              <td className="px-3 py-2 text-slate-600">{ENTRY_TYPE_LABEL[entry.entryType]}</td>
-                              <td className="px-3 py-2 text-right text-slate-600">{formatMoney(entry.unitCost)}</td>
-                              <td className="px-3 py-2 text-right text-slate-600">{formatMoney(entry.amount)}</td>
-                              <td className="px-3 py-2 text-right font-medium text-slate-900">
+                              <td className="px-3 py-2 whitespace-nowrap text-slate-600">{ENTRY_TYPE_LABEL[entry.entryType]}</td>
+                              <td className="px-3 py-2 whitespace-nowrap text-right text-slate-600">{formatMoney(entry.unitCost)}</td>
+                              <td className="px-3 py-2 whitespace-nowrap text-right text-slate-600">{formatMoney(entry.amount)}</td>
+                              <td className="px-3 py-2 whitespace-nowrap text-right font-medium text-slate-900">
                                 {formatMoney(entry.balance)}
                               </td>
-                              <td className="px-3 py-2 text-slate-600">{entry.reference ?? "-"}</td>
+                              <td className="px-3 py-2 min-w-[10rem] text-slate-600">{entry.reference ?? "-"}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -239,9 +239,9 @@ export default function AssetKardex() {
                 <tbody className="divide-y divide-slate-100">
                   {productBalances.map((balance) => (
                     <tr key={balance.productId}>
-                      <td className="px-4 py-2 font-medium text-slate-900">{balance.productName}</td>
+                      <td className="px-4 py-2 min-w-[10rem] font-medium text-slate-900">{balance.productName}</td>
                       <td className="px-4 py-2 text-right text-slate-600">{balance.entryCount}</td>
-                      <td className="px-4 py-2 text-right font-medium text-slate-900">{formatMoney(balance.balance)}</td>
+                      <td className="px-4 py-2 whitespace-nowrap text-right font-medium text-slate-900">{formatMoney(balance.balance)}</td>
                     </tr>
                   ))}
                 </tbody>

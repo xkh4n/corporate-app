@@ -10,7 +10,13 @@ export function AssignmentsTable({ rows, action }: { rows: AssignmentRow[]; acti
         <thead className="bg-slate-50">
           <tr>
             {["Tag", "Producto", "Categoría", "N° de serie", "Usuario", "Centro de costo", "Estado", "Asignado"].map((title) => (
-              <th key={title} className="px-3 py-2 text-left font-semibold text-slate-600">
+              <th
+                key={title}
+                // Categoria es secundaria: se oculta en movil
+                className={`whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600 ${
+                  title === "Categoría" ? "hidden sm:table-cell" : ""
+                }`}
+              >
                 {title}
               </th>
             ))}
@@ -20,27 +26,27 @@ export function AssignmentsTable({ rows, action }: { rows: AssignmentRow[]; acti
         <tbody className="divide-y divide-slate-100">
           {rows.map((row) => (
             <tr key={row.assetId}>
-              <td className="px-3 py-2 font-medium text-slate-900">{row.tag}</td>
-              <td className="px-3 py-2 text-slate-700">{row.productName ?? "-"}</td>
-              <td className="px-3 py-2 text-slate-600">{row.categoryName ?? "-"}</td>
-              <td className="px-3 py-2 text-slate-600">{row.serialNumber ?? "-"}</td>
-              <td className="px-3 py-2 text-slate-700">{row.holder?.fullName ?? "-"}</td>
-              <td className="px-3 py-2 text-slate-600">
+              <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900">{row.tag}</td>
+              <td className="min-w-[10rem] px-3 py-2 text-slate-700">{row.productName ?? "-"}</td>
+              <td className="hidden px-3 py-2 text-slate-600 sm:table-cell">{row.categoryName ?? "-"}</td>
+              <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.serialNumber ?? "-"}</td>
+              <td className="min-w-[10rem] px-3 py-2 text-slate-700">{row.holder?.fullName ?? "-"}</td>
+              <td className="min-w-[10rem] px-3 py-2 text-slate-600">
                 {row.costCenter ? `${row.costCenter.code} · ${row.costCenter.name}` : "-"}
               </td>
               <td className="px-3 py-2">
                 <span
-                  className={`rounded px-2 py-0.5 text-xs font-medium ${
+                  className={`whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium ${
                     row.statusCode === "DEVALUATED" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
                   }`}
                 >
                   {row.statusName}
                 </span>
               </td>
-              <td className="px-3 py-2 text-slate-600">
+              <td className="whitespace-nowrap px-3 py-2 text-slate-600">
                 {row.assignedAt ? new Date(row.assignedAt).toLocaleDateString("es-CL") : "-"}
               </td>
-              {action && <td className="px-3 py-2 text-right">{action(row)}</td>}
+              {action && <td className="whitespace-nowrap px-3 py-2 text-right">{action(row)}</td>}
             </tr>
           ))}
         </tbody>

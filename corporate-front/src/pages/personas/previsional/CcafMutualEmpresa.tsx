@@ -112,7 +112,7 @@ export default function CcafMutualEmpresaPage() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center justify-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center justify-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">
           CCAF y Mutualidad de la Empresa
         </h1>
@@ -122,7 +122,7 @@ export default function CcafMutualEmpresaPage() {
             <Spinner />
           </div>
         ) : (
-          <div className="w-full max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="w-full max-w-3xl mx-auto sm:px-6 lg:px-8">
             <form onSubmit={(event) => void handleSubmit(event)} className="w-full flex flex-col gap-4">
               <Alert tone="info">
                 Lo que se defina aquí aplica a todos los colaboradores: no se asigna uno por uno, cada colaborador lo
@@ -193,7 +193,7 @@ export default function CcafMutualEmpresaPage() {
               </div>
 
               <div className="flex justify-center mt-2">
-                <Button type="submit" loading={submitting} className="w-60">
+                <Button type="submit" loading={submitting} className="w-full sm:w-60">
                   Guardar
                 </Button>
               </div>

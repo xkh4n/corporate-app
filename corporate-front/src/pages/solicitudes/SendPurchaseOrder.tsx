@@ -140,8 +140,8 @@ export default function SendPurchaseOrder() {
   if (selectedRequest) {
     return (
       <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-        <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
-          <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
+          <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
             <Button type="button" variant="secondary" onClick={handleBackToList} className="mb-4">
               Volver al listado
             </Button>
@@ -164,9 +164,9 @@ export default function SendPurchaseOrder() {
             ) : (
               <div className="space-y-4">
                 {orderDetails.map((detail) => (
-                  <div key={detail.order.id} className="rounded-lg border border-slate-200 bg-white p-4">
+                  <div key={detail.order.id} className="rounded-lg border border-slate-200 bg-white p-3 sm:p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h2 className="font-semibold text-slate-800">
+                      <h2 className="min-w-0 break-words font-semibold text-slate-800">
                         Orden {detail.order.orderNumber}
                         {(detail.order.quotes?.length ?? 0) > 0 && (
                           <span className="text-slate-500 font-normal">
@@ -200,7 +200,7 @@ export default function SendPurchaseOrder() {
                       {detail.contacts.length === 0 ? (
                         <p className="text-sm text-rose-600">Sin contactos registrados -no se puede enviar hasta agregar uno.</p>
                       ) : (
-                        <ul className="mt-1 text-sm text-slate-600">
+                        <ul className="mt-1 text-sm text-slate-600 break-words">
                           {detail.contacts.map((contact) => (
                             <li key={contact.id}>
                               {contact.name} — {contact.email}
@@ -221,7 +221,7 @@ export default function SendPurchaseOrder() {
                               key={filename}
                               type="button"
                               onClick={() => void handleDownload(detail.order.id, filename)}
-                              className="rounded-md border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
+                              className="max-w-full break-all rounded-md border border-slate-300 bg-slate-50 px-3 py-2 sm:px-2 sm:py-1 text-left text-xs text-slate-700 hover:bg-slate-100"
                             >
                               {filename}
                             </button>
@@ -237,7 +237,9 @@ export default function SendPurchaseOrder() {
                         loading={detail.sending}
                         disabled={detail.contacts.length === 0}
                         onClick={() => void handleSend(detail.order.id)}
+                        className="w-full sm:w-auto"
                       >
+
                         {detail.order.sentAt ? "Reenviar al proveedor" : "Enviar al proveedor"}
                       </Button>
                     </div>
@@ -253,12 +255,12 @@ export default function SendPurchaseOrder() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">
           Enviar Orden de Compra
         </h1>
 
-        <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
           <div className="mb-4 max-w-sm">
             <Input
               placeholder="Buscar por numero, notas o prioridad..."
@@ -279,25 +281,25 @@ export default function SendPurchaseOrder() {
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">N° Solicitud</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Solicitante</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Acciones</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">N° Solicitud</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Solicitante</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {requests.map((request) => (
                     <tr key={request.id}>
-                      <td className="px-4 py-2 font-medium text-slate-900">{request.requestNumber}</td>
-                      <td className="px-4 py-2 text-slate-600">
+                      <td className="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{request.requestNumber}</td>
+                      <td className="whitespace-nowrap px-4 py-2 text-slate-600">
                         {request.requester.firstName} {request.requester.lastName}
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="whitespace-nowrap px-4 py-2">
                         <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">
                           {request.status}
                         </span>
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="whitespace-nowrap px-4 py-2">
                         <Button type="button" variant="secondary" onClick={() => void handleViewRequest(request)}>
                           Ver
                         </Button>

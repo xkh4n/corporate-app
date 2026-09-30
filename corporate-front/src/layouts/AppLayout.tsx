@@ -3,6 +3,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
 import { SidebarMenu } from "../components/SidebarMenu";
 import { NotificationBell } from "../components/NotificationBell";
+import { IoLogOutOutline } from "react-icons/io5";
 import logo from "../assets/imperial_white.png";
 
 function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }) {
@@ -10,7 +11,7 @@ function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `block rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-      isActive ? "bg-brand-50 text-brand-800" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+      isActive ? "bg-brand-50 text-brand-800" : "text-slate-200 hover:bg-red-500"
     }`;
 
   return (
@@ -32,29 +33,32 @@ function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const { user, logout } = useAuth();
 
   return (
-    <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center gap-3 border-b border-slate-200 bg-blue-950 px-4">
+    <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center gap-2 border-b border-slate-200 bg-blue-950 px-2 sm:gap-3 sm:px-4">
       <button
         type="button"
         onClick={onMenuClick}
         aria-label="Abrir menu"
-        className="rounded-md p-2 text-slate-600 hover:bg-slate-100 lg:hidden"
+        className="shrink-0 rounded-md p-2 text-zinc-100 hover:bg-white/10 lg:hidden"
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-6 w-6">
           <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
         </svg>
       </button>
-      <img src={logo} alt="Imperial" className="h-7 w-auto shrink-0" />
-      <p className="truncate text-2xl font-medium text-gray-00 text-zinc-200">
+      <img src={logo} alt="Imperial" className="h-5 w-auto min-w-0 shrink sm:h-7" />
+      {/* El saludo no cabe junto al logo y las acciones en telefono. */}
+      <p className="hidden min-w-0 truncate text-lg font-medium text-zinc-200 md:block lg:text-2xl">
         Hola: {user?.firstName} {user?.lastName}
       </p>
-      <div className="ml-auto flex items-center gap-3">
+      <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-3">
         <NotificationBell />
         <button
           type="button"
           onClick={() => void logout()}
-          className="rounded-md px-3 py-1.5 text-sm font-medium text-zinc-100 hover:text-gray-700 hover:bg-red-500"
+          aria-label="Cerrar sesion"
+          className="flex items-center gap-1.5 rounded-md p-2 text-sm font-medium text-zinc-100 hover:bg-red-500 sm:px-3 sm:py-1.5"
         >
-          Cerrar sesion
+          <IoLogOutOutline className="h-6 w-6 sm:hidden" aria-hidden />
+          <span className="hidden sm:inline">Cerrar sesion</span>
         </button>
       </div>
     </header>
@@ -75,7 +79,8 @@ export function AppLayout() {
           aria-hidden
         />
       )}
-      <main className="mt-2 ml-4 p-6 pt-16 lg:pl-64">
+      {/* Margen simetrico y chico en telefono; en escritorio se corre el ancho del sidebar fijo. */}
+      <main className="min-w-0 px-3 pb-6 pt-20 sm:px-6 lg:ml-64 lg:pt-22">
         <Outlet />
       </main>
     </div>

@@ -17,7 +17,7 @@ import {
   RETURN_STATUS_LABELS,
 } from "./assetReturnLabels";
 
-const TH = "px-4 py-2 text-left font-semibold text-slate-600";
+const TH = "whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600";
 
 // Una devolucion puntual. Segun su estado y los permisos del usuario:
 //  - DRAFT + asset-returns:create: agregar/quitar activos, adjuntar la guia,
@@ -172,7 +172,7 @@ export function AssetReturnDetailView({ id, onBack }: { id: number; onBack: () =
 
       <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-lg font-semibold text-slate-800">{detail.code ?? "Devolución sin guía"}</h2>
+          <h2 className="min-w-0 break-words text-lg font-semibold text-slate-800">{detail.code ?? "Devolución sin guía"}</h2>
           <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${RETURN_STATUS_CLASSES[detail.status]}`}>
             {RETURN_STATUS_LABELS[detail.status]}
           </span>
@@ -182,7 +182,7 @@ export function AssetReturnDetailView({ id, onBack }: { id: number; onBack: () =
             </span>
           )}
         </div>
-        <p className="mt-2 text-sm text-slate-600">
+        <p className="mt-2 break-words text-sm text-slate-600">
           {RETURN_SCOPE_LABELS[detail.scope]} · Centro de costo:{" "}
           {detail.costCenter ? `${detail.costCenter.code} · ${detail.costCenter.name}` : "-"} ·
           Solicitante: {detail.requestedBy?.fullName ?? "-"} · Creada: {formatDateTime(detail.createdAt)}
@@ -197,7 +197,7 @@ export function AssetReturnDetailView({ id, onBack }: { id: number; onBack: () =
         </p>
         {detail.notes && <p className="mt-1 text-sm text-slate-600">Notas: {detail.notes}</p>}
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           {isDraft && canRequest && (
             <>
               <input
@@ -298,6 +298,7 @@ export function AssetReturnDetailView({ id, onBack }: { id: number; onBack: () =
                     {line.receivedAt === null && (
                       <input
                         type="checkbox"
+                        className="h-5 w-5"
                         aria-label={`Recibir ${line.tag}`}
                         checked={selectedLineIds.has(line.id)}
                         onChange={() => toggleLine(line.id)}
@@ -305,12 +306,12 @@ export function AssetReturnDetailView({ id, onBack }: { id: number; onBack: () =
                     )}
                   </td>
                 )}
-                <td className="px-4 py-2 font-medium text-slate-900">{line.tag}</td>
-                <td className="px-4 py-2 text-slate-600">{line.productName ?? "-"}</td>
-                <td className="px-4 py-2 text-slate-600">{line.serialNumber ?? "-"}</td>
-                <td className="px-4 py-2 text-slate-600">{line.holder?.fullName ?? "-"}</td>
-                <td className="px-4 py-2 text-slate-600">{statusLabel(line.statusCode)}</td>
-                <td className="px-4 py-2 text-slate-600">{formatDateTime(line.receivedAt)}</td>
+                <td className="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{line.tag}</td>
+                <td className="min-w-[10rem] px-4 py-2 text-slate-600">{line.productName ?? "-"}</td>
+                <td className="whitespace-nowrap px-4 py-2 text-slate-600">{line.serialNumber ?? "-"}</td>
+                <td className="min-w-[10rem] px-4 py-2 text-slate-600">{line.holder?.fullName ?? "-"}</td>
+                <td className="whitespace-nowrap px-4 py-2 text-slate-600">{statusLabel(line.statusCode)}</td>
+                <td className="whitespace-nowrap px-4 py-2 text-slate-600">{formatDateTime(line.receivedAt)}</td>
                 {isDraft && canRequest && (
                   <td className="px-4 py-2 text-right">
                     <Button
@@ -335,7 +336,7 @@ export function AssetReturnDetailView({ id, onBack }: { id: number; onBack: () =
         <div className="mt-4">
           {adding ? (
             <div className="rounded-lg border border-slate-200 bg-white p-4">
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex items-center justify-between gap-2">
                 <h3 className="font-semibold text-slate-700">Agregar activos</h3>
                 <Button type="button" variant="ghost" onClick={() => setAdding(false)}>
                   Cerrar

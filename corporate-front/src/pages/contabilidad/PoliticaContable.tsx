@@ -15,7 +15,7 @@ import { METHOD_LABEL, formatMoney, parseAmount } from "./accountingLabels";
 // de activo con su vida util, metodo y tasa residual por defecto. Las clases
 // no se borran (activar/desactivar). Editar exige asset-accounting-policy:update.
 const REQUIRED_PERMISSIONS = ["asset-accounting-policy:read"] as const;
-const TH = "px-3 py-2 text-left font-semibold text-slate-600";
+const TH = "whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600";
 const CODE_PATTERN = /^[A-Z0-9]+(-[A-Z0-9]+)*$/;
 
 interface ClassDraft {
@@ -169,13 +169,13 @@ function PolicyContent() {
     }
 
     return (
-        <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+        <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
             <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">Política Contable de Activos</h1>
 
-            <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+            <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8 space-y-6">
                 <form
                     onSubmit={(event) => void handleSaveThreshold(event)}
-                    className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4"
+                    className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:flex-row sm:flex-wrap sm:items-end"
                 >
                     <Field label="Umbral de capitalización" htmlFor="threshold">
                         <Input
@@ -192,7 +192,7 @@ function PolicyContent() {
                         0 = sin umbral.
                     </p>
                     {canUpdate && (
-                        <Button type="submit" variant="success" loading={savingId === "policy"}>
+                        <Button type="submit" variant="success" className="w-full sm:w-auto" loading={savingId === "policy"}>
                             Guardar umbral
                         </Button>
                     )}
@@ -219,10 +219,10 @@ function PolicyContent() {
                                     if (!draft) return null;
                                     return (
                                         <tr key={accountingClass.id}>
-                                            <td className="px-3 py-2">
+                                            <td className="whitespace-nowrap px-3 py-2">
                                                 <code className="text-xs">{accountingClass.code}</code>
                                             </td>
-                                            <td className="px-3 py-2">
+                                            <td className="min-w-[12rem] px-3 py-2">
                                                 <Input
                                                     aria-label="Nombre"
                                                     value={draft.name}
@@ -244,7 +244,7 @@ function PolicyContent() {
                                                     className="w-24 bg-zinc-100 focus:bg-indigo-100"
                                                 />
                                             </td>
-                                            <td className="px-3 py-2">
+                                            <td className="min-w-[10rem] px-3 py-2">
                                                 <Select
                                                     aria-label="Método"
                                                     value={draft.defaultMethod}
@@ -278,6 +278,7 @@ function PolicyContent() {
                                             <td className="px-3 py-2">
                                                 <input
                                                     type="checkbox"
+                                                    className="h-5 w-5"
                                                     aria-label="Activa"
                                                     checked={draft.isActive}
                                                     disabled={!canUpdate}
@@ -289,7 +290,7 @@ function PolicyContent() {
                                                     <Button
                                                         type="button"
                                                         variant="secondary"
-                                                        className="px-3! py-1! text-xs"
+                                                        className="whitespace-nowrap px-3! py-2! text-xs sm:py-1!"
                                                         loading={savingId === accountingClass.id}
                                                         onClick={() => void handleSaveClass(accountingClass)}
                                                     >
@@ -307,7 +308,7 @@ function PolicyContent() {
                     {canUpdate && (
                         <form
                             onSubmit={(event) => void handleCreateClass(event)}
-                            className="grid grid-cols-1 items-end gap-3 border-t border-slate-200 pt-4 min-[1000px]:grid-cols-6"
+                            className="grid grid-cols-1 items-end gap-3 border-t border-slate-200 pt-4 sm:grid-cols-2 min-[1000px]:grid-cols-6"
                         >
                             <Field label="Código" htmlFor="newCode">
                                 <Input

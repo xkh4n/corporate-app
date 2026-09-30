@@ -261,7 +261,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
         aria-label={ariaLabel}
         onClick={() => (open ? closePopup() : openPopup())}
         onKeyDown={onTriggerKeyDown}
-        className={`flex w-full items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-left text-sm text-slate-900
+        className={`flex w-full items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-left text-base text-slate-900 sm:text-sm
           focus:border-brand-500 focus:outline focus:outline-2
           focus:outline-brand-200 disabled:cursor-not-allowed disabled:bg-slate-100 ${className}`}
       >
@@ -305,7 +305,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
                 aria-label="Buscar opción"
                 aria-controls={listboxId}
                 aria-activedescendant={filteredOptions[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
-                className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                className="w-full bg-transparent text-base sm:text-sm text-slate-900 outline-none placeholder:text-slate-400"
               />
             </div>
             <ul ref={listRef} id={listboxId} role="listbox" className="flex-1 overflow-y-auto py-1">
@@ -326,7 +326,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
                       onMouseEnter={() => setActiveIndex(index)}
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => commit(option)}
-                      className={`cursor-pointer truncate px-3 py-1.5 text-sm ${
+                      className={`cursor-pointer truncate px-3 py-2 text-sm sm:py-1.5 ${
                         option.disabled
                           ? "cursor-not-allowed text-slate-400"
                           : active

@@ -14,7 +14,7 @@ import { CLASSIFICATION_LABEL, STAGE_LABEL, formatMoney } from "./accountingLabe
 // solo lectura. Mismos topes que la API: 5 MB por archivo.
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const PHOTO_TYPES = ["image/jpeg", "image/png"];
-const TH = "px-3 py-2 text-left font-semibold text-slate-600";
+const TH = "whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600";
 
 type Busy = "save" | "certificate" | "download" | "photo" | "confirm" | "discard" | null;
 type PendingAction = "confirm" | "discard" | null;
@@ -196,7 +196,7 @@ export function WriteOffPanel({ id, onBack, onChanged }: Props) {
     return (
         <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-base font-semibold text-slate-800">
+                <h2 className="min-w-0 break-words text-base font-semibold text-slate-800">
                     Baja #{detail.id} ·{" "}
                     <span className={isDraft ? "text-amber-700" : "text-emerald-700"}>
                         {isDraft ? "Borrador" : "Confirmada (definitiva)"}
@@ -253,20 +253,20 @@ export function WriteOffPanel({ id, onBack, onChanged }: Props) {
             </section>
             {editable && (
                 <div className="flex justify-end">
-                    <Button type="button" disabled={!dataDirty} loading={busy === "save"} onClick={handleSave}>
+                    <Button type="button" className="w-full sm:w-auto" disabled={!dataDirty} loading={busy === "save"} onClick={handleSave}>
                         Guardar datos
                     </Button>
                 </div>
             )}
 
-            <section className="flex flex-wrap items-center justify-between gap-3 rounded bg-slate-50 p-3 text-sm">
+            <section className="flex flex-col gap-3 rounded bg-slate-50 p-3 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                 <div>
                     <p className="font-semibold text-slate-800">Certificado notarial</p>
                     <p className="text-slate-600">
                         {detail.hasCertificate ? "Adjuntado (PDF)." : "Sin adjuntar: es obligatorio para confirmar."}
                     </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
                     {detail.hasCertificate && (
                         <Button
                             type="button"
@@ -319,14 +319,14 @@ export function WriteOffPanel({ id, onBack, onChanged }: Props) {
                         <tbody className="divide-y divide-slate-100">
                             {detail.lines.map((line) => (
                                 <tr key={line.assetId} className={isDraft && !hasPhoto(line) ? "bg-amber-50" : undefined}>
-                                    <td className="px-3 py-2">
-                                        <p className="font-medium text-slate-900">{line.tag}</p>
+                                    <td className="min-w-[10rem] px-3 py-2">
+                                        <p className="whitespace-nowrap font-medium text-slate-900">{line.tag}</p>
                                         <p className="text-xs text-slate-500">{line.productName ?? line.serialNumber ?? "-"}</p>
                                     </td>
-                                    <td className="px-3 py-2 text-slate-600">{CLASSIFICATION_LABEL[line.classification]}</td>
-                                    <td className="px-3 py-2 text-slate-600">{STAGE_LABEL[line.stage]}</td>
-                                    <td className="px-3 py-2 text-right text-slate-800">{formatMoney(line.bookValue)}</td>
-                                    <td className="px-3 py-2">
+                                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">{CLASSIFICATION_LABEL[line.classification]}</td>
+                                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">{STAGE_LABEL[line.stage]}</td>
+                                    <td className="whitespace-nowrap px-3 py-2 text-right text-slate-800">{formatMoney(line.bookValue)}</td>
+                                    <td className="min-w-[10rem] px-3 py-2">
                                         <div className="flex flex-wrap items-center gap-2">
                                             {line.decommissionPhotos.map((photo) => (
                                                 <a
@@ -362,7 +362,7 @@ export function WriteOffPanel({ id, onBack, onChanged }: Props) {
                                                             title="Quitar foto"
                                                             disabled={busy !== null}
                                                             onClick={() => handleRemovePhoto(photo.id)}
-                                                            className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full bg-rose-600 text-xs leading-5 text-white"
+                                                            className="absolute -right-2 -top-2 h-7 w-7 rounded-full bg-rose-600 text-sm leading-7 text-white sm:-right-1.5 sm:-top-1.5 sm:h-5 sm:w-5 sm:text-xs sm:leading-5"
                                                         >
                                                             ×
                                                         </button>
@@ -373,7 +373,7 @@ export function WriteOffPanel({ id, onBack, onChanged }: Props) {
                                                 <Button
                                                     type="button"
                                                     variant="secondary"
-                                                    className="px-2! py-1! text-xs"
+                                                    className="whitespace-nowrap px-3! py-2! text-xs sm:px-2! sm:py-1!"
                                                     loading={busy === "photo" && photoAssetId === line.assetId}
                                                     disabled={busy !== null}
                                                     onClick={() => pickPhoto(line.assetId)}
@@ -389,7 +389,7 @@ export function WriteOffPanel({ id, onBack, onChanged }: Props) {
                                             <Button
                                                 type="button"
                                                 variant="ghost"
-                                                className="px-2! py-1! text-xs"
+                                                className="whitespace-nowrap px-3! py-2! text-xs sm:px-2! sm:py-1!"
                                                 disabled={detail.lines.length === 1 || busy !== null}
                                                 title={detail.lines.length === 1 ? "La baja debe tener al menos un activo" : undefined}
                                                 onClick={() => handleRemoveLine(line)}
@@ -424,7 +424,7 @@ export function WriteOffPanel({ id, onBack, onChanged }: Props) {
                     )}
 
                     {pending === null && (
-                        <div className="flex flex-wrap justify-end gap-2">
+                        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
                             {editable && (
                                 <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => setPending("discard")}>
                                     Descartar borrador
@@ -456,7 +456,7 @@ export function WriteOffPanel({ id, onBack, onChanged }: Props) {
                                       )}? Es definitiva: no se puede anular ni modificar.`
                                     : `¿Descartar el borrador #${detail.id}? Se borrarán sus fotos y el certificado adjunto.`}
                             </p>
-                            <div className="mt-3 flex justify-end gap-2">
+                            <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                                 <Button type="button" variant="secondary" onClick={() => setPending(null)} disabled={busy !== null}>
                                     Cancelar
                                 </Button>

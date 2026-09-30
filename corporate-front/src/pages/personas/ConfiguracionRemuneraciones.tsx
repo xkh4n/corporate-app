@@ -133,7 +133,7 @@ export default function ConfiguracionRemuneracionesPage() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center justify-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center justify-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">
           Configuración de Remuneraciones
         </h1>
@@ -143,7 +143,7 @@ export default function ConfiguracionRemuneracionesPage() {
             <Spinner />
           </div>
         ) : (
-          <div className="w-full max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col gap-8">
+          <div className="w-full max-w-3xl mx-auto sm:px-6 lg:px-8 flex flex-col gap-8">
             <form onSubmit={(event) => void handleSaveSystem(event)} className="flex flex-col gap-4">
               <h2 className="text-lg font-semibold text-gray-600">Sistema de gratificación de la empresa</h2>
               <Alert tone="info">
@@ -196,7 +196,7 @@ export default function ConfiguracionRemuneracionesPage() {
                 </div>
               )}
               <div className="flex justify-center">
-                <Button type="submit" loading={savingSystem} className="w-60">
+                <Button type="submit" loading={savingSystem} className="w-full sm:w-60">
                   Guardar
                 </Button>
               </div>
@@ -233,13 +233,14 @@ export default function ConfiguracionRemuneracionesPage() {
                 </Field>
               </div>
               <div className="flex justify-center">
-                <Button type="submit" loading={savingImm} className="w-60">
+                <Button type="submit" loading={savingImm} className="w-full sm:w-60">
                   Registrar IMM
                 </Button>
               </div>
 
               {immHistory.length > 0 && (
-                <table className="w-full text-sm text-slate-700">
+                <div className="overflow-x-auto">
+                <table className="w-full whitespace-nowrap text-sm text-slate-700">
                   <thead>
                     <tr className="border-b border-slate-300 text-left">
                       <th className="py-1">Valor</th>
@@ -257,7 +258,9 @@ export default function ConfiguracionRemuneracionesPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
+
             </form>
           </div>
         )}

@@ -16,7 +16,7 @@ import { statusLabel } from "../inventario/inventoryLabels";
 // La pantalla se ve con :read (igual que el menu y el GET de la API); guardar valores exige :update.
 const REQUIRED_PERMISSIONS = ["asset-valuation:read"] as const;
 const PAGE_SIZE = 200;
-const TH = "px-4 py-2 text-left font-semibold text-slate-600";
+const TH = "whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600";
 
 // El gate envuelve a un componente aparte: la carga inicial vive en ValuationContent, asi no se dispara
 // una peticion (y un 403 que redirige) antes de comprobar el permiso.
@@ -107,14 +107,14 @@ function ValuationContent() {
 
   return (
     <>
-      <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">
           Valorización de Activos
         </h1>
 
-        <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <div className="flex max-w-md flex-1 gap-2">
+        <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="flex w-full max-w-md gap-2 sm:flex-1">
               <Input
                 placeholder="Buscar por tag o N° de serie..."
                 value={search}
@@ -127,7 +127,7 @@ function ValuationContent() {
               </Button>
             </div>
             {canUpdate && (
-              <Button type="button" variant="success" loading={saving} onClick={() => void handleSave()}>
+              <Button type="button" variant="success" className="w-full sm:w-auto" loading={saving} onClick={() => void handleSave()}>
                 Guardar valores ({enteredCount})
               </Button>
             )}
@@ -164,11 +164,11 @@ function ValuationContent() {
                   <tbody className="divide-y divide-slate-100">
                     {assets.map((asset) => (
                       <tr key={asset.id}>
-                        <td className="px-4 py-2 font-medium text-slate-900">{asset.tag}</td>
-                        <td className="px-4 py-2 text-slate-600">{asset.productName ?? "-"}</td>
-                        <td className="px-4 py-2 text-slate-600">{asset.serialNumber ?? "-"}</td>
-                        <td className="px-4 py-2 text-slate-600">{statusLabel(asset.status.code)}</td>
-                        <td className="px-4 py-2 text-slate-600">
+                        <td className="px-4 py-2 whitespace-nowrap font-medium text-slate-900">{asset.tag}</td>
+                        <td className="px-4 py-2 min-w-[10rem] text-slate-600">{asset.productName ?? "-"}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-slate-600">{asset.serialNumber ?? "-"}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-slate-600">{statusLabel(asset.status.code)}</td>
+                        <td className="px-4 py-2 min-w-[10rem] text-slate-600">
                           {asset.costCenter ? `${asset.costCenter.code} · ${asset.costCenter.name}` : "-"}
                         </td>
                         <td className="px-4 py-2">

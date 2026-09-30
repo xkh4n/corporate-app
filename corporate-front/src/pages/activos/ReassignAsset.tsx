@@ -169,10 +169,10 @@ export default function ReassignAsset() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">Reasignar Activos</h1>
 
-        <div className="w-full max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full max-w-3xl mx-auto sm:px-6 lg:px-8">
           <div className="rounded-lg border border-slate-200 bg-white p-4">
             {!current ? (
               <>
@@ -198,7 +198,7 @@ export default function ReassignAsset() {
                       <thead className="bg-slate-50">
                         <tr>
                           <th className="px-3 py-2 text-left font-semibold text-slate-600">Tag</th>
-                          <th className="px-3 py-2 text-left font-semibold text-slate-600">N° de serie</th>
+                          <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600">N° de serie</th>
                           <th className="px-3 py-2 text-left font-semibold text-slate-600">Estado</th>
                           <th className="px-3 py-2 text-left font-semibold text-slate-600"></th>
                         </tr>
@@ -206,11 +206,11 @@ export default function ReassignAsset() {
                       <tbody className="divide-y divide-slate-100">
                         {candidates.map((asset) => (
                           <tr key={asset.id}>
-                            <td className="px-3 py-2 font-medium text-slate-900">{asset.tag}</td>
-                            <td className="px-3 py-2 text-slate-600">{asset.serialNumber ?? "-"}</td>
-                            <td className="px-3 py-2 text-slate-600">{asset.status.name}</td>
+                            <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900">{asset.tag}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-slate-600">{asset.serialNumber ?? "-"}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-slate-600">{asset.status.name}</td>
                             <td className="px-3 py-2">
-                              <Button type="button" variant="secondary" onClick={() => void selectAsset(asset)}>
+                              <Button type="button" variant="secondary" className="whitespace-nowrap" onClick={() => void selectAsset(asset)}>
                                 Seleccionar
                               </Button>
                             </td>
@@ -232,8 +232,8 @@ export default function ReassignAsset() {
               </>
             ) : (
               <>
-                <div className="mb-4 flex items-center justify-between rounded-md bg-emerald-50 px-4 py-3">
-                  <div>
+                <div className="mb-4 flex items-start justify-between gap-2 rounded-md bg-emerald-50 px-4 py-3">
+                  <div className="min-w-0 break-words">
                     <p className="font-semibold text-slate-800">
                       {current.tag}
                       {current.serialNumber && <span className="text-slate-500 font-normal"> — N/S {current.serialNumber}</span>}
@@ -303,7 +303,7 @@ export default function ReassignAsset() {
                   </Field>
                 </div>
 
-                <div className="mt-6 flex justify-end gap-2">
+                <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                   <Button
                     type="button"
                     variant="secondary"
@@ -320,7 +320,7 @@ export default function ReassignAsset() {
                     loading={saving}
                     disabled={!canSave}
                     onClick={() => void handleSave()}
-                    className="w-60"
+                    className="sm:w-60"
                   >
                     Guardar Reasignación
                   </Button>

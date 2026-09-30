@@ -91,40 +91,43 @@ export function ChangesTab({ onOpen, onCreate }: { onOpen: (id: number) => void;
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        {(
-          [
-            ["list", "Listado"],
-            ["calendar", "Calendario"],
-            ...(can("service-changes:approve") ? [["approvals", "Por aprobar (CAB)"]] : []),
-          ] as [typeof mode, string][]
-        ).map(([key, label]) => (
-          <Button key={key} type="button" variant={mode === key ? "primary" : "secondary"} onClick={() => setMode(key)}>
-            {label}
+      {/* Movil: accion principal arriba, modos en una fila con scroll y el filtro debajo */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        {can("service-changes:create") && (
+          <Button type="button" className="w-full shrink-0 sm:order-last sm:ml-auto sm:w-auto" onClick={onCreate}>
+            Nuevo cambio (RFC)
           </Button>
-        ))}
+        )}
+        <div className="flex min-w-0 gap-2 overflow-x-auto pb-1 sm:pb-0">
+          {(
+            [
+              ["list", "Listado"],
+              ["calendar", "Calendario"],
+              ...(can("service-changes:approve") ? [["approvals", "Por aprobar (CAB)"]] : []),
+            ] as [typeof mode, string][]
+          ).map(([key, label]) => (
+            <Button key={key} type="button" variant={mode === key ? "primary" : "secondary"} className="shrink-0 whitespace-nowrap" onClick={() => setMode(key)}>
+              {label}
+            </Button>
+          ))}
+        </div>
         {mode === "list" && (
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" checked={includeClosed} onChange={(e) => { setIncludeClosed(e.target.checked); setPage(1); }} />
             Incluir cerrados
           </label>
         )}
-        {can("service-changes:create") && (
-          <Button type="button" className="ml-auto" onClick={onCreate}>
-            Nuevo cambio (RFC)
-          </Button>
-        )}
       </div>
 
       {mode === "calendar" && (
-        <div className="flex items-center gap-2 text-sm">
-          <Button type="button" variant="secondary" onClick={() => setWeekStart(new Date(weekStart.getTime() - 7 * 24 * 3600 * 1000))}>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <Button type="button" variant="secondary" className="flex-1 whitespace-nowrap sm:flex-none" onClick={() => setWeekStart(new Date(weekStart.getTime() - 7 * 24 * 3600 * 1000))}>
             ‹ Semana anterior
           </Button>
-          <span className="font-medium text-slate-700">
+          <span className="order-first w-full text-center font-medium text-slate-700 sm:order-none sm:w-auto">
             Semana del {weekStart.toLocaleDateString("es-CL")}
           </span>
-          <Button type="button" variant="secondary" onClick={() => setWeekStart(new Date(weekStart.getTime() + 7 * 24 * 3600 * 1000))}>
+          <Button type="button" variant="secondary" className="flex-1 whitespace-nowrap sm:flex-none" onClick={() => setWeekStart(new Date(weekStart.getTime() + 7 * 24 * 3600 * 1000))}>
             Semana siguiente ›
           </Button>
         </div>
@@ -140,7 +143,7 @@ export function ChangesTab({ onOpen, onCreate }: { onOpen: (id: number) => void;
               (change) => change.plannedStart && change.plannedEnd && new Date(change.plannedStart) < next && new Date(change.plannedEnd) > day,
             );
             return (
-              <div key={day.toISOString()} className="min-h-32 rounded-md border border-slate-200 bg-white p-2">
+              <div key={day.toISOString()} className="min-h-16 rounded-md md:min-h-32 border border-slate-200 bg-white p-2">
                 <p className="mb-1 text-xs font-semibold text-slate-600">
                   {day.toLocaleDateString("es-CL", { weekday: "short", day: "numeric", month: "short" })}
                 </p>
@@ -178,17 +181,17 @@ export function ChangesTab({ onOpen, onCreate }: { onOpen: (id: number) => void;
               <tbody className="divide-y divide-slate-100">
                 {changes.map((change) => (
                   <tr key={change.id}>
-                    <td className={TD}>
+                    <td className={`${TD} whitespace-nowrap`}>
                       <button type="button" className="font-semibold text-brand-700 hover:underline" onClick={() => onOpen(change.id)}>
                         {change.number}
                       </button>
                     </td>
-                    <td className={TD}>{change.title}</td>
-                    <td className={TD}>{CHANGE_TYPE_LABELS[change.type]}</td>
+                    <td className={`${TD} min-w-[12rem]`}>{change.title}</td>
+                    <td className={`${TD} whitespace-nowrap`}>{CHANGE_TYPE_LABELS[change.type]}</td>
                     <td className={TD}>
                       <Badge className={CHANGE_STATUS_CLASSES[change.status]}>{CHANGE_STATUS_LABELS[change.status]}</Badge>
                     </td>
-                    <td className={TD}>{CHANGE_RISK_LABELS[change.risk]}</td>
+                    <td className={`${TD} whitespace-nowrap`}>{CHANGE_RISK_LABELS[change.risk]}</td>
                     <td className={`${TD} whitespace-nowrap text-xs`}>
                       {formatDateTime(change.plannedStart)}
                       <br />
@@ -455,7 +458,7 @@ export function ChangeFormModal({
             {assets.map((asset) => (
               <span key={asset.assetId} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs">
                 {asset.tag}
-                <button type="button" aria-label={`Quitar ${asset.tag}`} onClick={() => setAssets((prev) => prev.filter((item) => item.assetId !== asset.assetId))} className="hover:text-red-600">
+                <button type="button" aria-label={`Quitar ${asset.tag}`} onClick={() => setAssets((prev) => prev.filter((item) => item.assetId !== asset.assetId))} className="px-1 hover:text-red-600">
                   ×
                 </button>
               </span>
@@ -569,13 +572,13 @@ export function ChangeDetailView({
       <BackButton onBack={onBack} label="Volver a cambios" />
       <div className={`${CARD} mb-4`}>
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-semibold text-slate-800">{detail.number}</h2>
+          <h2 className="break-all text-lg font-semibold text-slate-800">{detail.number}</h2>
           <Badge className="bg-slate-100 text-slate-700">{CHANGE_TYPE_LABELS[detail.type]}</Badge>
           <Badge className={CHANGE_STATUS_CLASSES[detail.status]}>{CHANGE_STATUS_LABELS[detail.status]}</Badge>
           <Badge className="bg-slate-100 text-slate-700">Riesgo {CHANGE_RISK_LABELS[detail.risk]}</Badge>
           {detail.outcome && <Badge className="bg-slate-100 text-slate-700">{CHANGE_OUTCOME_LABELS[detail.outcome]}</Badge>}
         </div>
-        <p className="mt-2 font-medium text-slate-800">{detail.title}</p>
+        <p className="mt-2 break-words font-medium text-slate-800">{detail.title}</p>
         <p className="text-sm text-slate-600">
           Solicitado por {detail.requestedByName ?? "-"} · Ventana {formatDateTime(detail.plannedStart)} → {formatDateTime(detail.plannedEnd)}
           {detail.problemNumber && (
@@ -622,7 +625,7 @@ export function ChangeDetailView({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div className="min-w-0 lg:col-span-2">
           <Section title="Descripción">
             <PlainText text={detail.description} />
             {detail.justification && (
@@ -654,7 +657,7 @@ export function ChangeDetailView({
                     <span className="font-semibold text-slate-700">{EVENT_LABELS[event.eventType] ?? event.eventType}</span>
                     {typeof event.payload.to === "string" && <span>→ {CHANGE_STATUS_LABELS[event.payload.to as ChangeDetail["status"]] ?? event.payload.to}</span>}
                     {typeof event.payload.decision === "string" && <span>{event.payload.decision === "APPROVED" ? "Aprobado" : "Rechazado"}</span>}
-                    <span className="ml-auto">
+                    <span className="ml-auto text-right">
                       {event.actorName ?? "Sistema"} · {formatDateTime(event.createdAt)}
                     </span>
                   </div>
@@ -664,7 +667,7 @@ export function ChangeDetailView({
             </ol>
           </Section>
         </div>
-        <div>
+        <div className="min-w-0">
           <Section title="CAB">
             {detail.approvals.length === 0 ? (
               <p className="text-sm text-slate-500">{detail.type === "STANDARD" ? "Cambio preaprobado (no pasa por CAB)." : "Aún no se pidió aprobación."}</p>
@@ -684,7 +687,7 @@ export function ChangeDetailView({
             {detail.assets.length === 0 ? (
               <p className="text-sm text-slate-500">Sin activos.</p>
             ) : (
-              <p className="text-sm">{detail.assets.map((asset) => asset.tag).join(", ")}</p>
+              <p className="break-words text-sm">{detail.assets.map((asset) => asset.tag).join(", ")}</p>
             )}
           </Section>
           <Section title="Tickets">
@@ -750,7 +753,7 @@ export function ChangeDetailView({
                 {approvers.map((approver) => (
                   <span key={approver.userId} className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-800">
                     {approver.fullName}
-                    <button type="button" aria-label={`Quitar ${approver.fullName}`} onClick={() => setApprovers((prev) => prev.filter((item) => item.userId !== approver.userId))}>
+                    <button type="button" aria-label={`Quitar ${approver.fullName}`} onClick={() => setApprovers((prev) => prev.filter((item) => item.userId !== approver.userId))} className="px-1">
                       ×
                     </button>
                   </span>

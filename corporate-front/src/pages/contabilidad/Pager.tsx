@@ -17,11 +17,11 @@ export function Pager({
 }) {
     if (totalPages <= 1) return null;
     return (
-        <div className="flex items-center justify-between gap-2 text-sm text-slate-600">
-            <span>
+        <div className="flex flex-col gap-2 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-center sm:text-left">
                 Página {page} de {totalPages} ({totalItems} {noun})
             </span>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:flex">
                 <Button type="button" variant="secondary" disabled={page <= 1} onClick={() => onChange(page - 1)}>
                     Anterior
                 </Button>

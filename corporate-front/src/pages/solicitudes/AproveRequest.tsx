@@ -242,8 +242,8 @@ export default function AproveRequest() {
 
     return (
       <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-        <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
-          <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
+          <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
             <Button type="button" variant="secondary" onClick={handleBackToList} className="mb-4">
               Volver al listado
             </Button>
@@ -251,7 +251,7 @@ export default function AproveRequest() {
             <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h1 className="text-xl font-bold text-gray-600">Solicitud {selectedRequest.requestNumber}</h1>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadgeClass(selectedRequest.status)}`}>
                     {selectedRequest.status}
                   </span>
@@ -280,7 +280,8 @@ export default function AproveRequest() {
                 <p>
                   <span className="font-semibold text-slate-700">Prioridad:</span> {selectedRequest.priority}
                 </p>
-                <p className="min-[800px]:col-span-3">
+                <p className="break-words min-[800px]:col-span-3">
+
                   <span className="font-semibold text-slate-700">Notas:</span> {selectedRequest.notes ?? "-"}
                 </p>
               </div>
@@ -297,11 +298,11 @@ export default function AproveRequest() {
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50">
                     <tr>
-                      <th className="px-4 py-2 text-left font-semibold text-slate-600">Producto</th>
-                      <th className="px-4 py-2 text-left font-semibold text-slate-600">Tipo de Equipamiento</th>
-                      <th className="px-4 py-2 text-left font-semibold text-slate-600">Cantidad</th>
-                      <th className="px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
-                      <th className="px-4 py-2 text-left font-semibold text-slate-600">Acciones</th>
+                      <th className="min-w-[10rem] px-4 py-2 text-left font-semibold text-slate-600">Producto</th>
+                      <th className="min-w-[9rem] px-4 py-2 text-left font-semibold text-slate-600">Tipo de Equipamiento</th>
+                      <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Cantidad</th>
+                      <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
+                      <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -322,7 +323,7 @@ export default function AproveRequest() {
                             draft.quantity
                           )}
                         </td>
-                        <td className="px-4 py-2">
+                        <td className="whitespace-nowrap px-4 py-2">
                           <span
                             className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                               draft.decision
@@ -335,13 +336,13 @@ export default function AproveRequest() {
                               : draft.currentStatus}
                           </span>
                         </td>
-                        <td className="px-4 py-2">
+                        <td className="whitespace-nowrap px-4 py-2">
                           {isTerminalLineStatus(draft.currentStatus) ? (
                             <Button type="button" variant="secondary" disabled>
                               Ver
                             </Button>
                           ) : (
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex gap-2">
                               <Button type="button" variant="secondary" onClick={() => toggleEditing(draft.lineId)}>
                                 {draft.editing ? "Listo" : "Editar"}
                               </Button>
@@ -379,7 +380,7 @@ export default function AproveRequest() {
                 loading={savingDecisions}
                 disabled={!hasPendingDecisions}
                 onClick={() => void handleSaveDecisions()}
-                className="w-60"
+                className="w-full sm:w-60"
               >
                 Guardar decision
               </Button>
@@ -392,12 +393,12 @@ export default function AproveRequest() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">
           Solicitudes por Aprobar
         </h1>
 
-        <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
           <div className="mb-4 max-w-sm">
             <Input
               placeholder="Buscar por numero, notas o prioridad..."
@@ -421,33 +422,33 @@ export default function AproveRequest() {
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">N° Solicitud</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Solicitante</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Beneficiario</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Notas</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Prioridad</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Acciones</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">N° Solicitud</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Solicitante</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Beneficiario</th>
+                    <th className="min-w-[12rem] px-4 py-2 text-left font-semibold text-slate-600">Notas</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Prioridad</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {requests.map((request) => (
                     <tr key={request.id}>
-                      <td className="px-4 py-2 font-medium text-slate-900">{request.requestNumber}</td>
-                      <td className="px-4 py-2 text-slate-600">
+                      <td className="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{request.requestNumber}</td>
+                      <td className="whitespace-nowrap px-4 py-2 text-slate-600">
                         {request.requester.firstName} {request.requester.lastName}
                       </td>
-                      <td className="px-4 py-2 text-slate-600">
+                      <td className="whitespace-nowrap px-4 py-2 text-slate-600">
                         {request.beneficiary.firstName} {request.beneficiary.lastName}
                       </td>
                       <td className="px-4 py-2 text-slate-600">{request.notes ?? "-"}</td>
-                      <td className="px-4 py-2 text-slate-600">{request.priority}</td>
-                      <td className="px-4 py-2">
+                      <td className="whitespace-nowrap px-4 py-2 text-slate-600">{request.priority}</td>
+                      <td className="whitespace-nowrap px-4 py-2">
                         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadgeClass(request.status)}`}>
                           {request.status}
                         </span>
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="whitespace-nowrap px-4 py-2">
                         <Button type="button" variant="secondary" onClick={() => void handleViewRequest(request)}>
                           Ver
                         </Button>

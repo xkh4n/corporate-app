@@ -84,7 +84,7 @@ function Item({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt className="inline font-medium text-slate-600">{label}: </dt>
-      <dd className="inline text-slate-800">{value}</dd>
+      <dd className="inline break-words text-slate-800">{value}</dd>
     </div>
   );
 }

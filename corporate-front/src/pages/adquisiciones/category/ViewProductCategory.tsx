@@ -37,12 +37,12 @@ export default function ViewProductCategory() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">
           Categorías de Producto
         </h1>
 
-        <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
           <div className="mb-4 max-w-sm">
             <Input
               placeholder="Buscar por nombre o descripcion..."
@@ -63,15 +63,16 @@ export default function ViewProductCategory() {
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-4 py-2 text-left font-semibold text-slate-600">Nombre</th>
+                    <th className="min-w-[9rem] px-4 py-2 text-left font-semibold text-slate-600">Nombre</th>
                     <th className="px-4 py-2 text-left font-semibold text-slate-600">Descripción</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {categories.map((category) => (
                     <tr key={category.id}>
-                      <td className="px-4 py-2 font-medium text-slate-900">{category.name}</td>
-                      <td className="px-4 py-2 text-slate-600">{category.description ?? "-"}</td>
+                      <td className="min-w-[9rem] px-4 py-2 font-medium text-slate-900">{category.name}</td>
+                      <td className="min-w-[12rem] px-4 py-2 text-slate-600">{category.description ?? "-"}</td>
+
                     </tr>
                   ))}
                 </tbody>

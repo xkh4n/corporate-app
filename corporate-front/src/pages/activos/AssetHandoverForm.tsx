@@ -71,7 +71,7 @@ export default function AssetHandoverForm() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">Formulario Asignación</h1>
 
         <form
@@ -103,7 +103,7 @@ export default function AssetHandoverForm() {
             </Field>
           </div>
           <div className="mt-4 flex justify-end">
-            <Button type="submit" loading={searching}>
+            <Button type="submit" className="w-full sm:w-auto" loading={searching}>
               Buscar
             </Button>
           </div>

@@ -13,7 +13,7 @@ function Tile({ label, value, hint }: { label: string; value: string; hint?: str
   return (
     <div className={CARD}>
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-slate-800">{value}</p>
+      <p className="mt-1 text-xl font-semibold text-slate-800 sm:text-2xl">{value}</p>
       {hint && <p className="text-xs text-slate-500">{hint}</p>}
     </div>
   );
@@ -30,8 +30,8 @@ function Bars({ rows }: { rows: { label: string; value: number; extra?: string }
       {rows.map((row) => (
         <li key={row.label}>
           <div className="flex justify-between gap-2">
-            <span className="text-slate-700">{row.label}</span>
-            <span className="font-medium text-slate-800">
+            <span className="min-w-0 break-words text-slate-700">{row.label}</span>
+            <span className="shrink-0 whitespace-nowrap font-medium text-slate-800">
               {row.value}
               {row.extra ? ` ${row.extra}` : ""}
             </span>
@@ -64,18 +64,20 @@ export function ReportsTab() {
         <label htmlFor="report-days" className="text-slate-700">
           Período:
         </label>
-        <Select id="report-days" value={String(days)} onChange={(e) => setDays(Number(e.target.value))}>
-          <option value="7">Últimos 7 días</option>
-          <option value="30">Últimos 30 días</option>
-          <option value="90">Últimos 90 días</option>
-          <option value="365">Último año</option>
-        </Select>
+        <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+          <Select id="report-days" value={String(days)} onChange={(e) => setDays(Number(e.target.value))}>
+            <option value="7">Últimos 7 días</option>
+            <option value="30">Últimos 30 días</option>
+            <option value="90">Últimos 90 días</option>
+            <option value="365">Último año</option>
+          </Select>
+        </div>
       </div>
       {!summary ? (
         <Loading />
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
             <Tile label="Tickets creados" value={String(summary.created)} hint={`${summary.resolved} resueltos`} />
             <Tile label="Cumplimiento SLA resolución" value={pct(summary.slaCompliance)} hint={`Respuesta: ${pct(summary.responseCompliance)}`} />
             <Tile label="Tiempo medio de resolución" value={summary.mttrHours === null ? "-" : `${summary.mttrHours} h`} hint="Horas corridas" />

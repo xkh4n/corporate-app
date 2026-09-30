@@ -17,7 +17,7 @@ import {
   type RoomEntry,
 } from "../../types/commRoom";
 import { formatDateTime } from "../inventario/inventoryLabels";
-import { formatPeriod, grantStatusClass, grantStatusLabel, PAGE_CLASS, TABLE_WRAP, TD, TH, TITLE_CLASS } from "./commRoomUi";
+import { FILTER_BAR, formatPeriod, grantStatusClass, grantStatusLabel, PAGE_CLASS, TABLE_WRAP, TD, TH, TITLE_CLASS } from "./commRoomUi";
 
 // Consulta de Accesos (plan 016): quien tiene acceso hoy a cada sala, quien lo autorizo, por que,
 // desde y hasta cuando, que ticket lo origino, quien ingreso, vencidos, varias tiendas y temporales
@@ -56,14 +56,15 @@ export default function CommRoomAccessReport() {
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
       <div className={PAGE_CLASS}>
         <h1 className={TITLE_CLASS}>Consulta de Accesos</h1>
-        <div className="w-full max-w-7xl mx-auto flex flex-col gap-4 px-2 sm:px-4">
-          <div className="flex flex-wrap gap-2">
+        <div className="w-full max-w-7xl mx-auto flex flex-col gap-4 sm:px-4">
+          {/* Pestanas en una sola fila con scroll horizontal en movil */}
+          <div className="flex gap-2 overflow-x-auto pb-1">
             {TABS.map((option) => (
               <button
                 key={option.value}
                 type="button"
                 onClick={() => setTab(option.value)}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                className={`shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium sm:py-1.5 ${
                   tab === option.value ? "bg-brand-600 text-white" : "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50"
                 }`}
               >
@@ -124,26 +125,26 @@ function GrantTable({ filters, emptyTitle, onDetail }: { filters: RoomAccessGran
         <tbody className="divide-y divide-slate-100">
           {grants.map((grant) => (
             <tr key={grant.id}>
-              <td className={TD}>
+              <td className={`${TD} min-w-[10rem]`}>
                 <p className="font-medium text-slate-900">{grant.beneficiaryName}</p>
                 <p className="text-xs text-slate-500">
                   {grant.beneficiaryDocumentId}
                   {grant.beneficiaryCompany ? ` · ${grant.beneficiaryCompany}` : ""}
                 </p>
               </td>
-              <td className={TD}>
+              <td className={`${TD} min-w-[8rem]`}>
                 {grant.roomName}
                 <p className="text-xs text-slate-500">{grant.costCenterName}</p>
               </td>
-              <td className={TD}>{ROOM_ACCESS_TYPE_LABELS[grant.accessType]}</td>
-              <td className={TD}>{formatPeriod(grant.validFrom, grant.validUntil)}</td>
+              <td className={`${TD} whitespace-nowrap`}>{ROOM_ACCESS_TYPE_LABELS[grant.accessType]}</td>
+              <td className={`${TD} whitespace-nowrap`}>{formatPeriod(grant.validFrom, grant.validUntil)}</td>
               <td className={TD}>{grant.activeDays}</td>
-              <td className={`${TD} max-w-xs`}>{grant.reason}</td>
+              <td className={`${TD} min-w-[12rem] max-w-xs`}>{grant.reason}</td>
               <td className={TD}>{grant.validatedByName ?? "-"}</td>
               <td className={TD}>{grant.approvedByName ?? "-"}</td>
-              <td className={TD}>{grant.ticketNumber}</td>
+              <td className={`${TD} whitespace-nowrap`}>{grant.ticketNumber}</td>
               <td className={TD}>
-                <span className={`rounded px-2 py-0.5 text-xs font-medium ${grantStatusClass(grant)}`}>{grantStatusLabel(grant)}</span>
+                <span className={`whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium ${grantStatusClass(grant)}`}>{grantStatusLabel(grant)}</span>
               </td>
               <td className={TD}>
                 <Button type="button" variant="ghost" onClick={() => onDetail(grant.id)}>
@@ -163,7 +164,7 @@ function CurrentByRoom({ rooms, costCenters, onDetail }: { rooms: CommRoom[]; co
   const [costCenterId, setCostCenterId] = useState("");
   return (
     <>
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4">
+      <div className={FILTER_BAR}>
         <Field label="Dependencia" htmlFor="currentCc">
           <Select id="currentCc" value={costCenterId} onChange={(e) => setCostCenterId(e.target.value)}>
             <option value="">Todas</option>
@@ -206,7 +207,7 @@ function ByRut({ onDetail }: { onDetail: (id: number) => void }) {
   return (
     <>
       <form
-        className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4"
+        className={FILTER_BAR}
         onSubmit={(e) => {
           e.preventDefault();
           if (!input.trim()) {
@@ -219,7 +220,7 @@ function ByRut({ onDetail }: { onDetail: (id: number) => void }) {
         <Field label="RUT completo (búsqueda exacta)" htmlFor="rutSearch">
           <Input id="rutSearch" value={input} autoComplete="off" placeholder="12345678-9" onChange={(e) => setInput(e.target.value)} />
         </Field>
-        <Button type="submit" variant="secondary">
+        <Button type="submit" variant="secondary" className="w-full sm:w-auto">
           Buscar
         </Button>
       </form>
@@ -232,7 +233,7 @@ function ExpiredGrants({ rooms, onDetail }: { rooms: CommRoom[]; onDetail: (id: 
   const [roomId, setRoomId] = useState("");
   return (
     <>
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4">
+      <div className={FILTER_BAR}>
         <Field label="Sala" htmlFor="expiredRoom">
           <Select id="expiredRoom" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
             <option value="">Todas</option>
@@ -267,7 +268,7 @@ function MultiRoom() {
 
   return (
     <>
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4">
+      <div className={FILTER_BAR}>
         <Field label="Contar por" htmlFor="multiBy">
           <Select id="multiBy" value={by} onChange={(e) => setBy(e.target.value as "room" | "costCenter")}>
             <option value="costCenter">Tiendas (centros de costo)</option>
@@ -290,7 +291,7 @@ function MultiRoom() {
             <tbody className="divide-y divide-slate-100">
               {holders.map((holder) => (
                 <tr key={holder.beneficiaryDocumentId}>
-                  <td className={TD}>
+                  <td className={`${TD} min-w-[10rem]`}>
                     <p className="font-medium text-slate-900">{holder.beneficiaryName}</p>
                     <p className="text-xs text-slate-500">
                       {holder.beneficiaryDocumentId}
@@ -298,7 +299,7 @@ function MultiRoom() {
                     </p>
                   </td>
                   <td className={TD}>{holder.places}</td>
-                  <td className={TD}>
+                  <td className={`${TD} min-w-[14rem]`}>
                     <ul className="list-disc pl-4">
                       {holder.rooms.map((room) => (
                         <li key={room.grantId}>
@@ -339,7 +340,7 @@ function EntriesLog({ rooms }: { rooms: CommRoom[] }) {
 
   return (
     <>
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4">
+      <div className={FILTER_BAR}>
         <Field label="Sala" htmlFor="entriesRoom">
           <Select id="entriesRoom" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
             <option value="">Todas</option>
@@ -350,7 +351,7 @@ function EntriesLog({ rooms }: { rooms: CommRoom[] }) {
             ))}
           </Select>
         </Field>
-        <label className="flex items-center gap-2 pb-2 text-sm text-slate-700">
+        <label className="flex items-center gap-2 text-sm text-slate-700 sm:pb-2">
           <input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} />
           Solo quienes siguen dentro
         </label>
@@ -382,19 +383,19 @@ function EntriesTable({ entries }: { entries: RoomEntry[] }) {
         <tbody className="divide-y divide-slate-100">
           {entries.map((entry) => (
             <tr key={entry.id}>
-              <td className={TD}>
+              <td className={`${TD} min-w-[10rem]`}>
                 <p className="font-medium text-slate-900">{entry.beneficiaryName}</p>
                 <p className="text-xs text-slate-500">{entry.beneficiaryDocumentId}</p>
               </td>
-              <td className={TD}>
+              <td className={`${TD} min-w-[8rem]`}>
                 {entry.roomName}
                 <p className="text-xs text-slate-500">{entry.costCenterName}</p>
               </td>
-              <td className={TD}>{formatDateTime(entry.checkedInAt)}</td>
-              <td className={TD}>{entry.checkedOutAt ? formatDateTime(entry.checkedOutAt) : "Dentro"}</td>
+              <td className={`${TD} whitespace-nowrap`}>{formatDateTime(entry.checkedInAt)}</td>
+              <td className={`${TD} whitespace-nowrap`}>{entry.checkedOutAt ? formatDateTime(entry.checkedOutAt) : "Dentro"}</td>
               <td className={TD}>{entry.checkedInByName ?? "-"}</td>
-              <td className={TD}>{entry.ticketNumber}</td>
-              <td className={TD}>{entry.notes ?? "-"}</td>
+              <td className={`${TD} whitespace-nowrap`}>{entry.ticketNumber}</td>
+              <td className={`${TD} min-w-[10rem]`}>{entry.notes ?? "-"}</td>
             </tr>
           ))}
         </tbody>
@@ -418,7 +419,7 @@ function GrantDetailModal({ id, onClose }: { id: number; onClose: () => void }) 
     <Modal open title={grant ? `Acceso de ${grant.beneficiaryName}` : "Acceso"} size="lg" onClose={onClose}>
       {grant && (
         <div className="flex flex-col gap-3 text-sm text-slate-700">
-          <dl className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+          <dl className="grid grid-cols-1 gap-x-4 gap-y-1 break-words sm:grid-cols-2">
             <dt className="font-semibold">Sala</dt>
             <dd>
               {grant.roomName} ({grant.costCenterName})
