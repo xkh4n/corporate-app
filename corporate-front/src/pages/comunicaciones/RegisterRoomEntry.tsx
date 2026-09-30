@@ -82,7 +82,7 @@ export default function RegisterRoomEntry() {
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
       <div className={PAGE_CLASS}>
         <h1 className={TITLE_CLASS}>Registrar Ingreso</h1>
-        <div className="w-full max-w-5xl mx-auto flex flex-col gap-4 px-2 sm:px-4">
+        <div className="w-full max-w-5xl mx-auto flex flex-col gap-4 sm:px-4">
           <form
             className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-4 md:items-end"
             onSubmit={(e) => {
@@ -111,8 +111,8 @@ export default function RegisterRoomEntry() {
             </Button>
           </form>
 
-          <div className="rounded-lg border border-slate-200 bg-white p-4">
-            <h2 className="mb-3 text-lg font-semibold text-slate-700">Personas dentro de la sala</h2>
+          <div className="rounded-lg border border-slate-200 bg-white p-3 sm:p-4">
+            <h2 className="mb-3 text-base font-semibold text-slate-700 sm:text-lg">Personas dentro de la sala</h2>
             {!roomId ? (
               <EmptyState title="Elija una sala" description="Verá quién está adentro ahora y podrá registrar su salida." />
             ) : inside.length === 0 ? (
@@ -133,21 +133,21 @@ export default function RegisterRoomEntry() {
                   <tbody className="divide-y divide-slate-100">
                     {inside.map((entry) => (
                       <tr key={entry.id}>
-                        <td className={TD}>
+                        <td className={`${TD} min-w-[10rem]`}>
                           <p className="font-medium text-slate-900">{entry.beneficiaryName}</p>
                           <p className="text-xs text-slate-500">
                             {entry.beneficiaryDocumentId}
                             {entry.beneficiaryCompany ? ` · ${entry.beneficiaryCompany}` : ""}
                           </p>
                         </td>
-                        <td className={TD}>
+                        <td className={`${TD} min-w-[10rem]`}>
                           {ROOM_ACCESS_TYPE_LABELS[entry.accessType]} · {entry.ticketNumber}
                           {entry.grantStatus !== "ACTIVE" && <span className="ml-1 text-xs text-rose-700">(ya no vigente)</span>}
                         </td>
-                        <td className={TD}>{formatDateTime(entry.checkedInAt)}</td>
+                        <td className={`${TD} whitespace-nowrap`}>{formatDateTime(entry.checkedInAt)}</td>
                         <td className={TD}>{entry.checkedInByName ?? "-"}</td>
                         <td className={TD}>{entry.notes ?? "-"}</td>
-                        <td className={TD}>
+                        <td className={`${TD} whitespace-nowrap`}>
                           <Button type="button" variant="secondary" loading={closing === entry.id} onClick={() => void registerExit(entry)}>
                             Registrar salida
                           </Button>

@@ -98,7 +98,7 @@ export default function VerPantallas() {
     // el final para cambiar de pagina.
     const pagination =
         totalPages > 1 ? (
-            <div className="flex items-center justify-between text-sm text-slate-600">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-sm text-slate-600">
                 <span>
                     Página {currentPage} de {totalPages} ({filtered.length} pantallas)
                 </span>
@@ -125,10 +125,10 @@ export default function VerPantallas() {
 
     return (
         <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-            <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+            <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
                 <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">Pantallas</h1>
 
-                <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
                     <div className="mb-4 max-w-sm">
                         <Input
                             placeholder="Buscar por pantalla, ruta o permiso..."
@@ -151,11 +151,11 @@ export default function VerPantallas() {
                             <table className="min-w-full divide-y divide-slate-200 text-sm">
                                 <thead className="bg-slate-50">
                                     <tr>
-                                        <th className="px-4 py-2 text-left font-semibold text-slate-600">Pantalla</th>
-                                        <th className="px-4 py-2 text-left font-semibold text-slate-600">Ruta</th>
-                                        <th className="px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
-                                        <th className="px-4 py-2 text-left font-semibold text-slate-600">Permiso del menú</th>
-                                        <th className="px-4 py-2 text-left font-semibold text-slate-600">Permisos que incluye</th>
+                                        <th className="min-w-[9rem] px-4 py-2 text-left font-semibold text-slate-600">Pantalla</th>
+                                        <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Ruta</th>
+                                        <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-600">Estado</th>
+                                        <th className="min-w-[14rem] px-4 py-2 text-left font-semibold text-slate-600">Permiso del menú</th>
+                                        <th className="min-w-[12rem] px-4 py-2 text-left font-semibold text-slate-600">Permisos que incluye</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
@@ -167,10 +167,10 @@ export default function VerPantallas() {
                                                     <p className="font-medium text-slate-900">{item.label}</p>
                                                     {parentLabel && <p className="text-xs text-slate-500">{parentLabel}</p>}
                                                 </td>
-                                                <td className="px-4 py-2 text-slate-600">
+                                                <td className="whitespace-nowrap px-4 py-2 text-slate-600">
                                                     <code>{item.link}</code>
                                                 </td>
-                                                <td className="px-4 py-2">
+                                                <td className="whitespace-nowrap px-4 py-2">
                                                     <span
                                                         className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                                                             item.isActive
@@ -185,7 +185,8 @@ export default function VerPantallas() {
                                                     {permission ? (
                                                         <>
                                                             <p className="text-slate-800">{label(permission)}</p>
-                                                            <code className="text-xs text-slate-500">
+                                                            <code className="break-all text-xs text-slate-500">
+
                                                                 {permission.resource}:{permission.action}
                                                             </code>
                                                             {!isScreenPermission && (

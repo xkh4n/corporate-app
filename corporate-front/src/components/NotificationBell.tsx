@@ -47,7 +47,10 @@ export function NotificationBell() {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
-          <div className="absolute right-0 z-50 mt-2 w-72 rounded-lg border border-slate-200 bg-white shadow-lg">
+          {/* Telefono: anclado al viewport bajo el topbar (h-16) con margen de
+              0.75rem por lado, asi no se sale de pantalla aunque la campana no
+              este pegada al borde; desde sm vuelve al desplegable de 18rem. */}
+          <div className="fixed inset-x-3 top-[4.25rem] z-50 max-h-[70vh] overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg sm:absolute sm:inset-x-auto sm:top-auto sm:right-0 sm:mt-2 sm:w-72">
             {rows.length === 0 ? (
               <p className="p-4 text-sm text-slate-500">Sin pendientes.</p>
             ) : (
@@ -59,8 +62,9 @@ export function NotificationBell() {
                       onClick={() => setOpen(false)}
                       className="flex items-center justify-between gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50"
                     >
-                      <span>{row.label}</span>
-                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
+                      <span className="min-w-0">{row.label}</span>
+                      <span className="shrink-0 rounded-full
+ bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
                         {row.count}
                       </span>
                     </Link>

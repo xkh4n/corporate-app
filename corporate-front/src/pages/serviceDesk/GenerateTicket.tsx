@@ -69,9 +69,9 @@ export default function GenerateTicket() {
 
   return (
     <RequirePermissions all={[...REQUIRED_PERMISSIONS]}>
-      <div className="flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6">
+      <div className="flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6">
         <h1 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600">Mesa de Servicios</h1>
-        <div className="w-full max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
           {ticketId !== null ? (
             <PortalTicketDetail id={ticketId} onBack={() => setSearchParams({ tab: "mine" })} />
           ) : (
@@ -243,7 +243,7 @@ function NewTicketForm({ canKb, initialService, onCreated }: { canKb: boolean; i
   if (loading) return <Loading />;
 
   return (
-    <form onSubmit={handleSubmit} className={`${CARD} space-y-5`}>
+    <form onSubmit={handleSubmit} className={`${CARD} space-y-4 sm:space-y-5`}>
       <fieldset>
         <legend className="mb-2 text-sm font-medium text-slate-700">¿Qué necesita?</legend>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -427,9 +427,9 @@ function NewTicketForm({ canKb, initialService, onCreated }: { canKb: boolean; i
         <div className="flex flex-wrap items-center gap-2">
           <AttachButton onFile={addFile} />
           {files.map((file, index) => (
-            <span key={`${file.name}-${index}`} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs">
-              {file.name} ({Math.ceil(file.size / 1024)} KB)
-              <button type="button" aria-label={`Quitar ${file.name}`} onClick={() => setFiles((prev) => prev.filter((_, i) => i !== index))} className="text-slate-500 hover:text-red-600">
+            <span key={`${file.name}-${index}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs">
+              <span className="truncate">{file.name}</span> <span className="shrink-0">({Math.ceil(file.size / 1024)} KB)</span>
+              <button type="button" aria-label={`Quitar ${file.name}`} onClick={() => setFiles((prev) => prev.filter((_, i) => i !== index))} className="shrink-0 px-1 text-slate-500 hover:text-red-600">
                 ×
               </button>
             </span>
@@ -439,7 +439,7 @@ function NewTicketForm({ canKb, initialService, onCreated }: { canKb: boolean; i
       </div>
 
       <div className="flex justify-end">
-        <Button type="submit" loading={saving}>
+        <Button type="submit" loading={saving} className="w-full sm:w-auto">
           Enviar ticket
         </Button>
       </div>
@@ -585,13 +585,13 @@ function PortalTicketDetail({ id, onBack }: { id: number; onBack: () => void }) 
       <BackButton onBack={onBack} label="Volver a mis tickets" />
       <div className={`${CARD} mb-4`}>
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-semibold text-slate-800">{detail.number}</h2>
+          <h2 className="break-all text-lg font-semibold text-slate-800">{detail.number}</h2>
           <Badge className="bg-slate-100 text-slate-700">{TYPE_LABELS[detail.type]}</Badge>
           <StatusBadge status={detail.status} />
           <PriorityBadge priority={detail.priority} />
           <SlaBadge state={detail.slaState} dueAt={detail.resolutionDueAt} />
         </div>
-        <p className="mt-2 font-medium text-slate-800">{detail.title}</p>
+        <p className="mt-2 break-words font-medium text-slate-800">{detail.title}</p>
         <p className="mt-1 text-sm text-slate-600">
           {detail.catalogItemName ?? detail.categoryName ?? "Sin categoría"} · Creado {formatDateTime(detail.createdAt)} · Atiende:{" "}
           {detail.assignedGroupName ?? "Mesa de Servicios"}
@@ -622,7 +622,7 @@ function PortalTicketDetail({ id, onBack }: { id: number; onBack: () => void }) 
             {Object.entries(detail.variables).map(([key, value]) => (
               <div key={key}>
                 <dt className="inline font-medium text-slate-600">{humanizeKey(key)}: </dt>
-                <dd className="inline text-slate-800">{typeof value === "boolean" ? (value ? "Sí" : "No") : String(value)}</dd>
+                <dd className="inline break-words text-slate-800">{typeof value === "boolean" ? (value ? "Sí" : "No") : String(value)}</dd>
               </div>
             ))}
           </dl>
@@ -788,8 +788,8 @@ function HelpCenter() {
           void search(term);
         }}
       >
-        <Input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="¿En qué necesita ayuda?" aria-label="Buscar en el centro de ayuda" />
-        <Button type="submit">Buscar</Button>
+        <Input className="min-w-0 flex-1" value={term} onChange={(e) => setTerm(e.target.value)} placeholder="¿En qué necesita ayuda?" aria-label="Buscar en el centro de ayuda" />
+        <Button type="submit" className="shrink-0">Buscar</Button>
       </form>
       {loading ? (
         <Loading />

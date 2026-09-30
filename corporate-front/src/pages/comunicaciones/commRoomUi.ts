@@ -32,8 +32,10 @@ export function grantStatusClass(grant: Pick<RoomAccessGrant, "status" | "isVali
   return grant.status === "EXPIRED" ? "bg-slate-200 text-slate-700" : "bg-rose-100 text-rose-800";
 }
 
-export const PAGE_CLASS = "flex flex-col items-center h-max bg-sky-100 p-4 md:p-5 lg:p-6";
+export const PAGE_CLASS = "flex flex-col items-center h-max bg-sky-100 px-0 py-4 sm:p-4 md:p-5 lg:p-6";
 export const TITLE_CLASS = "text-xl md:text-2xl lg:text-3xl font-bold mb-6 text-center text-gray-600";
+// Barra de filtros: en movil campos apilados a ancho completo; desde sm en linea.
+export const FILTER_BAR = "grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:flex sm:flex-wrap sm:items-end sm:p-4";
 export const TABLE_WRAP = "overflow-x-auto rounded-lg border border-slate-200 bg-white";
 export const TH = "px-3 py-2 text-left font-semibold text-slate-600";
 export const TD = "px-3 py-2 text-slate-700";

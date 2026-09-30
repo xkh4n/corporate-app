@@ -47,7 +47,7 @@ export function LabelConfigFields({
           </Select>
         </Field>
       </div>
-      <div className="flex items-end gap-4 min-[900px]:col-span-2">
+      <div className="flex flex-wrap items-end gap-4 min-[900px]:col-span-2">
         <label className="flex items-center gap-1.5 text-sm text-slate-700">
           <input
             type="checkbox"
