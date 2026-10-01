@@ -70,7 +70,7 @@ if ($Servicio -in @('gitpush', 'gitpr', 'pre')) {
 }
 
 # Lista de comandos válidos que requieren ambiente
-$validServices = @('bdd', 'mongokey', 'monitoring', 'backend', 'mailer', 'frontend')
+$validServices = @('bdd', 'mongokey', 'monitoring', 'backend', 'mailer', 'frontend', 'cloud')
 
 # Verificar si el servicio es válido
 if ($Servicio -notin $validServices) {
@@ -84,6 +84,7 @@ if ($Servicio -notin $validServices) {
     Write-Host "  • backend <ambiente>    - Levantar servicios backend" -ForegroundColor Yellow
     Write-Host "  • mailer <ambiente>     - Levantar servicio de envio de correo" -ForegroundColor Yellow
     Write-Host "  • frontend <ambiente>   - Levantar servicios frontend" -ForegroundColor Yellow
+    Write-Host "  • cloud <ambiente>      - Exponer el frontend con un tunel de cloudflared (Ctrl+C cierra)" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "📋 Git / Pull Requests (requieren gh con sesion, ver README):" -ForegroundColor Cyan
     Write-Host "  • gitpush <dev|testing> [msg] - commit (si hay cambios) + push de esa rama" -ForegroundColor Yellow
@@ -223,6 +224,11 @@ switch ($Servicio) {
             docker network create --driver bridge --internal --subnet "$netBase.13.0/24" $frontApiNet
         }
         & ./corporate-scripts/frontend.ps1 $Ambiente
+    }
+    'cloud' {
+        # Quick Tunnel de Cloudflare hacia el frontend del ambiente. IP y puerto salen de
+        # corporate-secrets (ALLOCATED_IP, FRONT_SSL_PORT); ver corporate-scripts/cloud-tunnel.ps1.
+        & ./corporate-scripts/cloud-tunnel.ps1 $Ambiente
     }
     default {
         # Este caso no debería ocurrir debido a la validación anterior
