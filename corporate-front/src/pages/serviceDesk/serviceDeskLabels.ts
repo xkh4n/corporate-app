@@ -170,6 +170,7 @@ export const ASSET_STATUS_LABELS: Record<string, string> = {
   RETURNED: "Devuelto",
   DEVALUATED: "Devaluado",
   MOVE_TO_RETURNED: "En tránsito a devolución",
+  RETURNED_TO_SUPPLIER: "Devuelto a proveedor",
 };
 
 // ---- Problemas -------------------------------------------------------------

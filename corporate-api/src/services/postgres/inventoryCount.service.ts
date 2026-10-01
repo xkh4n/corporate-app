@@ -25,11 +25,13 @@ import { getCostCenterByIdOrThrow } from "./costCenter.service";
 import { getUserByIdOrThrow } from "../mssql/user.service";
 import { getProductById, getProductByIdOrThrow, getProductsByIds } from "../mongo/product.service";
 import { getProductCategoriesByIds, getProductCategoryByIdOrThrow } from "../mongo/productCategory.service";
+import { isAccountingTag } from "../../library/assetTag";
 import { computeLineChanges, needsSupportFollowUp } from "../../library/inventoryCountChanges";
 import {
   allowedDeclaredStatuses,
   forcedDeclaredStatus,
   instructionFor,
+  NON_ACCOUNTING_DECOMMISSION_REASON,
   planExistingAssetChange,
 } from "../../library/inventoryAssetTransition";
 import {
@@ -266,7 +268,7 @@ export async function lookupAsset(
     productCategoryId: product?.categoryId ? String(product.categoryId) : null,
     holder: holderId !== undefined ? (labels.get(holderId) ?? null) : null,
     alreadyInCount: existingLine !== null,
-    allowedStatusCodes: allowedDeclaredStatuses(statusCode),
+    allowedStatusCodes: allowedDeclaredStatuses(statusCode, isAccountingTag(asset.tag)),
     forcedStatusCode: forcedDeclaredStatus(statusCode),
     instruction: instructionFor(statusCode),
   };
@@ -373,6 +375,7 @@ async function linkExistingAsset(
     systemStatus,
     declared: input.statusCode,
     holderIsSame: holderUserId !== null && holderUserId === systemHolder,
+    accountingAsset: isAccountingTag(asset.tag),
   });
   if (!plan.ok) throw new BadRequestError(`${asset.tag}: ${plan.reason}`);
   // Un activo en soporte por un ticket vuelve desde el ticket: la toma no le cambia el estado (run-3 final, L4).
@@ -449,6 +452,10 @@ async function createNewAsset(
   transaction: Transaction,
 ): Promise<number> {
   if (!declaredSerial) throw new BadRequestError("La serie es obligatoria para dar de alta un equipo nuevo");
+  // Plan 018: un arriendo/servicio dado de alta como «Baja» quedaria esperando una Baja Contable que no le toca.
+  if (input.statusCode === "DECOMMISSIONED" && productType !== "COMPRA") {
+    throw new BadRequestError(NON_ACCOUNTING_DECOMMISSION_REASON);
+  }
 
   // Dos auditores que dan de alta la misma serie a la vez pasan ambos el chequeo de abajo y crean dos activos:
   // el lock por serie (compartido con la carga masiva) los serializa.
@@ -587,7 +594,7 @@ export async function closeInventoryCount(
       `SELECT a.id, s.code
          FROM assets a
          JOIN asset_statuses s ON s.id = a.status_id
-        WHERE s.code NOT IN ('DECOMMISSIONED', 'WRITTEN_OFF', 'MOVE_TO_RETURNED')
+        WHERE s.code NOT IN ('DECOMMISSIONED', 'WRITTEN_OFF', 'MOVE_TO_RETURNED', 'RETURNED_TO_SUPPLIER')
           AND NOT EXISTS (
             SELECT 1 FROM inventory_count_lines l
              WHERE l.inventory_count_id = :countId AND l.asset_id = a.id

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/useAuth";
 import { RequirePermissions } from "../../components/RequirePermissions";
-import { Button, EmptyState, Field, Input, Select, Spinner, Textarea } from "../../components/ui";
+import { Alert, Button, EmptyState, Field, Input, Select, Spinner, Textarea } from "../../components/ui";
 import { showSuccessToast } from "../../components/Toast";
 import { handleError } from "../../lib/Errors";
 import { assetReturnService } from "../../services/assetReturnService";
@@ -41,6 +41,7 @@ export default function AssetReturns() {
         </h1>
 
         <div className="w-full sm:max-w-[95%] mx-auto sm:px-4 lg:px-8">
+          {returnId === null && <ScopeNotice />}
           {returnId === null ? (
             <ReturnList onOpen={(id) => setSearchParams({ return: String(id) })} />
           ) : (
@@ -49,6 +50,22 @@ export default function AssetReturns() {
         </div>
       </div>
     </RequirePermissions>
+  );
+}
+
+// Plan 018: esta pantalla solo despacha a Sistemas equipos que estan asignados en sucursales. Lo que ya
+// esta en TI (danado, disponible, en soporte) no aparece aca: se da de baja o se devuelve al proveedor
+// en Dar de Baja Activos.
+function ScopeNotice() {
+  return (
+    <div className="mb-4">
+      <Alert tone="info">
+        Esta pantalla es para devolver a <strong>Sistemas</strong> los equipos asignados en sucursales, de cualquier
+        tipo (ACT, ARR o SRV). Solo lista equipos asignados: los que ya están en Sistemas (dañados, disponibles o en
+        soporte) no aparecen aquí y se procesan en <strong>Dar de Baja Activos</strong>, donde los ACT se dan de baja
+        y los arriendos o servicios (ARR/SRV) se devuelven a su proveedor.
+      </Alert>
+    </div>
   );
 }
 

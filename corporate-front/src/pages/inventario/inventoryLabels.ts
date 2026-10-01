@@ -19,6 +19,7 @@ const STATUS_LABELS: Record<string, string> = {
   RETURNED: "Devolución",
   DEVALUATED: "Devaluado",
   MOVE_TO_RETURNED: "En tránsito a devolución",
+  RETURNED_TO_SUPPLIER: "Devuelto a proveedor",
 };
 
 export function statusLabel(code: string | null): string {

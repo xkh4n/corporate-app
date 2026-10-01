@@ -9,7 +9,8 @@ export type AssetMovementType =
   | "MOVE_TO_RETURNED"
   | "SUPPORT_TO_HOLDER"
   | "SUPPORT_TO_STOCK"
-  | "WRITTEN_OFF";
+  | "WRITTEN_OFF"
+  | "RETURNED_TO_SUPPLIER";
 
 export interface AssetMovementUser {
   id: number;
@@ -136,10 +137,26 @@ export interface DecommissionAssetInput {
   photo: File;
 }
 
+// Devolucion al proveedor de un arriendo o servicio (plan 018). Multipart, foto opcional.
+export type SupplierReturnReason = "END_OF_CONTRACT" | "FAILURE" | "REPLACEMENT" | "OTHER";
+
+export interface ReturnToSupplierInput {
+  assetId: number;
+  reason: SupplierReturnReason;
+  detail?: string;
+  // YYYY-MM-DD
+  paymentExitDate: string;
+  supplierDocument?: string;
+  photo?: File;
+}
+
+// flow (plan 018): ACCOUNTING = tag ACT (baja que sigue a Baja Contable); SUPPLIER_RETURN = arriendo o
+// servicio, se devuelve a su proveedor sin proceso contable.
 export interface DecommissionCheck {
   assetId: number;
   tag: string;
   serialNumber: string | null;
+  flow: "ACCOUNTING" | "SUPPLIER_RETURN";
   statusCode: string;
   statusName: string;
   costCenter: AssignmentCostCenter | null;

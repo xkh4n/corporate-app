@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { QueryTypes, type Transaction } from "sequelize";
 import { postgres } from "../../databases/postgres/connection";
+import { ACCOUNTING_TAG_LIKE, isAccountingTag } from "../../library/assetTag";
 import { BadRequestError, ConflictError, NotFoundError } from "../../library/errors";
 import { currentDate } from "../../library/depreciation";
 import {
@@ -117,7 +118,7 @@ const ELIGIBLE_FROM = `
   JOIN assets a ON a.id = aa.asset_id
   JOIN asset_statuses s ON s.id = a.status_id
   LEFT JOIN cost_centers cc ON cc.id = a.cost_center_id
- WHERE s.code = 'DECOMMISSIONED' AND aa.stage <> 'WRITTEN_OFF'
+ WHERE s.code = 'DECOMMISSIONED' AND aa.stage <> 'WRITTEN_OFF' AND a.tag LIKE '${ACCOUNTING_TAG_LIKE}'
 `;
 
 const ASSET_COLUMNS = `
@@ -573,7 +574,10 @@ export async function confirmWriteOff(id: number, userId: number): Promise<Write
       { replacements: { id, assetIds }, type: QueryTypes.SELECT, transaction },
     );
 
-    const notEligible = current.filter((row) => row.statusCode !== "DECOMMISSIONED" || row.stage === "WRITTEN_OFF");
+    // Plan 018 (revision B1): un borrador armado antes del plan puede traer un arriendo/servicio.
+    const notEligible = current.filter(
+      (row) => row.statusCode !== "DECOMMISSIONED" || row.stage === "WRITTEN_OFF" || !isAccountingTag(row.tag),
+    );
     if (notEligible.length > 0 || current.length !== assetIds.length) {
       throw new ConflictError(
         `Hay activos que ya no se pueden dar de baja (dados de baja en otra baja o reactivados): ${notEligible
