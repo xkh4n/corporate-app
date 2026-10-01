@@ -49,7 +49,8 @@ export type InvalidationReason =
   | "password_changed"
   | "deactivated"
   | "logout"
-  | "role_deactivated";
+  | "role_deactivated"
+  | "mfa_reset";
 
 export interface UserInvalidation {
   validAfter: number; // epoch seconds

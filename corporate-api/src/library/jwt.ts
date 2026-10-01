@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { randomUUID } from "node:crypto";
 import { env } from "./env";
 import { readSecretFromEnv } from "./secrets";
 import type { JwtPayload } from "../types/auth.types";
@@ -19,8 +20,10 @@ type BasePayload = Omit<JwtPayload, "type" | "jti">;
 // de cambiar en silencio. Fijarlo aca no depende de ese default.
 const JWT_ALGORITHM = "HS256";
 
+// jti aleatorio tambien en el access token (plan 017): dos tokens emitidos en el mismo segundo con
+// el mismo payload salian identicos, y el step-up de MFA se ata al token (library/mfa/stepUpScope.ts).
 export function signAccessToken(payload: BasePayload): string {
-  const body: JwtPayload = { ...payload, type: "access" };
+  const body: JwtPayload = { ...payload, type: "access", jti: randomUUID() };
   return jwt.sign(body, accessSecret, { expiresIn: env.jwt.accessTtlSeconds, algorithm: JWT_ALGORITHM });
 }
 

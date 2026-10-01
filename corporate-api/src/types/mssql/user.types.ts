@@ -9,6 +9,9 @@ export interface UserAttributes {
   isActive: boolean;
   lastLoginAt: Date | null;
   mustChangePassword: boolean;
+  mfaTotpSecretEnc: string | null;
+  mfaEmailEnabled: boolean;
+  mfaEnrolledAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -23,8 +26,9 @@ export type UserUpdateAttributes = Partial<
   Pick<UserAttributes, "roleId" | "username" | "isActive">
 >;
 
-// Forma segura para respuestas HTTP: nunca se serializa passwordHash.
-export type SafeUser = Omit<UserAttributes, "passwordHash">;
+// Forma segura para respuestas HTTP: nunca se serializa passwordHash ni el secreto TOTP (aunque
+// vaya cifrado). Solo se expone si el usuario tiene TOTP activo.
+export type SafeUser = Omit<UserAttributes, "passwordHash" | "mfaTotpSecretEnc"> & { mfaTotpEnabled: boolean };
 
 export interface UserWithPerson extends UserAttributes {
   person: PersonAttributes;
