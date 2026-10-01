@@ -75,7 +75,7 @@ case "$servicio" in
 esac
 
 # Lista de comandos validos que requieren ambiente
-valid_services=(bdd mongokey monitoring backend mailer frontend)
+valid_services=(bdd mongokey monitoring backend mailer frontend cloud)
 
 is_valid_service=0
 for s in "${valid_services[@]}"; do
@@ -97,6 +97,7 @@ if [ "$is_valid_service" -eq 0 ]; then
     echo "  - backend <ambiente>    - Levantar servicios backend"
     echo "  - mailer <ambiente>     - Levantar servicio de envio de correo"
     echo "  - frontend <ambiente>   - Levantar servicios frontend"
+    echo "  - cloud <ambiente>      - Exponer el frontend con un tunel de cloudflared (Ctrl+C cierra)"
     echo ""
     echo "Git / Pull Requests (requieren gh con sesion, ver README):"
     echo "  - gitpush <dev|testing> [msg] - commit (si hay cambios) + push de esa rama"
@@ -230,6 +231,11 @@ case "$servicio" in
             docker network create --driver bridge --internal --subnet "${net_base}.13.0/24" "$frontapi_net"
         fi
         "$SCRIPT_DIR/corporate-scripts/frontend.sh" "$ambiente"
+        ;;
+    cloud)
+        # Quick Tunnel de Cloudflare hacia el frontend del ambiente. IP y puerto salen de
+        # corporate-secrets (ALLOCATED_IP, FRONT_SSL_PORT); ver corporate-scripts/cloud-tunnel.sh.
+        "$SCRIPT_DIR/corporate-scripts/cloud-tunnel.sh" "$ambiente"
         ;;
 esac
 
