@@ -34,7 +34,15 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): voi
   unauthorizedHandler = handler;
 }
 
-const SILENT_401_PATHS = new Set(["/auth/me", "/auth/login"]);
+// Plan 017: el login a medio camino responde 401 a un codigo erroneo o vencido: es parte del flujo
+// de inicio de sesion, no una sesion que se cae.
+const SILENT_401_PATHS = new Set([
+  "/auth/me",
+  "/auth/login",
+  "/auth/mfa/verify",
+  "/auth/mfa/email/send",
+  "/auth/mfa/webauthn/options",
+]);
 
 // Cubre las dos formas de error que emite el backend: la estandar
 // {codigo, message, details?} de errorHandler.ts, y la del rate limiter de

@@ -120,7 +120,7 @@ http {
             add_header X-Frame-Options "DENY" always;
             add_header X-Content-Type-Options "nosniff" always;
             add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-            add_header Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=()" always;
+            add_header Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=(), publickey-credentials-get=(self), publickey-credentials-create=(self)" always;
             # unsafe-eval/unsafe-inline: los necesita el propio Vite dev
             # server para el cliente de HMR y la inyeccion de <style> en
             # caliente -no aplica al futuro build de produccion servido

@@ -3,7 +3,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
 import { SidebarMenu } from "../components/SidebarMenu";
 import { NotificationBell } from "../components/NotificationBell";
-import { IoLogOutOutline } from "react-icons/io5";
+import { IoLogOutOutline, IoShieldCheckmark, IoShieldOutline } from "react-icons/io5";
 import logo from "../assets/imperial_white.png";
 
 function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }) {
@@ -31,6 +31,9 @@ function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }
 
 function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const { user, logout } = useAuth();
+  const shieldLabel = user?.mfaEnrolled
+    ? "Seguridad de mi cuenta: segundo factor activo"
+    : "Seguridad de mi cuenta: segundo factor sin activar";
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center gap-2 border-b border-slate-200 bg-blue-950 px-2 sm:gap-3 sm:px-4">
@@ -51,6 +54,19 @@ function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
       </p>
       <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-3">
         <NotificationBell />
+        {/* Verde con segundo factor activo, rojo sin el (plan 017). */}
+        <NavLink
+          to="/account/security"
+          aria-label={shieldLabel}
+          title={shieldLabel}
+          className="rounded-md p-2 hover:bg-white/10"
+        >
+          {user?.mfaEnrolled ? (
+            <IoShieldCheckmark className="h-6 w-6 text-emerald-400" aria-hidden />
+          ) : (
+            <IoShieldOutline className="h-6 w-6 text-red-400" aria-hidden />
+          )}
+        </NavLink>
         <button
           type="button"
           onClick={() => void logout()}

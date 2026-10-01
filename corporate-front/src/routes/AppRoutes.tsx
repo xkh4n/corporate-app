@@ -5,6 +5,8 @@ import { ProtectedRoute } from "./ProtectedRoute";
 import { AppLayout } from "../layouts/AppLayout";
 import { LoginPage } from "../pages/login/LoginPage";
 import { ChangePasswordPage } from "../pages/login/ChangePasswordPage";
+import { MfaEnrollPage } from "../pages/login/MfaEnrollPage";
+import { AccountSecurityPage } from "../pages/cuenta/AccountSecurityPage";
 import { DashboardPage } from "../pages/dashboard/DashboardPage";
 import { ModulePlaceholder } from "../pages/module-placeholder/ModulePlaceholder";
 import { ForbiddenPage } from "../pages/forbidden/ForbiddenPage";
@@ -144,10 +146,16 @@ const MODULE_PAGES: Record<string, () => ReactElement> = {
 // Va DESPUES de ProtectedRoute (ya exige sesion) y ANTES de AppLayout: nunca
 // se llega a montar el sidebar/menu con una cuenta que todavia debe cambiar
 // su password.
+//
+// Plan 017: mismo criterio para el segundo factor obligatorio todavia sin enrolar (despues del
+// cambio de password: con la password temporal la API no deja enrolar).
 function MustChangePasswordGate() {
   const { user } = useAuth();
   if (user?.mustChangePassword) {
     return <Navigate to="/change-password" replace />;
+  }
+  if (user?.mfaEnrollmentRequired) {
+    return <Navigate to="/mfa/enroll" replace />;
   }
   return <Outlet />;
 }
@@ -170,11 +178,14 @@ export function AppRoutes() {
         {/* Fuera del gate a proposito: si no fuera alcanzable durante
             mustChangePassword:true, nadie podria completar el cambio. */}
         <Route path="/change-password" element={<ChangePasswordPage />} />
+        <Route path="/mfa/enroll" element={<MfaEnrollPage />} />
 
         <Route element={<MustChangePasswordGate />}>
           <Route element={<AppLayout />}>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/403" element={<ForbiddenPage />} />
+            {/* Autoservicio de cada usuario sobre su propia cuenta: no depende del menu ni de permisos. */}
+            <Route path="/account/security" element={<AccountSecurityPage />} />
             {/* "Nueva Solicitud" se retiro (plan 010): la solicitud de compra nace en el portal junto con su
                 ticket. Los enlaces viejos llegan a Generar Ticket con la solicitud de equipo elegida; sin
                 acceso a esa pantalla, el catch-all de siempre (403). */}

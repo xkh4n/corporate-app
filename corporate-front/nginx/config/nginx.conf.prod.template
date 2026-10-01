@@ -98,7 +98,7 @@ http {
             add_header X-Frame-Options "DENY" always;
             add_header X-Content-Type-Options "nosniff" always;
             add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-            add_header Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=()" always;
+            add_header Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=(), publickey-credentials-get=(self), publickey-credentials-create=(self)" always;
             # Sin unsafe-inline/unsafe-eval: el build de produccion de Vite
             # no los necesita (ese relajo era solo para el cliente de HMR del
             # dev server, ver nginx.conf.template). connect-src 'self' cubre

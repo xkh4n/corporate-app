@@ -2,12 +2,14 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { apiFetch, setUnauthorizedHandler } from "../lib/apiClient";
 import type { AuthUser, LoginResponse, MeResponse, PermissionKey } from "../types/auth";
 import type { MenuNode, MenuResponse } from "../types/menu";
+import type { MfaChallenge } from "../types/mfa";
 import { AuthContext, type AuthContextValue, type AuthStatus } from "./context";
 
 // Espeja INVALIDATION_MESSAGES de corporate-api/src/middlewares/authenticate.ts.
 const SESSION_INVALIDATION_MESSAGES: Record<string, string> = {
   role_changed: "Su sesion expiro porque se actualizo su rol. Inicie sesion nuevamente.",
   password_changed: "Su sesion expiro porque se actualizo su contraseña. Inicie sesion nuevamente.",
+  mfa_reset: "Su sesion expiro porque se restablecio su segundo factor. Inicie sesion nuevamente.",
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -52,11 +54,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void loadMe();
   }, [loadMe]);
 
-  const login = useCallback(async (username: string, password: string) => {
+  const login = useCallback(async (username: string, password: string): Promise<MfaChallenge | null> => {
     // accessToken/refreshToken del body se descartan a proposito: el
     // transporte de sesion es la cookie que el backend ya seteo en esta
     // misma respuesta (ver corporate-api/src/controllers/auth.controller.ts).
-    await apiFetch<LoginResponse>("/auth/login", { method: "POST", body: { username, password } });
+    const result = await apiFetch<LoginResponse>("/auth/login", { method: "POST", body: { username, password } });
+    setSessionNotice(null);
+    // Plan 017: la password sola no inicio sesion; LoginPage pide el segundo factor.
+    if (result.next === "EMAIL_VERIFY" || result.next === "MFA") {
+      return { stage: result.next, methods: result.methods ?? [] };
+    }
+    await loadMe();
+    return null;
+  }, [loadMe]);
+
+  const completeMfaLogin = useCallback(async () => {
     setSessionNotice(null);
     await loadMe();
   }, [loadMe]);
@@ -120,6 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     menu,
     sessionNotice,
     login,
+    completeMfaLogin,
     logout,
     changePassword,
     can,
