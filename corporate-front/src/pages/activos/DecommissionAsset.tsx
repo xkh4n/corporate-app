@@ -6,14 +6,17 @@ import { showErrorToast, showSuccessToast } from "../../components/Toast";
 import { handleError } from "../../lib/Errors";
 import { assetMovementService, assetService } from "../../services";
 import type { Asset } from "../../types";
-import type { DecommissionCheck, DecommissionReason } from "../../types/assetMovement";
+import type { DecommissionCheck, DecommissionReason, SupplierReturnReason } from "../../types/assetMovement";
 
 // Dar de Baja Activos (plan 012): baja operativa centralizada. Solo activos que
-// estan en TI y ya clasificados contablemente (sin clasificacion nunca podrian
-// ir a Baja Contable). El motivo queda en el movimiento y en el Kardex.
+// estan en TI. Plan 018: segun el tag hay dos caminos:
+//  - ACT (compra): baja con motivo y foto, exige clasificacion contable y sigue a Baja Contable.
+//  - ARR/SRV (arriendo o servicio): se devuelve a su proveedor y sale del estado de pago, sin
+//    proceso contable. Foto opcional.
 const REQUIRED_PERMISSIONS = ["assets:read", "asset-decommissions:create"] as const;
 const DECOMMISSIONABLE_STATUS_CODES = ["RETURNED", "SUPPORT", "DAMAGED", "AVAILABLE", "RECEIVED"];
 const HELD_STATUS_CODES = ["ASSIGNED", "DEVALUATED"];
+const ACCOUNTING_TAG_PREFIX = "ACT";
 
 const REASON_OPTIONS: { value: DecommissionReason; label: string }[] = [
   { value: "OBSOLESCENCE", label: "Obsolescencia" },
@@ -22,11 +25,30 @@ const REASON_OPTIONS: { value: DecommissionReason; label: string }[] = [
   { value: "OTHER", label: "Otro" },
 ];
 
+const SUPPLIER_REASON_OPTIONS: { value: SupplierReturnReason; label: string }[] = [
+  { value: "END_OF_CONTRACT", label: "Término de contrato" },
+  { value: "FAILURE", label: "Falla / daño" },
+  { value: "REPLACEMENT", label: "Recambio de equipo" },
+  { value: "OTHER", label: "Otro" },
+];
+
 const CLASSIFICATION_LABEL: Record<string, string> = { FIXED_ASSET: "Activo fijo", EXPENSE: "Gasto" };
 
 // Plan 013: foto obligatoria, la misma que luego usa Baja Contable. Mismo tope que la API.
 const PHOTO_TYPES = ["image/jpeg", "image/png"];
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+
+// Un arriendo/servicio con una baja de antes del plan 018 ya no puede ir a Baja Contable: se devuelve al proveedor.
+function canProcess(asset: Asset): boolean {
+  if (DECOMMISSIONABLE_STATUS_CODES.includes(asset.status.code)) return true;
+  return asset.status.code === "DECOMMISSIONED" && !asset.tag.startsWith(ACCOUNTING_TAG_PREFIX);
+}
+
+function today(): string {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60_000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+}
 
 function notDecommissionableMessage(found: Asset[]): string {
   if (found.length === 0) return "No se encontró ningún activo con ese criterio";
@@ -50,12 +72,17 @@ export default function DecommissionAsset() {
   const [candidates, setCandidates] = useState<Asset[]>([]);
   const [check, setCheck] = useState<DecommissionCheck | null>(null);
   const [reason, setReason] = useState<DecommissionReason | "">("");
+  const [supplierReason, setSupplierReason] = useState<SupplierReturnReason | "">("");
+  const [paymentExitDate, setPaymentExitDate] = useState(today);
+  const [supplierDocument, setSupplierDocument] = useState("");
   const [detail, setDetail] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const supplierFlow = check?.flow === "SUPPLIER_RETURN";
 
   useEffect(() => {
     if (!photo) {
@@ -82,6 +109,9 @@ export default function DecommissionAsset() {
     setCheck(null);
     setCandidates([]);
     setReason("");
+    setSupplierReason("");
+    setPaymentExitDate(today());
+    setSupplierDocument("");
     setDetail("");
     setPhoto(null);
     setConfirming(false);
@@ -105,7 +135,7 @@ export default function DecommissionAsset() {
     setSearching(true);
     try {
       const res = await assetService.list({ search: query, limit: 10 });
-      const found = res.items.filter((asset) => DECOMMISSIONABLE_STATUS_CODES.includes(asset.status.code));
+      const found = res.items.filter(canProcess);
       if (found.length === 0) {
         showErrorToast(notDecommissionableMessage(res.items));
         setCandidates([]);
@@ -123,16 +153,34 @@ export default function DecommissionAsset() {
     }
   }
 
-  const detailRequired = reason === "OTHER";
+  const selectedReason = supplierFlow ? supplierReason : reason;
+  const detailRequired = selectedReason === "OTHER";
   const canSubmit =
-    check?.eligible === true && reason !== "" && (!detailRequired || detail.trim() !== "") && photo !== null;
+    check?.eligible === true &&
+    selectedReason !== "" &&
+    (!detailRequired || detail.trim() !== "") &&
+    (supplierFlow ? paymentExitDate !== "" : photo !== null);
 
-  async function handleDecommission(): Promise<void> {
-    if (!check || !canSubmit || !photo) return;
+  async function handleSubmit(): Promise<void> {
+    if (!check || !canSubmit) return;
     setSaving(true);
     try {
-      await assetMovementService.decommission({ assetId: check.assetId, reason, detail: detail.trim() || undefined, photo });
-      showSuccessToast(`Activo ${check.tag} dado de baja: queda Pendiente de baja contable.`);
+      if (supplierFlow) {
+        if (supplierReason === "") return;
+        await assetMovementService.returnToSupplier({
+          assetId: check.assetId,
+          reason: supplierReason,
+          paymentExitDate,
+          detail: detail.trim() || undefined,
+          supplierDocument: supplierDocument.trim() || undefined,
+          photo: photo ?? undefined,
+        });
+        showSuccessToast(`Activo ${check.tag} devuelto a su proveedor: sale del estado de pago el ${paymentExitDate}.`);
+      } else {
+        if (reason === "" || !photo) return;
+        await assetMovementService.decommission({ assetId: check.assetId, reason, detail: detail.trim() || undefined, photo });
+        showSuccessToast(`Activo ${check.tag} dado de baja: queda Pendiente de baja contable.`);
+      }
       setSearch("");
       reset();
     } catch (error) {
@@ -157,7 +205,7 @@ export default function DecommissionAsset() {
                     <Input
                       id="assetSearch"
                       value={search}
-                      placeholder="Ej: ARR000000001"
+                      placeholder="Ej: ACT000000001"
                       onChange={(e) => setSearch(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && void handleSearch()}
                       className="bg-zinc-100 focus:bg-indigo-100"
@@ -201,7 +249,7 @@ export default function DecommissionAsset() {
                   <div className="mt-4">
                     <EmptyState
                       title="Busca un activo para empezar"
-                      description="Solo se dan de baja activos que están en TI (devueltos, en soporte, dañados o disponibles) y ya clasificados contablemente."
+                      description="Solo se procesan activos que están en Sistemas (devueltos, en soporte, dañados o disponibles). Los ACT se dan de baja y pasan a Contabilidad; los arriendos y servicios (ARR/SRV) se devuelven a su proveedor."
                     />
                   </div>
                 )}
@@ -218,34 +266,87 @@ export default function DecommissionAsset() {
                     <p className="text-sm text-slate-600">
                       Centro de costo: {check.costCenter ? `${check.costCenter.code} - ${check.costCenter.name}` : "Sin centro de costo"}
                     </p>
-                    <p className="text-sm text-slate-600">
-                      Clasificación contable:{" "}
-                      {check.classification ? (CLASSIFICATION_LABEL[check.classification] ?? check.classification) : "Sin clasificar"}
-                    </p>
+                    {!supplierFlow && (
+                      <p className="text-sm text-slate-600">
+                        Clasificación contable:{" "}
+                        {check.classification ? (CLASSIFICATION_LABEL[check.classification] ?? check.classification) : "Sin clasificar"}
+                      </p>
+                    )}
                   </div>
                   <Button type="button" variant="ghost" onClick={reset}>
                     Cambiar
                   </Button>
                 </div>
 
+                <div className="mb-4">
+                  {supplierFlow ? (
+                    <Alert tone="info">
+                      <strong>Arriendo o servicio:</strong> se devuelve a su proveedor y sale del estado de pago en la
+                      fecha indicada. No pasa por Contabilidad.
+                    </Alert>
+                  ) : (
+                    <Alert tone="info">
+                      <strong>Activo contable (ACT):</strong> queda Pendiente de baja contable y Contabilidad lo da de
+                      baja definitivamente en Baja Contable.
+                    </Alert>
+                  )}
+                </div>
+
                 {check.blockReason ? (
                   <Alert tone="warning">{check.blockReason}</Alert>
                 ) : (
                   <div className="grid grid-cols-1 gap-4">
-                    <Field label="Motivo de la baja" htmlFor="reason">
-                      <Select id="reason" value={reason} onChange={(e) => setReason(e.target.value as DecommissionReason | "")}>
-                        <option value="">Seleccione un motivo</option>
-                        {REASON_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
+                    {supplierFlow ? (
+                      <>
+                        <Field label="Motivo de la devolución" htmlFor="supplierReason">
+                          <Select
+                            id="supplierReason"
+                            value={supplierReason}
+                            onChange={(e) => setSupplierReason(e.target.value as SupplierReturnReason | "")}
+                          >
+                            <option value="">Seleccione un motivo</option>
+                            {SUPPLIER_REASON_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </Select>
+                        </Field>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <Field label="Sale del estado de pago el" htmlFor="paymentExitDate">
+                            <Input
+                              id="paymentExitDate"
+                              type="date"
+                              value={paymentExitDate}
+                              onChange={(e) => setPaymentExitDate(e.target.value)}
+                            />
+                          </Field>
+                          <Field label="N° de guía o acta del proveedor (opcional)" htmlFor="supplierDocument">
+                            <Input
+                              id="supplierDocument"
+                              value={supplierDocument}
+                              maxLength={50}
+                              onChange={(e) => setSupplierDocument(e.target.value)}
+                            />
+                          </Field>
+                        </div>
+                      </>
+                    ) : (
+                      <Field label="Motivo de la baja" htmlFor="reason">
+                        <Select id="reason" value={reason} onChange={(e) => setReason(e.target.value as DecommissionReason | "")}>
+                          <option value="">Seleccione un motivo</option>
+                          {REASON_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                    )}
                     <Field label={detailRequired ? "Detalle (obligatorio)" : "Detalle (opcional)"} htmlFor="detail">
                       <Textarea id="detail" value={detail} maxLength={200} rows={2} onChange={(e) => setDetail(e.target.value)} />
                     </Field>
-                    <Field label="Foto del activo (obligatoria)" htmlFor="photo">
+                    <Field label={supplierFlow ? "Foto del activo (opcional)" : "Foto del activo (obligatoria)"} htmlFor="photo">
                       <div className="flex flex-wrap items-center gap-3">
                         {photoPreview && (
                           <img
@@ -257,6 +358,11 @@ export default function DecommissionAsset() {
                         <Button type="button" variant="secondary" onClick={() => photoInputRef.current?.click()}>
                           {photo ? "Cambiar foto" : "Tomar o subir foto"}
                         </Button>
+                        {photo && supplierFlow && (
+                          <Button type="button" variant="ghost" onClick={() => setPhoto(null)}>
+                            Quitar foto
+                          </Button>
+                        )}
                         <input
                           ref={photoInputRef}
                           id="photo"
@@ -283,7 +389,7 @@ export default function DecommissionAsset() {
                     Cancelar
                   </Button>
                   <Button type="button" disabled={!canSubmit} onClick={() => setConfirming(true)} className="sm:w-60">
-                    Dar de baja
+                    {supplierFlow ? "Devolver al proveedor" : "Dar de baja"}
                   </Button>
                 </div>
               </>
@@ -293,23 +399,30 @@ export default function DecommissionAsset() {
 
         <Modal
           open={confirming && check !== null}
-          title={check ? `Dar de baja ${check.tag}` : ""}
+          title={check ? `${supplierFlow ? "Devolver al proveedor" : "Dar de baja"} ${check.tag}` : ""}
           onClose={() => setConfirming(false)}
           footer={
             <>
               <Button type="button" variant="secondary" onClick={() => setConfirming(false)}>
                 Cancelar
               </Button>
-              <Button type="button" loading={saving} onClick={() => void handleDecommission()}>
-                Confirmar baja
+              <Button type="button" loading={saving} onClick={() => void handleSubmit()}>
+                {supplierFlow ? "Confirmar devolución" : "Confirmar baja"}
               </Button>
             </>
           }
         >
-          <p className="text-sm text-slate-700">
-            El activo queda <strong>Pendiente de baja contable</strong> y su Kardex en cero. Contabilidad lo da de baja
-            definitivamente en Baja Contable (de a uno o por lote), con la foto que adjunta aquí.
-          </p>
+          {supplierFlow ? (
+            <p className="text-sm text-slate-700">
+              El activo queda <strong>Devuelto a proveedor</strong>, de forma definitiva, y su Kardex en cero. Sale del
+              estado de pago el <strong>{paymentExitDate}</strong>. No pasa por Contabilidad.
+            </p>
+          ) : (
+            <p className="text-sm text-slate-700">
+              El activo queda <strong>Pendiente de baja contable</strong> y su Kardex en cero. Contabilidad lo da de baja
+              definitivamente en Baja Contable (de a uno o por lote), con la foto que adjunta aquí.
+            </p>
+          )}
         </Modal>
       </div>
     </RequirePermissions>

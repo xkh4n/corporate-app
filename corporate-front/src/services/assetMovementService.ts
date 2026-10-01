@@ -11,6 +11,7 @@ import type {
   DecommissionAssetInput,
   DecommissionCheck,
   ReassignAssetInput,
+  ReturnToSupplierInput,
 } from "../types/assetMovement";
 import type { SafeUser } from "../types/user";
 
@@ -50,5 +51,16 @@ export const assetMovementService = {
     if (input.detail) form.append("detail", input.detail);
     form.append("photo", input.photo);
     return apiFetch<AssetMovement>("/asset-movements/decommission", { method: "POST", body: form });
+  },
+  // Plan 018: arriendo/servicio devuelto a su proveedor (sin Contabilidad).
+  returnToSupplier: (input: ReturnToSupplierInput) => {
+    const form = new FormData();
+    form.append("assetId", String(input.assetId));
+    form.append("reason", input.reason);
+    form.append("paymentExitDate", input.paymentExitDate);
+    if (input.detail) form.append("detail", input.detail);
+    if (input.supplierDocument) form.append("supplierDocument", input.supplierDocument);
+    if (input.photo) form.append("photo", input.photo);
+    return apiFetch<AssetMovement>("/asset-movements/supplier-return", { method: "POST", body: form });
   },
 };

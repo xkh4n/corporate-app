@@ -25,7 +25,7 @@ import { recordAccountingEntry } from "./assetKardex.service";
 
 const CLOSE_LOCK_KEY = "asset-depreciation-close";
 // Un activo dado de baja deja de depreciarse (su saldo ya se llevo a 0).
-const NOT_DEPRECIABLE_STATUS_CODES = ["DECOMMISSIONED", "WRITTEN_OFF", "DEVALUATED"];
+const NOT_DEPRECIABLE_STATUS_CODES = ["DECOMMISSIONED", "WRITTEN_OFF", "DEVALUATED", "RETURNED_TO_SUPPLIER"];
 
 export interface DepreciationRun {
   id: number;
@@ -67,7 +67,7 @@ const RUN_COLUMNS = `
 // Depreciacion acumulada de un activo: solo cuentan los cierres CLOSED (un
 // cierre anulado ya se reverso en el Kardex).
 // Estados operativos de un activo que ya salio de servicio.
-const DERECOGNIZED_STATUS_CODES = ["DECOMMISSIONED", "WRITTEN_OFF", "DEVALUATED"];
+const DERECOGNIZED_STATUS_CODES = ["DECOMMISSIONED", "WRITTEN_OFF", "DEVALUATED", "RETURNED_TO_SUPPLIER"];
 
 export const ACCUMULATED_SQL = `
   COALESCE((SELECT SUM(e.amount) FROM asset_depreciation_entries e

@@ -73,6 +73,34 @@ export const decommissionAssetSchema = z
     path: ["detail"],
   });
 
+// Revision plan 018 (B2): Date.parse acepta 2026-02-31 (lo corre al 3 de marzo) y Postgres lo rechaza con un 500.
+function isRealIsoDate(value: string): boolean {
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+const PAYMENT_EXIT_MAX_OFFSET_MS = 366 * 24 * 60 * 60 * 1000;
+
+// Devolucion al proveedor (plan 018): multipart con foto opcional.
+export const returnToSupplierSchema = z
+  .object({
+    assetId: z.coerce.number().int().positive(),
+    reason: z.enum(["END_OF_CONTRACT", "FAILURE", "REPLACEMENT", "OTHER"]),
+    detail: z.string().trim().max(200).optional(),
+    paymentExitDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha invalida")
+      .refine(isRealIsoDate, "Fecha invalida")
+      .refine(
+        (value) => Math.abs(Date.parse(`${value}T00:00:00Z`) - Date.now()) <= PAYMENT_EXIT_MAX_OFFSET_MS,
+        "La fecha de salida del estado de pago debe estar dentro de un año desde hoy",
+      ),
+    supplierDocument: z.string().trim().max(50).optional(),
+  })
+  .refine((data) => data.reason !== "OTHER" || Boolean(data.detail), {
+    message: "Indique el detalle del motivo de la devolución",
+    path: ["detail"],
+  });
+
 const assignmentFiltersSchema = z.object({
   costCenterId: z.coerce.number().int().positive().optional(),
   categoryId: z.string().max(24).optional(),
@@ -192,6 +220,20 @@ export async function decommission(req: Request, res: Response, next: NextFuncti
       createdBy: req.user?.userId,
     });
     sendOk(res, movement, "Activo dado de baja: queda pendiente de baja contable", 201);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function returnToSupplier(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const body = req.body as z.infer<typeof returnToSupplierSchema>;
+    const movement = await assetMovementService.returnAssetToSupplier({
+      ...body,
+      photo: req.file,
+      createdBy: req.user?.userId,
+    });
+    sendOk(res, movement, "Activo devuelto a su proveedor", 201);
   } catch (err) {
     next(err);
   }

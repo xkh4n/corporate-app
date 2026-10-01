@@ -142,11 +142,29 @@ export interface DecommissionAssetInput {
   createdBy?: number | null;
 }
 
+// Devolucion al proveedor de un arriendo o servicio (plan 018). La foto es opcional.
+export type SupplierReturnReason = "END_OF_CONTRACT" | "FAILURE" | "REPLACEMENT" | "OTHER";
+
+export interface ReturnToSupplierInput {
+  assetId: number;
+  reason: SupplierReturnReason;
+  detail?: string | null;
+  // YYYY-MM-DD: desde cuando el proveedor deja de cobrarlo.
+  paymentExitDate: string;
+  // N° de guia o acta de retiro del proveedor.
+  supplierDocument?: string | null;
+  photo?: DecommissionPhotoFile;
+  createdBy?: number | null;
+}
+
 // Lo que la pantalla necesita para decidir si se puede dar de baja y por que no.
+// flow (plan 018): ACCOUNTING = tag ACT, baja operativa que sigue a Baja Contable;
+// SUPPLIER_RETURN = arriendo/servicio, se devuelve al proveedor sin proceso contable.
 export interface DecommissionCheck {
   assetId: number;
   tag: string;
   serialNumber: string | null;
+  flow: "ACCOUNTING" | "SUPPLIER_RETURN";
   statusCode: string;
   statusName: string;
   costCenter: AssignmentCostCenter | null;

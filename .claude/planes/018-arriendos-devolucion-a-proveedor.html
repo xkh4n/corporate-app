@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>018 — Arriendos y servicios: devolución al proveedor, sin Contabilidad</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:900px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.5rem; font-size:1.25rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  h3 { margin-top:1.6rem; font-size:1.05rem; }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }
+  th, td { border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 018</span>
+  <h1>Arriendos y servicios: devolución al proveedor, sin Contabilidad</h1>
+  <div class="meta">corporate-app · corporate-api + corporate-front · Estado: aprobado · 2026-10-01</div>
+</header>
+
+<h2>Contexto</h2>
+<p>En producción se dio de alta desde la toma de inventario el equipo de serie <code>MJ08EZSG</code>, en estado «Dañado». Es un equipo en arriendo y hay que devolverlo al proveedor.</p>
+<ul>
+<li><strong>Devoluciones de Activos</strong> no lo muestra, ni filtrando por centro de costo (1110) ni buscando por serie. Es lo esperado: esa pantalla solo despacha a Sistemas equipos <em>asignados</em> en sucursales, y este ya está en Sistemas. Faltaba un mensaje que lo explicara.</li>
+<li><strong>Dar de Baja Activos</strong> sí lo encuentra. Pero toda baja exigía clasificación contable y terminaba en Baja Contable.</li>
+</ul>
+<p>Pedido del usuario: solo lo que tiene etiqueta <code>ACT</code> va a Contabilidad. Los arriendos se devuelven al proveedor sin otro proceso contable que su salida del estado de pago.</p>
+
+<h2>Decisiones del usuario</h2>
+<ul>
+<li><strong>SRV (servicio):</strong> igual que ARR. Se devuelve al proveedor; solo ACT va a Contabilidad.</li>
+<li><strong>Devolución en un paso:</strong> motivo, fecha de salida del estado de pago, N° de guía o acta del proveedor (opcional) y foto (opcional). El activo queda «Devuelto a proveedor», de forma terminal.</li>
+<li><strong>Contabilidad solo con ACT:</strong> Clasificación, Valorización y Baja Contable ocultan y rechazan lo que no es ACT. Lo ya clasificado de ARR/SRV no se borra.</li>
+</ul>
+
+<h2>Cambios — corporate-api</h2>
+<ol>
+<li><code>library/assetTag.ts</code>: <code>isAccountingTag(tag)</code> (prefijo <code>ACT</code>). El prefijo lo fija <code>generateAssetTag</code> según el productType y no cambia nunca.</li>
+<li>Migración:
+  <ul>
+  <li>estado <code>RETURNED_TO_SUPPLIER</code> («Devuelto a proveedor»);</li>
+  <li>tipo de movimiento <code>RETURNED_TO_SUPPLIER</code> en el CHECK;</li>
+  <li>tabla <code>asset_supplier_returns</code> con motivo, detalle, <code>payment_exit_date</code>, <code>supplier_document</code> y una foto opcional, a razón de una fila por activo.</li>
+  </ul></li>
+<li><code>createAssetMovement</code>:
+  <ul>
+  <li><code>RETURNED_TO_SUPPLIER</code> solo vale para un activo no ACT que está en Sistemas, o que tiene una baja anterior a este plan.</li>
+  <li>Es terminal: después no se acepta ningún movimiento.</li>
+  <li>Deja el Kardex en cero (el inventario valorizado; no es un asiento contable), salvo que el activo venga de una baja.</li>
+  </ul></li>
+<li><code>POST /asset-movements/supplier-return</code>:
+  <ul>
+  <li>Usa el mismo permiso que la baja (<code>asset-decommissions:create</code>).</li>
+  <li>Es multipart con foto opcional; la foto se valida por su contenido real.</li>
+  <li>La revisión <code>GET /decommission/:assetId</code> devuelve <code>flow</code>: <code>ACCOUNTING</code> o <code>SUPPLIER_RETURN</code>. Un arriendo no exige clasificación.</li>
+  <li><code>POST /decommission</code> rechaza lo que no es ACT.</li>
+  </ul></li>
+<li>Contabilidad:
+  <ul>
+  <li>los pendientes de clasificar y de valorizar listan solo ACT;</li>
+  <li><code>classify</code> y la valorización rechazan lo que no es ACT;</li>
+  <li>los elegibles de Baja Contable son solo ACT.</li>
+  </ul></li>
+<li>Toma de inventario:
+  <ul>
+  <li>un arriendo o servicio no se declara «Baja», ni existente ni nuevo; se declara «Dañado» y se devuelve en Dar de Baja Activos;</li>
+  <li>un activo devuelto al proveedor se rechaza, con su instrucción;</li>
+  <li>tampoco cuenta como faltante al cerrar la toma.</li>
+  </ul></li>
+</ol>
+
+<h2>Cambios — corporate-front</h2>
+<ul>
+<li><strong>Devoluciones de Activos:</strong> aviso de que la pantalla devuelve a Sistemas los equipos asignados en sucursales. Lo que ya está en Sistemas se procesa en Dar de Baja Activos: los ACT se dan de baja y los ARR/SRV vuelven al proveedor.</li>
+<li><strong>Dar de Baja Activos:</strong> dos caminos según <code>flow</code>.
+  <ul>
+  <li>ACT: igual que antes, con motivo, foto obligatoria y paso a Baja Contable.</li>
+  <li>Arriendo o servicio: motivo propio, fecha de salida del estado de pago (por defecto hoy), N° de guía o acta y foto opcional.</li>
+  </ul></li>
+<li>Etiqueta «Devuelto a proveedor» en los mapas de estados y en el PDF de la toma.</li>
+</ul>
+
+<h2>Verificación</h2>
+<ul>
+<li>API: <code>tsc</code> y pruebas unitarias. Hay casos nuevos en <code>inventoryAssetTransition.unit.test.ts</code>.</li>
+<li>Front: <code>tsc -p tsconfig.app.json</code>, eslint y vitest.</li>
+<li>Migración aplicada en dev sin errores.</li>
+<li><strong>Pendiente:</strong> probar en el navegador con un ARR dañado (el caso <code>MJ08EZSG</code>), redesplegar test y prod, y revisar si hay ARR/SRV ya clasificados o pendientes de baja contable en prod.</li>
+</ul>
+
+<footer class="doc-footer">Copia del plan aprobado en la sesión del 2026-10-01.</footer>
+</div>
+</body>
+</html>

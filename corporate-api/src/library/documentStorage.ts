@@ -47,6 +47,11 @@ export function getAssetDecommissionFolder(assetId: number): string {
   return path.join(UPLOADS_ROOT, "bajas-operativas", String(assetId));
 }
 
+// Foto (opcional) de un arriendo/servicio devuelto a su proveedor (plan 018), en una carpeta por activo.
+export function getAssetSupplierReturnFolder(assetId: number): string {
+  return path.join(UPLOADS_ROOT, "devoluciones-proveedor", String(assetId));
+}
+
 // Adjuntos de un ticket del Service Desk (plan 009). Nombres generados por el servidor.
 export function getServiceTicketFolder(ticketId: number): string {
   return path.join(UPLOADS_ROOT, "tickets", String(ticketId));
