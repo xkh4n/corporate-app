@@ -1,5 +1,6 @@
 import { QueryTypes, type Transaction } from "sequelize";
 import { postgres } from "../../databases/postgres/connection";
+import { ACCOUNTING_TAG_LIKE, isAccountingTag } from "../../library/assetTag";
 import { BadRequestError, ConflictError, NotFoundError } from "../../library/errors";
 import {
   addMonths,
@@ -37,7 +38,8 @@ export type AccountingStage =
 
 // Un activo dado de baja (o devaluado despues de la baja: valor 0, Kardex en
 // cero) no entra al ciclo contable. Mismo criterio que el cierre de depreciacion.
-const EXCLUDED_STATUS_CODES = ["DECOMMISSIONED", "WRITTEN_OFF", "DEVALUATED"];
+// Plan 018: tampoco uno devuelto a su proveedor.
+const EXCLUDED_STATUS_CODES = ["DECOMMISSIONED", "WRITTEN_OFF", "DEVALUATED", "RETURNED_TO_SUPPLIER"];
 // Etapas en que todavia se puede reclasificar o tocar el costo.
 const EDITABLE_STAGES: AccountingStage[] = ["CLASSIFIED", "COSTED"];
 
@@ -136,8 +138,8 @@ export async function listPending(params: PaginationParams): Promise<{ items: Pe
     JOIN asset_statuses s ON s.id = a.status_id
     LEFT JOIN cost_centers cc ON cc.id = a.cost_center_id
     LEFT JOIN asset_accounting aa ON aa.asset_id = a.id
-   WHERE aa.asset_id IS NULL AND s.code NOT IN (:excluded)${search.sql}`;
-  const replacements = { excluded: EXCLUDED_STATUS_CODES, ...search.replacements };
+   WHERE aa.asset_id IS NULL AND s.code NOT IN (:excluded) AND a.tag LIKE :accountingTag${search.sql}`;
+  const replacements = { excluded: EXCLUDED_STATUS_CODES, accountingTag: ACCOUNTING_TAG_LIKE, ...search.replacements };
   const [countRow] = await postgres.query<{ total: number }>(`SELECT COUNT(*)::int AS total ${from}`, {
     replacements,
     type: QueryTypes.SELECT,
@@ -201,6 +203,10 @@ async function lockRecord(assetId: number, transaction: Transaction): Promise<Ac
   if (EXCLUDED_STATUS_CODES.includes(asset.status?.code ?? "")) {
     throw new ConflictError(`El activo ${asset.tag} esta dado de baja: su registro contable no se modifica`);
   }
+  // Plan 018 (revision M1): un arriendo/servicio clasificado antes del plan no avanza de etapa.
+  if (!isAccountingTag(asset.tag)) {
+    throw new ConflictError(`El activo ${asset.tag} es un arriendo o servicio: no pasa por Contabilidad`);
+  }
   return getRecordOrThrow(assetId, transaction);
 }
 
@@ -226,6 +232,10 @@ export async function classify(
     const asset = await getAssetByIdOrThrow(assetId, transaction);
     if (EXCLUDED_STATUS_CODES.includes(asset.status?.code ?? "")) {
       throw new ConflictError(`El activo ${asset.tag} esta dado de baja y no se clasifica`);
+    }
+    // Plan 018: arriendos y servicios no pasan por Contabilidad.
+    if (!isAccountingTag(asset.tag)) {
+      throw new ConflictError(`El activo ${asset.tag} es un arriendo o servicio: no se clasifica contablemente`);
     }
     const existing = await findRecord(assetId, transaction);
     if (existing && !EDITABLE_STAGES.includes(existing.stage)) {

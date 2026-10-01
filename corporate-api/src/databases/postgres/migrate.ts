@@ -128,6 +128,7 @@ async function applyPostgresMigrations(): Promise<void> {
   await migrateAssetReturns();
   await migrateAssetAccounting();
   await migrateAssetWriteOffs();
+  await migrateAssetSupplierReturns();
   await migrateServiceDesk();
   await migrateCommRooms();
   await migrateIntegrityAndIndexes();
@@ -311,7 +312,8 @@ async function migrateAssets(): Promise<void> {
       ('RETURNED', 'Devolución', 'El activo fue devuelto por su usuario y esta pendiente de revision por Soporte TI / Adquisiciones TI'),
       ('DEVALUATED', 'Devaluado', 'Activo dado de baja que se encontro en uso: sigue asignado con valor 0, sin afectar el kardex'),
       ('MOVE_TO_RETURNED', 'En tránsito a devolución', 'El activo fue despachado con guia hacia Adquisiciones TI y aun no ha sido recibido'),
-      ('WRITTEN_OFF', 'De baja', 'Baja contable confirmada: definitiva')
+      ('WRITTEN_OFF', 'De baja', 'Baja contable confirmada: definitiva'),
+      ('RETURNED_TO_SUPPLIER', 'Devuelto a proveedor', 'Arriendo o servicio devuelto a su proveedor: sale del estado de pago, sin proceso contable')
     ON CONFLICT (code) DO NOTHING;
   `);
   // Plan 013: DECOMMISSIONED es la baja operativa, pendiente de la baja contable (que la deja WRITTEN_OFF).
@@ -397,6 +399,8 @@ async function migrateAssets(): Promise<void> {
     'SUPPORT_TO_STOCK',
     // Plan 013: confirmacion de la baja contable (DECOMMISSIONED -> WRITTEN_OFF).
     'WRITTEN_OFF',
+    // Plan 018: arriendo/servicio (tag ARR/SRV) devuelto a su proveedor, sin baja contable.
+    'RETURNED_TO_SUPPLIER',
   ];
   const currentMovementCheck = await postgres.query<{ definition: string }>(
     `SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
@@ -752,6 +756,29 @@ async function migrateAssetWriteOffs(): Promise<void> {
      WHERE aa.asset_id = a.id AND aa.stage = 'WRITTEN_OFF'
        AND s.id = a.status_id AND s.code = 'DECOMMISSIONED';
   `);
+}
+
+// Plan 018: devolucion al proveedor de un arriendo o servicio (tag ARR/SRV). Solo los ACT van a
+// Contabilidad; el resto sale del estado de pago del proveedor en payment_exit_date. Una fila por
+// devolucion (el estado RETURNED_TO_SUPPLIER es terminal). La foto es opcional.
+async function migrateAssetSupplierReturns(): Promise<void> {
+  await runDdl(`
+    CREATE TABLE IF NOT EXISTS asset_supplier_returns (
+      id SERIAL PRIMARY KEY,
+      asset_id INTEGER NOT NULL UNIQUE REFERENCES assets(id),
+      movement_id INTEGER NOT NULL REFERENCES asset_movements(id),
+      reason VARCHAR(20) NOT NULL CHECK (reason IN ('END_OF_CONTRACT','FAILURE','REPLACEMENT','OTHER')),
+      detail VARCHAR(200),
+      payment_exit_date DATE NOT NULL,
+      supplier_document VARCHAR(50),
+      photo_filename VARCHAR(80),
+      photo_mime_type VARCHAR(30) CHECK (photo_mime_type IN ('image/jpeg','image/png')),
+      photo_size_bytes INTEGER CHECK (photo_size_bytes > 0),
+      created_by INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await runDdl(`CREATE INDEX IF NOT EXISTS ix_asset_supplier_returns_exit ON asset_supplier_returns(payment_exit_date);`);
 }
 
 // Service Desk ITIL v4 (plan 009): configuracion (grupos, categorias,
