@@ -18,6 +18,57 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-10-01 (3) — Plan 018: arriendos y servicios se devuelven al proveedor, sin Contabilidad
+
+Plan en [`planes/018-arriendos-devolucion-a-proveedor.html`](planes/018-arriendos-devolucion-a-proveedor.html).
+
+**Origen.** En producción, un arriendo dado de alta en la toma de inventario (serie `MJ08EZSG`, «Dañado») no aparecía en Devoluciones de Activos. Es lo correcto: esa pantalla solo lista equipos asignados en sucursales. Dar de Baja Activos lo encontraba, pero lo habría mandado a Contabilidad.
+
+### Hecho
+- **Devolución al proveedor.** Estado y movimiento `RETURNED_TO_SUPPLIER` («Devuelto a proveedor»), terminal.
+  - Registro en la tabla `asset_supplier_returns`: motivo, fecha de salida del estado de pago, guía o acta del proveedor y foto opcional.
+  - Ruta `POST /asset-movements/supplier-return`, con el mismo permiso que la baja.
+  - El Kardex queda en cero.
+- **Contabilidad solo con ACT** (`library/assetTag.ts`). Se aplica en:
+  - Clasificación y Valorización: listan y aceptan solo ACT;
+  - Baja Contable: solo admite ACT;
+  - `POST /decommission`: rechaza los ARR y SRV.
+- **Toma de inventario.**
+  - Un ARR/SRV no se puede declarar «Baja», ni existente ni nuevo: se declara «Dañado».
+  - Un activo devuelto al proveedor se rechaza y tampoco cuenta como faltante al cerrar la toma.
+- **Front.**
+  - Devoluciones de Activos muestra un aviso: la pantalla es para devolver a Sistemas los equipos asignados en sucursales.
+  - Dar de Baja Activos tiene dos caminos según `flow`: ACT pasa a Baja Contable, y ARR/SRV se devuelve al proveedor.
+
+### Decisiones
+- SRV se trata igual que ARR.
+- La devolución se registra en un solo paso.
+- Lo ya clasificado de ARR/SRV no se borra.
+- Un ARR/SRV que ya estaba «Pendiente de baja contable» antes de este plan puede devolverse al proveedor desde Dar de Baja Activos.
+
+### Verificación
+- API: `tsc` OK; unitarias 174/174 OK, con 3 casos nuevos de la toma.
+- Front: `tsc`, eslint y 69 pruebas OK.
+- Migración aplicada en dev sin errores.
+- La integración completa sigue con los mismos 29 archivos fallando por el FK `employees.created_by` del plan 014 (problema previo).
+
+### Revisión de seguridad (ping-pong)
+- Orquestador: **GO**, con 3 Low.
+- Security-engineer: **GO condicionado**.
+- **M1 — un ARR/SRV ya clasificado y devuelto al proveedor seguía en Contabilidad.** Podía capitalizarse, lo que le devolvía valor en el Kardex, y seguía depreciándose.
+  - Corrección: `RETURNED_TO_SUPPLIER` se agregó a las listas de exclusión de clasificación, depreciación (cierre y anulación) y valorización.
+  - `lockRecord` ahora rechaza los tags que no son ACT, así que no se puede editar el costo, capitalizar ni cambiar parámetros.
+  - Un ARR heredado que sigue en uso conserva su depreciación hasta que se devuelve.
+- **B1 — `confirmWriteOff` no revisaba el tag** en los borradores armados antes del plan. Ahora lo revisa.
+- **B2 — `2026-02-31` pasaba la validación y terminaba en un 500.** Ahora se valida la fecha real y un rango de ±1 año.
+- Re-revisión: **GO**.
+- Nota para el manual: si un activo depreciado se devuelve al proveedor, el cierre de depreciación anterior ya no se puede anular. Es el mismo criterio que con una baja.
+
+### Pendiente
+- Probar en el navegador.
+- Redesplegar test y prod.
+- En prod, revisar si hay ARR/SRV ya clasificados o en un borrador de Baja Contable.
+
 ## 2026-10-01 (2) — Revisión de seguridad del plan 017 y mejoras de «Seguridad de mi cuenta»
 
 ### Mejoras pedidas por el usuario
