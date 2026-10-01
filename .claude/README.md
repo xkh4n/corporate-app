@@ -64,6 +64,14 @@ Plan en [`planes/018-arriendos-devolucion-a-proveedor.html`](planes/018-arriendo
 - Re-revisión: **GO**.
 - Nota para el manual: si un activo depreciado se devuelve al proveedor, el cierre de depreciación anterior ya no se puede anular. Es el mismo criterio que con una baja.
 
+### Promoción
+- Commits en `develop`:
+  - `698c3ba`: API;
+  - `ecd78fa`: front;
+  - `d20cec5`: documentación.
+- PR #53 `develop → testing`: el CI de API y Web pasó y se hizo el merge (`2d87bbc`). El gate de seguridad quedó marcado sobre ese commit.
+- PR #54 `release/master → master`: `promote-to-master` excluyó `inventoryAssetTransition.unit.test.ts` y la guardia de rutas prohibidas pasó. `master` quedó en `8874e74`.
+
 ### Pendiente
 - Probar en el navegador.
 - Redesplegar test y prod.
