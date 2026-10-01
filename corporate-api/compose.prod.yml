@@ -21,6 +21,8 @@ secrets:
         file: ../corporate-secrets/${SECRETS_ENV}/db_mongo_user_password.txt
     mailer_shared_secret:
         file: ../corporate-secrets/${SECRETS_ENV}/mailer_shared_secret.txt
+    mfa_encryption_key:
+        file: ../corporate-secrets/${SECRETS_ENV}/mfa_encryption_key.txt
 
 volumes:
     api_uploads:
@@ -205,6 +207,15 @@ x-api-common: &api-common
         # resuelto por Docker DNS que su container_name/hostname).
         MAILER_URL: "http://${MAILER_HOST}${SUFFIX}:${MAILER_INTERNAL_PORT}/send"
         MAILER_SHARED_SECRET_FILE: /run/secrets/mailer_shared_secret
+        # Plan 017: segundo factor. MFA_REQUIRED exige enrolar uno (y verificar el correo en el
+        # primer ingreso). Las passkeys solo funcionan con un nombre DNS (WebAuthn no acepta IPs)
+        # y un certificado de confianza: vacio = deshabilitadas, quedan TOTP y correo.
+        MFA_REQUIRED: ${MFA_REQUIRED:-true}
+        MFA_ISSUER: ${MFA_ISSUER:-Corporate}
+        MFA_ENCRYPTION_KEY_FILE: /run/secrets/mfa_encryption_key
+        WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
+        WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Corporate}
+        WEBAUTHN_ORIGINS: ${WEBAUTHN_ORIGINS:-}
     secrets:
         - pg_user_password
         - mssql_app_password
@@ -216,6 +227,7 @@ x-api-common: &api-common
         - default_user_password
         - mongo_user_password
         - mailer_shared_secret
+        - mfa_encryption_key
     # Adjuntos y documentos generados (documentStorage.ts: uploads/ = guias de
     # recepcion, imagenes de producto, devoluciones; downloads/ = solicitudes
     # y cotizaciones). Volumenes NOMBRADOS y compartidos por las 3 replicas: el

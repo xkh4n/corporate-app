@@ -3,6 +3,8 @@ import { z } from "zod";
 import * as userService from "../services/mssql/user.service";
 import * as roleService from "../services/postgres/role.service";
 import * as permissionService from "../services/postgres/permission.service";
+import * as mfaService from "../services/mssql/mfa.service";
+import { logger } from "../library/logger";
 import { revokeAllRefreshTokens, invalidateUserSessions } from "../services/redis/session.service";
 import { parsePaginationParams, buildPaginationMeta } from "../library/pagination";
 import { sendList, sendOk, sendNoContent } from "../library/response";
@@ -41,8 +43,7 @@ export async function list(req: Request, res: Response, next: NextFunction): Pro
 export async function getById(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const user = await userService.getUserByIdOrThrow(Number(req.params.id));
-    const { passwordHash, ...safe } = user.get({ plain: true });
-    sendOk(res, safe, "Usuario obtenido exitosamente");
+    sendOk(res, userService.toSafeUser(user), "Usuario obtenido exitosamente");
   } catch (err) {
     next(err);
   }
@@ -55,8 +56,7 @@ export async function getById(req: Request, res: Response, next: NextFunction): 
 export async function getAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const id = Number(req.params.id);
-    const user = await userService.getUserByIdOrThrow(id);
-    const { passwordHash, ...safeUser } = user.get({ plain: true });
+    const safeUser = userService.toSafeUser(await userService.getUserByIdOrThrow(id));
     const [role, permissions] = await Promise.all([
       roleService.getRoleByIdOrThrow(safeUser.roleId),
       permissionService.getEffectivePermissionsForRole(safeUser.roleId),
@@ -112,6 +112,26 @@ export async function update(req: Request, res: Response, next: NextFunction): P
     }
 
     sendOk(res, user, "Usuario actualizado exitosamente");
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PATCH /users/:id/mfa/reset (plan 017): telefono o notebook perdido. Borra todos los factores y
+// codigos de recuperacion y corta las sesiones; si MFA es obligatorio, la cuenta enrola uno nuevo en
+// su proximo ingreso. Mismas reglas de quien puede tocar la cuenta que el reset de password.
+export async function resetMfa(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const id = Number(req.params.id);
+    await assertCanManageAccount(req, id);
+    await userService.getUserByIdOrThrow(id);
+    await mfaService.resetMfa(id);
+    // El step-up esta atado a cada sesion: muere con ellas. El proximo login, si MFA es obligatorio,
+    // pide el codigo al correo de la persona antes de dejarla enrolar de nuevo.
+    await revokeAllRefreshTokens(id);
+    await invalidateUserSessions(id, "mfa_reset");
+    logger.info({ event: "mfa_reset", actorUserId: req.user?.userId, userId: id }, "MFA: reset administrativo");
+    sendNoContent(res);
   } catch (err) {
     next(err);
   }

@@ -9,6 +9,7 @@ interface ResolvedAuth {
   user: AuthenticatedUser;
   issuedAt: number; // epoch seconds - momento en que se emitio el token/sesion
   mustChangePassword: boolean;
+  mfaEnrollmentRequired: boolean;
 }
 
 function fromSession(req: Request): ResolvedAuth | undefined {
@@ -24,6 +25,7 @@ function fromSession(req: Request): ResolvedAuth | undefined {
     },
     issuedAt: Math.floor(new Date(sessionUser.loginAt).getTime() / 1000),
     mustChangePassword: sessionUser.mustChangePassword === true,
+    mfaEnrollmentRequired: sessionUser.mfaEnrollmentRequired === true,
   };
 }
 
@@ -43,6 +45,7 @@ function fromBearerToken(req: Request): ResolvedAuth | undefined {
     },
     issuedAt: payload.iat ?? 0,
     mustChangePassword: payload.mustChangePassword === true,
+    mfaEnrollmentRequired: payload.mfaEnrollmentRequired === true,
   };
 }
 
@@ -54,9 +57,11 @@ function fromBearerToken(req: Request): ResolvedAuth | undefined {
 const INVALIDATION_MESSAGES: Partial<Record<InvalidationReason, string>> = {
   role_changed: "Su sesion expiro porque se actualizo su rol. Inicie sesion nuevamente.",
   password_changed: "Su sesion expiro porque se actualizo su contraseña. Inicie sesion nuevamente.",
+  mfa_reset: "Su sesion expiro porque se restablecio su segundo factor. Inicie sesion nuevamente.",
 };
 
 export const PASSWORD_CHANGE_REQUIRED = "password_change_required";
+export const MFA_ENROLLMENT_REQUIRED = "mfa_enrollment_required";
 
 // Acepta sesion Redis (cookie) O JWT access token (Authorization: Bearer),
 // en ese orden -clientes con cookie (front web) y clientes stateless
@@ -65,9 +70,11 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
   await resolveAuth(req, res, next, false);
 }
 
-// Plan 015: solo para /auth/me, /auth/menu y /auth/change-password, lo minimo para que una cuenta que
-// entro con una password que no eligio pueda cambiarla. Cualquier otra ruta usa authenticate.
-export async function authenticateAllowingPasswordChange(req: Request, res: Response, next: NextFunction): Promise<void> {
+// Planes 015 y 017: solo para /auth/me, /auth/menu, /auth/change-password y el enrolamiento de MFA,
+// lo minimo para que una cuenta con una password que no eligio, o sin segundo factor cuando es
+// obligatorio, pueda resolverlo. Cualquier otra ruta usa authenticate. Quien la use revisa
+// req.passwordChangePending / req.mfaEnrollmentPending si el orden importa.
+export async function authenticateAllowingPending(req: Request, res: Response, next: NextFunction): Promise<void> {
   await resolveAuth(req, res, next, true);
 }
 
@@ -75,7 +82,7 @@ async function resolveAuth(
   req: Request,
   _res: Response,
   next: NextFunction,
-  allowPendingPasswordChange: boolean,
+  allowPending: boolean,
 ): Promise<void> {
   if (env.flags.disableAuth) {
     next();
@@ -110,12 +117,17 @@ async function resolveAuth(
 
     // Plan 015: la API no acepta la password por defecto (ni la de un reset administrativo) para
     // operar; el front ya redirige a /change-password, esto cierra el mismo camino llamando directo.
-    if (resolved.mustChangePassword && !allowPendingPasswordChange) {
+    if (resolved.mustChangePassword && !allowPending) {
       throw new ForbiddenError("Debe cambiar su contraseña antes de continuar", { reason: PASSWORD_CHANGE_REQUIRED });
+    }
+    // Plan 017: misma idea con el segundo factor obligatorio todavia sin enrolar.
+    if (resolved.mfaEnrollmentRequired && !allowPending) {
+      throw new ForbiddenError("Debe configurar un segundo factor antes de continuar", { reason: MFA_ENROLLMENT_REQUIRED });
     }
 
     req.user = resolved.user;
     req.passwordChangePending = resolved.mustChangePassword;
+    req.mfaEnrollmentPending = resolved.mfaEnrollmentRequired;
     next();
   } catch (err) {
     if (err instanceof ForbiddenError) {

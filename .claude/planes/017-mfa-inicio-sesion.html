@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>017 — MFA en el inicio de sesión (TOTP + correo + passkeys)</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --border:#d9e2ec; --code-bg:#f4f6f8; --accent:#2563eb; --block-bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0 0 4rem 0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:900px; margin:0 auto; padding:2.5rem 1.5rem; }
+  header.doc-header { border-bottom:2px solid var(--border); padding-bottom:1.25rem; margin-bottom:2rem; }
+  header.doc-header .badge { display:inline-block; background:var(--accent); color:#fff; font-weight:700; font-size:.85rem;
+    padding:.2rem .6rem; border-radius:999px; margin-bottom:.75rem; }
+  header.doc-header h1 { margin:0 0 .4rem 0; font-size:1.6rem; }
+  header.doc-header .meta { color:var(--muted); font-size:.9rem; }
+  h2 { margin-top:2.5rem; font-size:1.25rem; border-left:4px solid var(--accent); padding-left:.6rem; }
+  h3 { margin-top:1.6rem; font-size:1.05rem; }
+  p { margin:.7rem 0; } ul, ol { padding-left:1.4rem; } li { margin:.35rem 0; }
+  code { background:var(--code-bg); padding:.1rem .35rem; border-radius:4px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; font-size:.85em; }
+  pre { background:var(--code-bg); padding:.8rem 1rem; border-radius:6px; overflow-x:auto; font-size:.82rem; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.9rem; }
+  th, td { border:1px solid var(--border); padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:var(--block-bg); }
+  footer.doc-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--border); color:var(--muted); font-size:.8rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-header">
+  <span class="badge">PLAN 017</span>
+  <h1>MFA en el inicio de sesión (TOTP + código por correo + passkeys)</h1>
+  <div class="meta">corporate-app · corporate-api · corporate-front · Estado: aprobado · 2026-10-01</div>
+</header>
+
+<h2>Contexto</h2>
+<p>Hoy el login es de un solo factor. Al crear un usuario se le asigna la contraseña por defecto del secret, que es compartida entre todas las cuentas nuevas, y se marca <code>must_change_password=1</code>. Con esa marca, el plan 015 bloquea la API con un 403 <code>password_change_required</code> hasta que el usuario cambie la contraseña; solo deja pasar <code>/auth/me</code>, <code>/auth/menu</code> y <code>/auth/change-password</code>. Este plan aprovecha ese primer ingreso obligatorio para enrolar un segundo factor, y desde ahí lo exige en cada login.</p>
+
+<h2>Opciones evaluadas</h2>
+<table>
+<tr><th>Factor</th><th>Costo / infraestructura</th><th>Seguridad</th><th>Veredicto</th></tr>
+<tr><td>TOTP (Google/Microsoft Authenticator)</td><td>Ninguno: no necesita salida a internet y usa HMAC de <code>node:crypto</code></td><td>Alta (RFC 6238, funciona offline)</td><td><strong>Incluido</strong></td></tr>
+<tr><td>Código por correo</td><td>Reusa <code>corporate-mailer</code> y <code>persons.email</code> (NOT NULL, único)</td><td>Media (depende de la seguridad del buzón)</td><td><strong>Incluido</strong>, como respaldo y para verificar la identidad en el primer ingreso</td></tr>
+<tr><td>WebAuthn / passkeys (Windows Hello, Touch ID, llave FIDO2, passkey del teléfono)</td><td><code>@simplewebauthn/server</code> + <code>@simplewebauthn/browser</code>; requiere un dominio con TLS válido</td><td>Muy alta (resistente a phishing)</td><td><strong>Incluido</strong>, se activa por configuración</td></tr>
+<tr><td>SMS</td><td>Proveedor pagado y una nueva salida a internet</td><td>Baja-media (expuesto a SIM swap)</td><td><strong>Descartado</strong></td></tr>
+</table>
+
+<h3>Decisiones del usuario</h3>
+<ul>
+<li>Se implementan TOTP, código por correo y passkeys; SMS queda fuera.</li>
+<li>MFA es obligatorio para todos a través de <code>MFA_REQUIRED</code>; en dev queda en <code>false</code>.</li>
+<li>En el primer ingreso se pide un código al correo <strong>antes</strong> de cambiar la contraseña. Como la contraseña por defecto es compartida, conocerla no basta: el código prueba que quien entra controla el correo del colaborador.</li>
+</ul>
+
+<h3>Restricción de las passkeys</h3>
+<p>WebAuthn solo funciona si el RP ID es un <strong>nombre de dominio</strong>. No acepta direcciones IP (la única excepción es <code>localhost</code>), y los navegadores lo desactivan cuando el certificado TLS da error. Hoy el front se publica en <code>https://${ALLOCATED_IP}:puerto</code>, por lo que las passkeys dependen de dos variables, <code>WEBAUTHN_RP_ID</code> y <code>WEBAUTHN_ORIGINS</code>:</p>
+<ul>
+<li>Mientras no estén configuradas, la API no ofrece el método y el front oculta la opción. TOTP y correo funcionan igual sobre la IP.</li>
+<li>Para activarlas en test/prod se necesita un nombre DNS interno que apunte a ALLOCATED_IP y un certificado para ese nombre, emitido por una CA en la que confíen los equipos. Este punto se relaciona con el plan 000.</li>
+<li>En dev se prueban con <code>https://localhost</code>.</li>
+</ul>
+
+<h2>Flujo</h2>
+<pre>Primer ingreso (must_change_password=1):
+  POST /auth/login (pwd temporal) → sesión pre-auth {stage:"EMAIL_VERIFY"} → 200 {next:"EMAIL_VERIFY"}
+  POST /auth/mfa/email/send   → código de 6 dígitos al correo de la persona
+  POST /auth/mfa/email/verify → pasa a la marca mustChangePassword (flujo del plan 015 intacto)
+  PATCH /auth/change-password → invalida sesiones → re-login
+Login sin ningún factor enrolado (y MFA_REQUIRED):
+  login → sesión completa con marca mfaEnrollmentRequired
+        → 403 "mfa_enrollment_required" salvo /auth/me, /auth/menu, /auth/mfa/enroll/*
+  enrolar passkey | app TOTP | correo → 10 códigos de recuperación (una sola vez) → re-login
+Login normal:
+  login → sesión pre-auth {stage:"MFA"} (sin req.session.user) → 200 {next:"MFA", methods:[...]}
+  passkey: POST /auth/mfa/webauthn/options → navigator.credentials.get → POST /auth/mfa/webauthn/verify
+  totp / email / recovery: POST /auth/mfa/verify {method, code}
+  → recién ahí session.user (regenerate) / tokens si issueTokens</pre>
+<p><strong>Regla clave:</strong> mientras el usuario no pasa el segundo factor, no existe <code>req.session.user</code> y no se emiten JWT. De esta forma <code>authenticate</code>, Socket.io y cualquier ruta nueva quedan cerradas por defecto. Un usuario puede tener varios factores enrolados y, al iniciar sesión, usa el que prefiera.</p>
+
+<h2>Cambios en corporate-api</h2>
+<ol>
+<li><strong>Esquema MSSQL</strong> en <code>migrate.ts</code>, con el guard <code>IF NOT EXISTS sys.columns</code>:
+  <ul>
+  <li><code>users</code>: columnas nuevas <code>mfa_totp_secret_enc</code>, <code>mfa_email_enabled</code> y <code>mfa_enrolled_at</code>.</li>
+  <li><code>user_webauthn_credentials</code>: <code>credential_id</code> único, <code>public_key</code>, <code>sign_count</code>, <code>transports</code>, <code>device_name</code>, <code>aaguid</code>, <code>backed_up</code> y <code>last_used_at</code>.</li>
+  <li><code>user_mfa_recovery_codes</code>: el código hasheado con bcrypt y <code>used_at</code>.</li>
+  </ul>
+</li>
+<li><strong>Librería <code>library/mfa/</code></strong>:
+  <ul>
+  <li><code>totp.ts</code>, con <code>node:crypto</code> y sin dependencias nuevas.</li>
+  <li><code>secretBox.ts</code>, cifrado AES-256-GCM con la clave guardada en un secret.</li>
+  <li><code>recoveryCodes.ts</code>.</li>
+  <li><code>webauthn.ts</code>, sobre <code>@simplewebauthn/server</code>.</li>
+  </ul>
+</li>
+<li><strong>Redis</strong>:
+  <ul>
+  <li>Código de correo hasheado, con TTL de 5 min y una espera mínima entre reenvíos.</li>
+  <li>Contador de intentos: al quinto fallo se destruye la sesión pre-auth.</li>
+  <li>Protección contra reutilización de un código TOTP ya usado.</li>
+  <li>Secreto TOTP pendiente mientras dura el enrolamiento.</li>
+  <li>Challenge WebAuthn de un solo uso.</li>
+  </ul>
+</li>
+<li><strong>Sesión</strong>: estado <code>mfaPending</code>, válido 10 min, y la marca <code>mfaEnrollmentRequired</code>.</li>
+<li><strong><code>auth.controller</code></strong>:
+  <ul>
+  <li><code>login</code> decide en qué etapa queda el usuario.</li>
+  <li><code>completeLogin()</code> se comparte entre <code>login</code> y la verificación MFA.</li>
+  <li><code>refresh</code> conserva la marca de enrolamiento pendiente.</li>
+  </ul>
+</li>
+<li><strong><code>mfa.controller</code></strong> y rutas <code>/auth/mfa/*</code>:
+  <ul>
+  <li>Cubre la etapa pre-auth, el enrolamiento y la administración de los propios factores.</li>
+  <li>Borrar un factor o regenerar los códigos exige haber verificado un factor recientemente, y el usuario nunca puede quedar con cero factores.</li>
+  <li>Cada ruta tiene su propio rate limiter.</li>
+  </ul>
+</li>
+<li><strong><code>authenticate</code></strong>:
+  <ul>
+  <li>Nuevo 403 <code>mfa_enrollment_required</code>.</li>
+  <li>Nuevo middleware <code>authenticateAllowingPending</code>.</li>
+  <li>Nuevo motivo de invalidación <code>mfa_reset</code>.</li>
+  </ul>
+</li>
+<li><strong>Admin</strong>: <code>PATCH /users/:id/mfa/reset</code>, protegido con <code>users:update</code>.</li>
+<li><strong>Correo</strong>: <code>sendMfaCodeEmail()</code>. Si el envío falla, la API responde 503. El código nunca se registra en los logs.</li>
+<li><strong>Socket.io</strong>: rechaza las sesiones que tengan el enrolamiento pendiente.</li>
+<li><strong>Env/secrets</strong>:
+  <ul>
+  <li>Variables nuevas: <code>MFA_REQUIRED</code>, <code>MFA_ENCRYPTION_KEY_FILE</code>, <code>WEBAUTHN_RP_ID</code> y <code>WEBAUTHN_ORIGINS</code>.</li>
+  <li><code>ensure-backend-secrets.ps1</code> genera la clave de cifrado.</li>
+  </ul>
+</li>
+</ol>
+
+<h2>Cambios en corporate-front</h2>
+<ul>
+<li><code>AuthContext</code> incorpora los pasos nuevos y usa <code>@simplewebauthn/browser</code>.</li>
+<li>Pantallas nuevas:
+  <ul>
+  <li><code>EmailVerifyPage</code>.</li>
+  <li><code>MfaVerifyPage</code>.</li>
+  <li><code>MfaEnrollPage</code>, con el QR generado localmente con <code>qrcode</code>.</li>
+  <li>«Seguridad de mi cuenta».</li>
+  </ul>
+</li>
+<li><code>AppRoutes</code>: el gate redirige a <code>/mfa/enroll</code>.</li>
+<li>Botón de administración «Restablecer MFA».</li>
+<li>nginx: se agrega <code>publickey-credentials-get/create=(self)</code> a la cabecera <code>Permissions-Policy</code>.</li>
+</ul>
+
+<h2>Verificación</h2>
+<ul>
+<li>Pruebas unitarias:
+  <ul>
+  <li>TOTP contra los vectores de la RFC 6238.</li>
+  <li><code>secretBox</code>.</li>
+  <li>Códigos de recuperación.</li>
+  <li><code>webauthn</code>: challenge reutilizado, origen incorrecto y <code>sign_count</code>.</li>
+  </ul>
+</li>
+<li>Pruebas de integración:
+  <ul>
+  <li>No hay <code>session.user</code> antes del segundo factor.</li>
+  <li>Bloqueo tras 5 intentos fallidos.</li>
+  <li>Rechazo de un código TOTP ya usado.</li>
+  <li>Primer ingreso sin verificar el correo.</li>
+  <li>403 mientras falta el enrolamiento.</li>
+  <li><code>issueTokens</code>.</li>
+  <li>Reset desde administración.</li>
+  <li>Passkeys deshabilitadas cuando no hay RP ID.</li>
+  <li>No se puede borrar el último factor.</li>
+  </ul>
+</li>
+<li>Pruebas manuales:
+  <ul>
+  <li>En dev, sobre <code>https://localhost</code>.</li>
+  <li>En Testing, TOTP y correo.</li>
+  </ul>
+</li>
+<li><code>/security-review</code> antes de pasar a master.</li>
+</ul>
+
+<h2>Pendiente fuera del código</h2>
+<p>Para activar las passkeys en test/prod hay que definir el nombre DNS interno y conseguir un certificado de confianza. Las passkeys quedan atadas a ese dominio: si el dominio cambia, los usuarios tienen que volver a enrolarlas.</p>
+
+<footer class="doc-footer">Plan 017 · aprobado por el usuario el 2026-10-01</footer>
+</div>
+</body>
+</html>

@@ -151,6 +151,26 @@ export const env = {
     url: optionalEnv("MAILER_URL", ""),
     sharedSecretFileVar: "MAILER_SHARED_SECRET_FILE",
   },
+
+  // Plan 017: segundo factor. "required" exige enrolar uno (y verificar el correo en el primer
+  // ingreso); por defecto true fuera de development para que olvidar la variable no lo apague.
+  // Una cuenta que ya enrolo un factor siempre lo usa, este o no en true.
+  mfa: {
+    required: boolEnv("MFA_REQUIRED", optionalEnv("NODE_ENV", "development") !== "development"),
+    encryptionKeyFileVar: "MFA_ENCRYPTION_KEY_FILE",
+    issuer: optionalEnv("MFA_ISSUER", "Corporate"),
+  },
+
+  // Passkeys: WebAuthn no acepta IPs como RP ID (solo un dominio o "localhost"). Vacio = metodo
+  // deshabilitado: la API no lo ofrece y las rutas responden 404.
+  webauthn: {
+    rpId: optionalEnv("WEBAUTHN_RP_ID", ""),
+    rpName: optionalEnv("WEBAUTHN_RP_NAME", "Corporate"),
+    origins: optionalEnv("WEBAUTHN_ORIGINS", "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter((origin) => origin.length > 0),
+  },
 } as const;
 
 // Hallazgo de auditoria de seguridad 2026-08-17: hasta aca, los 3

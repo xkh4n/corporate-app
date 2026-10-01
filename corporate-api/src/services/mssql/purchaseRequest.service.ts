@@ -35,11 +35,15 @@ import type {
 } from "../../types/mssql/purchaseRequest.types";
 import type { SafeUser } from "../../types/mssql/user.types";
 
+// Sin las columnas sensibles de users: estas filas salen tal cual en las respuestas (incluida "Mis
+// solicitudes", que ve cualquier solicitante) y antes llevaban el hash de la password del aprobador.
+const SAFE_USER_ATTRIBUTES = { exclude: ["passwordHash", "mfaTotpSecretEnc"] };
+
 const includeParties = [
   { model: PersonModel, as: "requester" },
   { model: PersonModel, as: "beneficiary" },
-  { model: UserModel, as: "beneficiaryUser" },
-  { model: UserModel, as: "approver" },
+  { model: UserModel, as: "beneficiaryUser", attributes: SAFE_USER_ATTRIBUTES },
+  { model: UserModel, as: "approver", attributes: SAFE_USER_ATTRIBUTES },
 ];
 
 const SEARCH_FIELDS = ["requestNumber", "notes", "status", "priority"];

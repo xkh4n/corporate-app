@@ -24,9 +24,9 @@ export interface CreateUserInput {
   password?: string;
 }
 
-function toSafeUser(user: UserModel): SafeUser {
-  const { passwordHash, ...rest } = user.get({ plain: true });
-  return rest;
+export function toSafeUser(user: UserModel): SafeUser {
+  const { passwordHash, mfaTotpSecretEnc, ...rest } = user.get({ plain: true });
+  return { ...rest, mfaTotpEnabled: mfaTotpSecretEnc != null };
 }
 
 export async function getUserByUsername(username: string): Promise<UserModel | null> {

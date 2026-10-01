@@ -18,6 +18,162 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-10-01 (2) — Revisión de seguridad del plan 017 y mejoras de «Seguridad de mi cuenta»
+
+### Mejoras pedidas por el usuario
+- El escudo de la barra superior queda verde con al menos un factor activo y rojo sin ninguno. Usa el campo nuevo `mfaEnrolled` de `/auth/me`.
+- «Seguridad de mi cuenta» tiene una tarjeta «Contraseña». El formulario `ChangePasswordForm` es el mismo que usa la pantalla obligatoria de cambio.
+
+### Revisión (ping-pong)
+- Primera ronda: los dos agentes dieron **NO-GO** y coincidieron en todo lo importante.
+  - **H1 — fuerza bruta del TOTP.** El tope de 5 intentos era por login a medio camino: se reiniciaba volviendo a hacer login, y las requests en paralelo evaluaban más códigos. El step-up no tenía tope.
+  - **M — primer factor solo con la contraseña.** Las cuentas existentes al desplegar, o las que pasaban por un reset administrativo, podían enrolar el primer factor sin verificar el correo.
+  - **M — step-up por usuario y no por sesión.** El login legítimo de la víctima habilitaba por 5 minutos a cualquier sesión robada.
+  - **Bajos:**
+    - el cupo de correos se gastaba con pedidos frenados por la espera entre envíos;
+    - el rate limit se alimentaba con tokens elegidos por el cliente;
+    - carrera en `consumeEmailCode`;
+    - el primer factor no revocaba los refresh tokens;
+    - faltaban logs de auditoría;
+    - el cifrado TOTP no tenía AAD.
+- **Correcciones:**
+  - **Tope por cuenta:** 10 fallos en 15 minutos y 30 en 24 horas, reservados antes de verificar. Lo comparten el login, el step-up y las confirmaciones de enrolamiento. Se avisa por correo al dueño cuando la cuenta se bloquea, y no se abre otro login a medio camino mientras siga bloqueada.
+  - **Tope por login a medio camino:** el intento también se reserva antes de verificar.
+  - **Login sin factores:** con MFA obligatorio siempre pide el código al correo, no solo en el primer ingreso.
+  - **Enrolar:** siempre exige step-up de la sesión. Sin factores, el step-up se hace con el código al correo.
+  - **Step-up:** atado a la sesión (`sid:`) o al access token (`tok:<sha256>`). Los access tokens llevan ahora un `jti` aleatorio, así dos tokens nunca son iguales.
+  - **Correos:** solo cuentan los envíos reales.
+  - **Rate limit pre-auth:** por IP, con 300 requests cada 10 minutos.
+  - **Primer factor:** revoca todos los refresh tokens.
+  - **Auditoría:** eventos `mfa_*` en el log.
+  - **Cifrado TOTP:** formato `v2` con AAD `user:<id>`; el `v1` solo se acepta en development.
+- **Re-revisión del security-engineer: GO.** Encontró además:
+  - **N1 (funcional):** si vencía la verificación en la pantalla de enrolamiento obligatorio, el usuario quedaba sin salida. Las rutas de step-up ahora aceptan el enrolamiento pendiente, solo con el correo y nunca con la contraseña por cambiar.
+  - **N2:** los códigos y challenges de enrolamiento y step-up pasan a ser por sesión.
+  - **N3:** se agregó la ventana diaria y el aviso por correo.
+  - **N5:** liberar un intento ya no borra la clave.
+  - **N6:** el `v1` sin AAD queda solo para development.
+- **Aceptados:**
+  - **N4:** con MFA opcional, el primer factor no corta las otras sesiones; solo pasa en dev.
+  - Reset administrativo sin step-up del admin, igual que el reset de contraseña.
+  - Las sesiones Redis anteriores al despliegue no traen la marca de enrolamiento.
+
+### Verificación
+- API: `tsc` OK; 171 pruebas unitarias OK; integración MFA 7 de 7 OK contra Testing. Casos nuevos:
+  - los fallos se acumulan por cuenta aunque se abran logins nuevos;
+  - el step-up por correo funciona con el enrolamiento pendiente;
+  - el step-up es por sesión (un token renovado no lo hereda).
+- Front: `tsc`, eslint y 69 pruebas OK.
+- Suite de integración completa: 29 archivos fallan, todos con el mismo `fk_employees_created_by`. Su `resetTestData` hace `DELETE FROM users` contra los colaboradores que siembra el plan 014 en Testing. Es un problema previo y ajeno a este cambio.
+
+### Pendiente
+- **Al desplegar test/prod:** limpiar las sesiones Redis (`sess:*`), para que nadie siga con una sesión de antes de MFA.
+- **Integración de Testing:** arreglar el reset de las suites (o la semilla del plan 014) para que vuelvan a correr completas.
+
+---
+
+## 2026-10-01 — Plan 017: MFA en el inicio de sesión (aprobado)
+
+### Hecho
+- Plan aprobado y copiado a [`planes/017-mfa-inicio-sesion.html`](planes/017-mfa-inicio-sesion.html).
+
+### Decisiones
+- **Factores:** TOTP (app autenticadora), código por correo (vía `corporate-mailer`) y WebAuthn/passkeys. SMS se descartó: requiere un proveedor pagado y una nueva salida a internet, y es vulnerable a SIM swap.
+- **Obligatorio para todos** con `MFA_REQUIRED`; en dev queda en `false`.
+- **Primer ingreso:** el código al correo se pide **antes** de cambiar la contraseña temporal. Como esa contraseña es compartida, conocerla no alcanza para tomar una cuenta nueva.
+- **Sesión pre-auth:** mientras no se pasa el segundo factor no existe `req.session.user` ni se emiten JWT.
+- **Passkeys:** solo se habilitan con `WEBAUTHN_RP_ID`/`WEBAUTHN_ORIGINS`. WebAuthn no acepta IPs y hoy el front se publica por `ALLOCATED_IP`, así que mientras no haya un nombre DNS con certificado de confianza, en test/prod solo quedan disponibles TOTP y correo.
+
+### Implementación (sin commitear, en `develop`)
+- **API, esquema:**
+  - columnas `users.mfa_totp_secret_enc`, `mfa_email_enabled` y `mfa_enrolled_at`;
+  - tablas `user_webauthn_credentials` y `user_mfa_recovery_codes` (`migrateMfa()`).
+- **API, `library/mfa/`:**
+  - `totp.ts` usa `node:crypto` y no agrega dependencias;
+  - `secretBox.ts` cifra con AES-256-GCM;
+  - `keys.ts` deriva subclaves con HKDF desde el secret `mfa_encryption_key.txt`;
+  - `recoveryCodes.ts`;
+  - `webauthn.ts` usa `@simplewebauthn/server` 14.0.3.
+- **API, flujo:**
+  - el estado del login a medio camino vive en Redis (`services/redis/mfa.service.ts`), con el id en `session.mfaPendingId` o como `mfaToken` para clientes que solo usan tokens;
+  - `completeLogin()` en `library/authSession.ts`;
+  - las rutas `/auth/mfa/*` están en `controllers/mfa.controller.ts`;
+  - el 403 `mfa_enrollment_required` está en `authenticate.ts` y en Socket.IO;
+  - reset administrativo con `PATCH /users/:id/mfa/reset`.
+- **Cambios respecto del plan:**
+  - Los códigos de recuperación y los de correo se guardan con HMAC con clave secreta, no con bcrypt. Así se buscan por igualdad sin recorrer 10 hashes bcrypt, y no se pueden forzar sin la clave.
+  - El step-up responde 400 y no 401 ante un código erróneo, porque el front trata cualquier 401 como sesión caída.
+  - Hay un tope de 10 correos por usuario y por hora: quien conoce la contraseña podría abrir logins nuevos y llenar de códigos el buzón de la víctima.
+- **Fuga corregida de paso:** `purchaseRequest.service` incluía filas completas de `users` (aprobador y beneficiario) en las respuestas, también en «Mis solicitudes». Eso exponía el hash bcrypt de la contraseña del aprobador. Ahora se excluyen `passwordHash` y `mfaTotpSecretEnc`. `toSafeUser` también excluye el secreto TOTP y en su lugar expone `mfaTotpEnabled`.
+- **Front:**
+  - el paso de segundo factor está dentro de `LoginPage` (`FactorVerifyForm`);
+  - `/mfa/enroll` (`MfaEnrollPage`) y `/account/security` (`AccountSecurityPage`, con un ícono de escudo en la barra superior);
+  - `EnrollFactor` genera el QR en el navegador con `qrcode` y registra passkeys con `@simplewebauthn/browser`;
+  - el gate redirige a `/mfa/enroll`.
+- **Infra:**
+  - `MFA_REQUIRED`, `MFA_ENCRYPTION_KEY_FILE` y `WEBAUTHN_*` en los 3 compose de la API (en dev `MFA_REQUIRED` es `false` por defecto);
+  - `ensure-backend-secrets.ps1` genera `mfa_encryption_key.txt` (ya generado para dev y test);
+  - `Permissions-Policy` de nginx con `publickey-credentials-get/create=(self)`.
+
+### Verificación
+- `tsc` en la API y `tsc -p tsconfig.app.json` + eslint en el front, sin errores; el build de Vite funciona.
+- Unitarias de la API: 170 OK, entre ellas los vectores RFC 6238, `secretBox`, los códigos de recuperación y el envoltorio de WebAuthn con mocks. Front: 69 OK.
+- Integración contra Testing (`mfa.routes.integration.test.ts`): 4 de 4 OK.
+  - Primer ingreso completo: correo → cambio de contraseña → enrolar TOTP → login con TOTP.
+  - Rechazo de TOTP reutilizado.
+  - Código de recuperación de un solo uso.
+  - Bloqueo al quinto intento.
+  - No se puede quitar el último factor.
+  - El reset vuelve a exigir enrolamiento.
+  - Passkeys apagadas responden 404.
+- `passwordChangeRequired.routes.integration.test.ts` (plan 015) ya fallaba antes de este cambio. Su `resetTestData` hace `DELETE FROM users` y choca con `fk_employees_created_by` por los colaboradores que siembra el plan 014 en Testing. La prueba nueva de MFA borra solo sus propias filas.
+
+### Pendiente
+- Probar en el navegador, en especial una passkey real en dev sobre `https://localhost` con `WEBAUTHN_RP_ID=localhost`.
+- Front de dev: `down -v` antes de reconstruir, porque el volumen anónimo de `node_modules` oculta las dependencias nuevas.
+- No hay pantalla de administración de usuarios en el front: `userService.resetMfa` existe, pero no hay botón donde ponerlo.
+- `/security-review`, commit y promoción.
+- Nombre DNS interno y certificado de confianza para activar las passkeys en test/prod.
+- Generar `mfa_encryption_key.txt` de producción, que se crea solo con `run.ps1 backend prod`.
+
+---
+
+## 2026-09-30 — Front responsivo para teléfono y galería de productos
+
+### Hecho
+- **Layout compartido:**
+  - `AppLayout`: `px-3` en móvil; el saludo se oculta bajo `md`; «Cerrar sesión» pasa a ícono; hamburguesa visible sobre el azul.
+  - `index.css`: tablas compactas bajo 640 px, más las utilidades `scrollbar-none` y `scrollbar-thin`.
+  - `Input`, `Textarea` y `Select` con texto de 16 px en móvil (evita el zoom de iOS).
+  - `Tabs` de Service Desk en una fila con scroll horizontal.
+- **Pantallas (84 archivos):** los ajustes por módulo los hicieron 3 agentes UX/UI, en carpetas disjuntas.
+  - Sin padding apilado: contenedor `sm:max-w-[95%] sm:px-4` y envoltorio `px-0 py-4 sm:p-4`.
+  - Tablas: celdas cortas con `whitespace-nowrap` y columnas de texto con `min-w-*`; columnas secundarias ocultas en móvil.
+  - Filtros y chips de vista en grilla o en una fila con scroll.
+  - Botones principales a ancho completo en móvil.
+- **Productos:** en teléfono se ve una galería de fotos (200 px). Tocar una abre la ficha del producto, con «Editar marca/modelo» si el rol tiene `products:update`. Desde `sm` se mantiene la tabla.
+
+### Decisiones
+- Ocultar columnas en móvil es solo presentación, no control de acceso. Solo se ocultaron datos secundarios.
+
+### Verificación
+- Front: tsc, lint, 69 pruebas y build.
+- Revisión de seguridad con `cybersecurity-orchestrator` sobre `59ca199..35e409d`: **GO**, sin hallazgos.
+- El usuario probó dev en el teléfono y confirmó la mejora.
+
+### Promoción
+- PR #48 `develop → testing`: lo mergeó el usuario.
+- PR #50 `release/master → master`: pasó el CI («Verificar rutas prohibidas»). El gate de seguridad quedó marcado sobre `a7cb954` y `master` quedó en `6b82325`.
+
+### Pendiente
+- Redesplegar Testing y producción.
+- Mejoras posibles:
+  - la acción «Adjuntar» sigue dentro de la tabla en Adjuntar OC;
+  - el wrapper de `Select` no tiene ancho propio dentro de un `flex`;
+  - tablas anchas de acceso a salas.
+
+---
+
 ## 2026-09-29 (6) — Redespliegue de los 3 ambientes con volúmenes nuevos
 
 ### Hecho
