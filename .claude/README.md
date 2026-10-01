@@ -18,6 +18,23 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 
 ---
 
+## 2026-10-01 (4) — `run.ps1 cloud` / `run.sh cloud`: túnel de cloudflared por ambiente
+
+### Hecho
+- `.\run.ps1 cloud <dev|test|prod>` (y `./run.sh cloud …`) llama a `corporate-scripts/cloud-tunnel.ps1|.sh`.
+- El script lee `ALLOCATED_IP` y `FRONT_SSL_PORT` de `corporate-secrets/Environment/.env` y del `.env` del ambiente (gana el último) y ejecuta `cloudflared tunnel --url https://<IP>:<puerto> --no-tls-verify`.
+
+### Decisiones
+- Solo dev agrega `--http-host-header <IP>`. Vite (detrás de nginx-frontdev) bloquea los Host que no son IP; así no se abre `allowedHosts`, que la auditoría del 2026-08-12 dejó cerrado a propósito.
+- El túnel queda en primer plano (Ctrl+C lo cierra) y avisa que el ambiente queda público mientras está abierto.
+
+### Verificación
+- Simulado con un `cloudflared` falso en PowerShell y bash: arma exactamente los comandos de dev (8443 + host header), test (6443) y prod (8444).
+- Sin prueba con túnel real, por decisión del usuario.
+
+### Incidente
+- Durante la primera simulación, bash resolvió el `cloudflared` real y el túnel de dev quedó público unos 2 minutos, en una URL aleatoria de trycloudflare que no se compartió. Se cerró el proceso.
+
 ## 2026-10-01 (3) — Plan 018: arriendos y servicios se devuelven al proveedor, sin Contabilidad
 
 Plan en [`planes/018-arriendos-devolucion-a-proveedor.html`](planes/018-arriendos-devolucion-a-proveedor.html).
@@ -63,6 +80,14 @@ Plan en [`planes/018-arriendos-devolucion-a-proveedor.html`](planes/018-arriendo
 - **B2 — `2026-02-31` pasaba la validación y terminaba en un 500.** Ahora se valida la fecha real y un rango de ±1 año.
 - Re-revisión: **GO**.
 - Nota para el manual: si un activo depreciado se devuelve al proveedor, el cierre de depreciación anterior ya no se puede anular. Es el mismo criterio que con una baja.
+
+### Promoción
+- Commits en `develop`:
+  - `698c3ba`: API;
+  - `ecd78fa`: front;
+  - `d20cec5`: documentación.
+- PR #53 `develop → testing`: el CI de API y Web pasó y se hizo el merge (`2d87bbc`). El gate de seguridad quedó marcado sobre ese commit.
+- PR #54 `release/master → master`: `promote-to-master` excluyó `inventoryAssetTransition.unit.test.ts` y la guardia de rutas prohibidas pasó. `master` quedó en `8874e74`.
 
 ### Pendiente
 - Probar en el navegador.
