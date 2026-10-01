@@ -7,6 +7,8 @@
 import "./../models/mssql/person.model";
 import "./../models/mssql/user.model";
 import "./../models/mssql/passwordHistory.model";
+import "./../models/mssql/webauthnCredential.model";
+import "./../models/mssql/mfaRecoveryCode.model";
 import "./../models/postgres/role.model";
 import "./../models/postgres/permission.model";
 import "./../models/postgres/rolePermission.model";

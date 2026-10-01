@@ -85,6 +85,13 @@ export async function initSocketServer(
       return;
     }
 
+    // Plan 017: tampoco mientras falte enrolar el segundo factor obligatorio. Las sesiones a medio
+    // login (mfaPendingId) ni llegan aca: no tienen "user".
+    if (user.mfaEnrollmentRequired) {
+      next(new Error("Debe configurar un segundo factor"));
+      return;
+    }
+
     socket.data.userId = user.userId;
     socket.data.personId = user.personId;
     next();

@@ -1,10 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   getUserByUsername,
   getUserByIdOrThrow,
-  touchLastLogin,
   changePassword as changeUserPassword,
 } from "../services/mssql/user.service";
 import { getRoleByIdOrThrow } from "../services/postgres/role.service";
@@ -12,19 +10,21 @@ import { getEffectivePermissionsForRole } from "../services/postgres/permission.
 import { getMenuTreeForRole } from "../services/postgres/menuItem.service";
 import { getPersonByIdOrThrow } from "../services/mssql/person.service";
 import { comparePassword } from "../library/password";
-import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../library/jwt";
+import { verifyRefreshToken } from "../library/jwt";
 import {
-  storeRefreshToken,
   isRefreshTokenValid,
   revokeRefreshToken,
   revokeAllRefreshTokens,
   invalidateUserSessions,
 } from "../services/redis/session.service";
-import { BadRequestError, UnauthorizedError } from "../library/errors";
+import { AppError, BadRequestError, ForbiddenError, UnauthorizedError } from "../library/errors";
 import { env } from "../library/env";
 import { readSecretFromEnv } from "../library/secrets";
 import { sendOk, sendNoContent } from "../library/response";
 import type { AuthenticatedUser } from "../types/auth.types";
+import { completeLogin, issueTokenPair, regenerateSession } from "../library/authSession";
+import { availableMethods, countFactors, getMfaFactors } from "../services/mssql/mfa.service";
+import { createPending, deletePending, isUserLocked, type MfaStage } from "../services/redis/mfa.service";
 
 export const loginSchema = z.object({
   username: z.string().min(1),
@@ -56,22 +56,6 @@ let defaultPassword: string | undefined;
 function isDefaultPassword(password: string): boolean {
   defaultPassword ??= readSecretFromEnv(env.users.defaultPasswordFileVar);
   return password === defaultPassword;
-}
-
-async function issueTokenPair(user: AuthenticatedUser, mustChangePassword: boolean) {
-  const jti = randomUUID();
-  const basePayload = {
-    sub: user.userId,
-    personId: user.personId,
-    username: user.username,
-    roleId: user.roleId,
-    roleName: user.roleName,
-    ...(mustChangePassword ? { mustChangePassword: true } : {}),
-  };
-  const accessToken = signAccessToken(basePayload);
-  const refreshToken = signRefreshToken(basePayload, jti);
-  await storeRefreshToken(jti, user.userId);
-  return { accessToken, refreshToken };
 }
 
 export async function login(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -106,25 +90,62 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
     // Marca de cambio obligatorio (ver authenticate.ts): se fija aca y dura lo que dure la sesion.
     const mustChangePassword = user.mustChangePassword || isDefaultPassword(password);
 
-    // Regenerar el id de sesion en el login (session fixation): la sesion
-    // vieja (anonima, pre-login) nunca se reutiliza para una ya autenticada.
-    await new Promise<void>((resolve, reject) => {
-      req.session.regenerate((err) => (err ? reject(err) : resolve()));
+    // Plan 017: con un factor enrolado, la password sola no autentica: queda un login a medio camino
+    // (sin req.session.user) hasta POST /auth/mfa/verify. Si MFA es obligatorio y la cuenta no tiene
+    // factores (primer ingreso con la password temporal compartida, cuentas anteriores al plan o
+    // despues de un reset administrativo), se exige antes un codigo al correo de la persona: la
+    // password sola nunca alcanza para enrolar el primer factor (revision de seguridad 2026-10-01).
+    const factors = await getMfaFactors(user);
+    const enrolled = countFactors(factors) > 0;
+    let stage: MfaStage | null = null;
+    if (enrolled) stage = "MFA";
+    else if (env.mfa.required) stage = "EMAIL_VERIFY";
+
+    if (stage) {
+      const methods = stage === "MFA" ? availableMethods(factors) : ["email"];
+      // Solo passkeys registradas con el metodo apagado por config y sin codigos de recuperacion:
+      // no hay forma de terminar el login. Lo resuelve un reset administrativo del MFA.
+      if (methods.length === 0) {
+        throw new ForbiddenError(
+          "Su cuenta no tiene un segundo factor disponible. Pida a un administrador que lo restablezca.",
+          { reason: "mfa_unavailable" },
+        );
+      }
+      // Cuenta bloqueada por fallos de segundo factor: no se abre otro login a medio camino.
+      if (await isUserLocked(user.id)) {
+        throw new AppError(429, "Demasiados intentos fallidos de segundo factor. Intente mas tarde.", { reason: "mfa_locked" });
+      }
+      // Fixation: el id de sesion anonimo nunca pasa a identificar un login, ni siquiera a medias.
+      await regenerateSession(req);
+      const pendingId = await createPending({
+        userId: user.id,
+        stage,
+        issueTokens: issueTokens === true,
+        mustChangePassword,
+      });
+      if (req.session) req.session.mfaPendingId = pendingId;
+      // mfaToken solo para clientes solo-token (issueTokens): el SPA sigue solo con la cookie.
+      sendOk(
+        res,
+        { next: stage, methods, ...(issueTokens ? { mfaToken: pendingId } : {}) },
+        stage === "MFA" ? "Se requiere el segundo factor" : "Se requiere verificar su correo",
+      );
+      return;
+    }
+
+    // Aca solo llegan cuentas sin factores con MFA opcional: nada que enrolar a la fuerza.
+    const mfaEnrollmentRequired = false;
+    const tokens = await completeLogin(req, authUser, {
+      mustChangePassword,
+      mfaEnrollmentRequired,
+      issueTokens: issueTokens === true,
     });
-    req.session.user = {
-      userId: authUser.userId,
-      personId: authUser.personId,
-      username: authUser.username,
-      roleId: authUser.roleId,
-      roleName: authUser.roleName,
-      loginAt: new Date().toISOString(),
-      ...(mustChangePassword ? { mustChangePassword: true } : {}),
-    };
 
-    const tokens = issueTokens ? await issueTokenPair(authUser, mustChangePassword) : undefined;
-    await touchLastLogin(authUser.userId);
-
-    sendOk(res, { user: authUser, ...tokens }, "Login exitoso");
+    sendOk(
+      res,
+      { user: authUser, next: mfaEnrollmentRequired ? "MFA_ENROLL" : null, ...tokens },
+      "Login exitoso",
+    );
   } catch (err) {
     next(err);
   }
@@ -144,6 +165,9 @@ export async function refresh(req: Request, res: Response, next: NextFunction): 
     const user = await getUserByIdOrThrow(payload.sub);
     if (!user.isActive) throw new UnauthorizedError("Refresh token invalido");
     const mustChangePassword = payload.mustChangePassword === true || user.mustChangePassword;
+    // Plan 017: se relee de la BD, igual que la marca de password: si ya enrolo, el token nuevo sale
+    // limpio; si MFA paso a ser obligatorio despues de emitirlo, el token nuevo ya lo exige.
+    const mfaEnrollmentRequired = env.mfa.required && countFactors(await getMfaFactors(user)) === 0;
 
     // Rotacion: el jti usado se invalida de inmediato, se emite un par nuevo.
     await revokeRefreshToken(payload.jti, payload.sub);
@@ -153,7 +177,7 @@ export async function refresh(req: Request, res: Response, next: NextFunction): 
       username: payload.username,
       roleId: payload.roleId,
       roleName: payload.roleName,
-    }, mustChangePassword);
+    }, { mustChangePassword, mfaEnrollmentRequired });
 
     sendOk(res, tokens, "Tokens renovados exitosamente");
   } catch (err) {
@@ -180,6 +204,10 @@ export async function logout(req: Request, res: Response, next: NextFunction): P
 
     if (req.session?.user) {
       userId = userId ?? req.session.user.userId;
+    }
+    // Plan 017: "cancelar" en la pantalla del segundo factor descarta el login a medio camino.
+    if (req.session?.mfaPendingId) {
+      await deletePending(req.session.mfaPendingId);
     }
 
     if (req.session) {
@@ -222,6 +250,7 @@ export async function me(req: Request, res: Response, next: NextFunction): Promi
       getPersonByIdOrThrow(req.user.personId),
       getUserByIdOrThrow(req.user.userId),
     ]);
+    const factors = await getMfaFactors(fullUser);
     // mustChangePassword sale de una lectura fresca de la BD (no de la
     // sesion/JWT, que solo tienen lo que habia al momento del login) -asi
     // que un PATCH /auth/change-password exitoso se refleja de inmediato en
@@ -232,6 +261,11 @@ export async function me(req: Request, res: Response, next: NextFunction): Promi
       lastName: person.lastName,
       // La marca de la sesion tambien cuenta: entro con la password por defecto sin tener el flag.
       mustChangePassword: fullUser.mustChangePassword || req.passwordChangePending === true,
+      // Plan 017: lectura fresca, igual que mustChangePassword (la marca de la sesion o del token
+      // queda vieja apenas se confirma el primer factor).
+      mfaEnrollmentRequired: env.mfa.required && countFactors(factors) === 0,
+      // Al menos un factor activo, sea o no obligatorio (el front lo muestra en la barra superior).
+      mfaEnrolled: countFactors(factors) > 0,
     };
     sendOk(res, { user, permissions }, "Usuario actual obtenido exitosamente");
   } catch (err) {

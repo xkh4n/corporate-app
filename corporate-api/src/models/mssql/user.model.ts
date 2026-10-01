@@ -23,6 +23,11 @@ export class UserModel extends Model<InferAttributes<UserModel>, InferCreationAt
   // cambio obligatorio antes de dejar entrar a cualquier otra pantalla (ver
   // /auth/me en auth.controller.ts).
   declare mustChangePassword: CreationOptional<boolean>;
+  // Plan 017: segundo factor. El secreto TOTP va cifrado (library/mfa/secretBox.ts) y nunca sale en
+  // una respuesta HTTP (ver toSafeUser en user.service.ts). Las passkeys viven en su propia tabla.
+  declare mfaTotpSecretEnc: CreationOptional<string | null>;
+  declare mfaEmailEnabled: CreationOptional<boolean>;
+  declare mfaEnrolledAt: CreationOptional<Date | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 }
@@ -42,6 +47,9 @@ UserModel.init(
       defaultValue: false,
       field: "must_change_password",
     },
+    mfaTotpSecretEnc: { type: DataTypes.STRING(255), allowNull: true, field: "mfa_totp_secret_enc" },
+    mfaEmailEnabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false, field: "mfa_email_enabled" },
+    mfaEnrolledAt: { type: DataTypes.DATE, allowNull: true, field: "mfa_enrolled_at" },
     createdAt: { type: DataTypes.DATE, field: "created_at" },
     updatedAt: { type: DataTypes.DATE, field: "updated_at" },
   },

@@ -90,7 +90,11 @@ $backendSecrets = @(
     # user.service.ts): un solo valor fijo para todo el ambiente, no por
     # usuario -el forced-change-password de mustChangePassword es lo que
     # acota el riesgo de que sea un valor conocido/adivinable.
-    @{ File = 'default_user_password.txt'; Length = 20 }
+    @{ File = 'default_user_password.txt'; Length = 20 },
+    # Plan 017: clave maestra del segundo factor (cifra el secreto TOTP y firma los hashes de
+    # codigos, ver corporate-api/src/library/mfa/keys.ts). Si se pierde o se rota, las apps
+    # autenticadoras y los codigos de recuperacion ya entregados dejan de servir.
+    @{ File = 'mfa_encryption_key.txt'; Length = 64 }
 )
 
 Write-Host "Verificando secretos de backend para el ambiente [$Environment]..." -ForegroundColor Cyan

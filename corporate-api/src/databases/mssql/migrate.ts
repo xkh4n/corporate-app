@@ -243,6 +243,79 @@ async function migrateAuth(): Promise<void> {
       CREATE INDEX ix_password_history_user_id ON password_history(user_id);
     END
   `);
+
+  await migrateMfa();
+}
+
+// Plan 017: segundo factor. El secreto TOTP va cifrado (library/mfa/secretBox.ts), los codigos de
+// recuperacion como HMAC con clave propia (nunca en claro) y las passkeys solo guardan la clave
+// publica. "Enrolado" = al menos un factor activo; mfa_enrolled_at marca cuando paso por primera vez.
+async function migrateMfa(): Promise<void> {
+  for (const [column, definition] of [
+    ["mfa_totp_secret_enc", "NVARCHAR(255) NULL"],
+    ["mfa_email_enabled", "BIT NOT NULL DEFAULT 0"],
+    ["mfa_enrolled_at", "DATETIME2 NULL"],
+  ] as const) {
+    await runDdl(`
+      IF NOT EXISTS (
+        SELECT 1 FROM sys.columns
+        WHERE object_id = OBJECT_ID('users') AND name = '${column}'
+      )
+      BEGIN
+        ALTER TABLE users ADD ${column} ${definition};
+      END
+    `);
+  }
+
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'user_webauthn_credentials')
+    BEGIN
+      CREATE TABLE user_webauthn_credentials (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        user_id INT NOT NULL,
+        credential_id NVARCHAR(512) NOT NULL,
+        public_key VARBINARY(MAX) NOT NULL,
+        sign_count BIGINT NOT NULL DEFAULT 0,
+        transports NVARCHAR(100) NULL,
+        device_name NVARCHAR(100) NOT NULL,
+        aaguid NVARCHAR(36) NULL,
+        backed_up BIT NOT NULL DEFAULT 0,
+        last_used_at DATETIME2 NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT fk_user_webauthn_credentials_user FOREIGN KEY (user_id) REFERENCES users(id),
+        CONSTRAINT uq_user_webauthn_credentials_credential UNIQUE (credential_id)
+      );
+    END
+  `);
+
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_user_webauthn_credentials_user_id' AND object_id = OBJECT_ID('user_webauthn_credentials'))
+    BEGIN
+      CREATE INDEX ix_user_webauthn_credentials_user_id ON user_webauthn_credentials(user_id);
+    END
+  `);
+
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'user_mfa_recovery_codes')
+    BEGIN
+      CREATE TABLE user_mfa_recovery_codes (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        user_id INT NOT NULL,
+        code_hash NVARCHAR(64) NOT NULL,
+        used_at DATETIME2 NULL,
+        created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT fk_user_mfa_recovery_codes_user FOREIGN KEY (user_id) REFERENCES users(id)
+      );
+    END
+  `);
+
+  await runDdl(`
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_user_mfa_recovery_codes_user_hash' AND object_id = OBJECT_ID('user_mfa_recovery_codes'))
+    BEGIN
+      CREATE INDEX ix_user_mfa_recovery_codes_user_hash ON user_mfa_recovery_codes(user_id, code_hash);
+    END
+  `);
 }
 
 // Jerarquia country -> city -> states (pese al nombre, "states" es el nivel

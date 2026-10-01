@@ -18,5 +18,8 @@ export const userService = {
   changePassword: (id: number, password: string) =>
     apiFetch<void>(`/users/${id}/password`, { method: "PATCH", body: { password } }),
 
+  // Plan 017: borra todos los factores de la cuenta (telefono o notebook perdido) y corta sus sesiones.
+  resetMfa: (id: number) => apiFetch<void>(`/users/${id}/mfa/reset`, { method: "PATCH" }),
+
   deactivate: (id: number) => apiFetch<void>(`/users/${id}`, { method: "DELETE" }),
 };

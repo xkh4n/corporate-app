@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import rateLimit, { type RateLimitRequestHandler } from "express-rate-limit";
+import rateLimit, { ipKeyGenerator, type RateLimitRequestHandler } from "express-rate-limit";
 import { RedisStore } from "rate-limit-redis";
 import { redis } from "../databases/redis/connection";
 
@@ -55,7 +55,14 @@ function getLimiter(): RateLimitRequestHandler {
 // compartiria cupo), con store en Redis compartido (las 3 replicas cuentan juntas) y prefijo propio
 // para no chocar con el del login. Construccion perezosa por el mismo motivo que getLimiter().
 // Siempre van DESPUES de authenticate: req.user existe ("anon" es solo un respaldo defensivo).
-function createLazyUserLimiter(options: { prefix: string; windowMs: number; limit: number; message: string }) {
+// keyOf permite otra clave (p. ej. el login a medio camino del plan 017, que aun no tiene req.user).
+function createLazyUserLimiter(options: {
+  prefix: string;
+  windowMs: number;
+  limit: number;
+  message: string;
+  keyOf?: (req: Request) => string;
+}) {
   let limiterInstance: RateLimitRequestHandler | null = null;
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!limiterInstance) {
@@ -64,7 +71,7 @@ function createLazyUserLimiter(options: { prefix: string; windowMs: number; limi
         limit: options.limit,
         standardHeaders: true,
         legacyHeaders: false,
-        keyGenerator: (request) => `user:${request.user?.userId ?? "anon"}`,
+        keyGenerator: options.keyOf ?? ((request) => `user:${request.user?.userId ?? "anon"}`),
         // La creacion perezosa es deliberada (ver getLimiter): el aviso de la libreria sobra.
         validate: { creationStack: false },
         store: new RedisStore({
@@ -170,3 +177,23 @@ export const ticketCommentRateLimiter = createLazyUserLimiter({
 export function loginRateLimiter(req: Request, res: Response, next: NextFunction): void {
   getLimiter()(req, res, next);
 }
+
+// Plan 017: segundo factor. Antes de completar el login no hay req.user, y una clave elegida por el
+// cliente (el mfaToken) le dejaba crear claves a voluntad (revision de seguridad 2026-10-01): se
+// cuenta por IP, con cupo holgado para una oficina detras de un NAT. El freno real a la fuerza bruta
+// son los topes de intentos por login y por CUENTA (services/redis/mfa.service.ts).
+export const mfaPendingRateLimiter = createLazyUserLimiter({
+  prefix: "rl:mfapending:",
+  windowMs: 10 * 60 * 1000,
+  limit: 300,
+  message: "Demasiados intentos de verificacion, intenta mas tarde",
+  keyOf: (req) => `ip:${ipKeyGenerator(req.ip ?? "")}`,
+});
+
+// Enrolamiento, step-up y administracion de los propios factores (usuario ya autenticado).
+export const mfaManageRateLimiter = createLazyUserLimiter({
+  prefix: "rl:mfamanage:",
+  windowMs: 15 * 60 * 1000,
+  limit: 40,
+  message: "Demasiadas operaciones de segundo factor, intenta mas tarde",
+});
