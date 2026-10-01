@@ -4,8 +4,10 @@ import {
   forcedDeclaredStatus,
   instructionFor,
   IN_TRANSIT_INSTRUCTION,
+  NON_ACCOUNTING_DECOMMISSION_REASON,
   planExistingAssetChange,
   RETURNED_INSTRUCTION,
+  SUPPLIER_RETURNED_INSTRUCTION,
   type PlanStep,
 } from "./inventoryAssetTransition";
 import type { InventoryLineStatusCode } from "../models/postgres/inventoryCountLine.model";
@@ -147,5 +149,30 @@ describe("allowedDeclaredStatuses / forcedDeclaredStatus / instructionFor", () =
     expect(instructionFor("RETURNED")).toBe(RETURNED_INSTRUCTION);
     expect(instructionFor("DECOMMISSIONED")).toContain("Devaluado");
     expect(instructionFor("AVAILABLE")).toBeNull();
+  });
+});
+
+describe("arriendos y servicios (plan 018)", () => {
+  const nonAccounting = (systemStatus: string, declared: InventoryLineStatusCode) =>
+    planExistingAssetChange({ systemStatus, declared, holderIsSame: false, accountingAsset: false });
+
+  it("no se dan de baja desde la toma: se declaran Dañado", () => {
+    for (const system of ["AVAILABLE", "ASSIGNED", "DAMAGED", "SUPPORT", "RECEIVED", "DEVALUATED"]) {
+      expect(nonAccounting(system, "DECOMMISSIONED")).toEqual({ ok: false, reason: NON_ACCOUNTING_DECOMMISSION_REASON });
+    }
+    expect(nonAccounting("AVAILABLE", "DAMAGED")).toMatchObject({ ok: true, resultingStatusCode: "DAMAGED" });
+    expect(allowedDeclaredStatuses("AVAILABLE", false)).toEqual(["ASSIGNED", "SUPPORT", "AVAILABLE", "DAMAGED"]);
+  });
+
+  it("una baja anterior al plan 018 puede seguir declarandose Baja", () => {
+    expect(nonAccounting("DECOMMISSIONED", "DECOMMISSIONED")).toEqual({ ok: true, resultingStatusCode: "DECOMMISSIONED", steps: [] });
+  });
+
+  it("devuelto al proveedor: se rechaza cualquier estado y trae la instruccion", () => {
+    for (const declared of ["ASSIGNED", "SUPPORT", "AVAILABLE", "DAMAGED", "DECOMMISSIONED"] as const) {
+      expect(plan("RETURNED_TO_SUPPLIER", declared)).toEqual({ ok: false, reason: SUPPLIER_RETURNED_INSTRUCTION });
+    }
+    expect(allowedDeclaredStatuses("RETURNED_TO_SUPPLIER", false)).toEqual([]);
+    expect(instructionFor("RETURNED_TO_SUPPLIER")).toBe(SUPPLIER_RETURNED_INSTRUCTION);
   });
 });

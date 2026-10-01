@@ -58,6 +58,14 @@ assetMovementRouter.post(
   validateBody(assetMovementController.decommissionAssetSchema),
   assetMovementController.decommission,
 );
+// Devolucion al proveedor de un arriendo/servicio (plan 018): mismo permiso que la baja, foto opcional.
+assetMovementRouter.post(
+  "/supplier-return",
+  authorize("asset-decommissions", "create"),
+  uploadSingle("photo", { kind: "image", maxFileSizeBytes: MAX_PHOTO_SIZE_BYTES }),
+  validateBody(assetMovementController.returnToSupplierSchema),
+  assetMovementController.returnToSupplier,
+);
 assetMovementRouter.get(
   "/:id/handover.pdf",
   authorize("asset-movements", "read"),

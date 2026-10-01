@@ -6,6 +6,7 @@ import { CostCenterModel } from "../../models/postgres/costCenter.model";
 import { getAssetByIdOrThrow, lockAssetRow } from "./asset.service";
 import { recordAcquisition } from "./assetKardex.service";
 import { getProductsByIds } from "../mongo/product.service";
+import { ACCOUNTING_TAG_LIKE, isAccountingTag } from "../../library/assetTag";
 import { AppError, BadRequestError, ConflictError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
@@ -19,7 +20,7 @@ import { buildSequelizeOrder, buildSequelizeSearchWhere } from "../../library/se
 
 // Sin valor pendiente: DECOMMISSIONED ya paso por su baja (WRITE_OFF) y
 // DEVALUATED tiene valor 0 a proposito; asignarles costo reviviria un saldo.
-const NOT_VALUABLE_STATUS_CODES = ["DECOMMISSIONED", "WRITTEN_OFF", "DEVALUATED"];
+const NOT_VALUABLE_STATUS_CODES = ["DECOMMISSIONED", "WRITTEN_OFF", "DEVALUATED", "RETURNED_TO_SUPPLIER"];
 
 const SEARCH_FIELDS = ["tag", "serialNumber"];
 
@@ -41,7 +42,13 @@ export async function listAssetsPendingValuation(
   params: PaginationParams,
 ): Promise<{ items: PendingValuationAsset[]; total: number }> {
   const { rows, count } = await AssetModel.findAndCountAll({
-    where: { value: null, ...buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.iLike) },
+    // Plan 018: solo los activos contables (tag ACT) se valorizan.
+    where: {
+      [Op.and]: [
+        { value: null, tag: { [Op.like]: ACCOUNTING_TAG_LIKE } },
+        buildSequelizeSearchWhere(params.search, SEARCH_FIELDS, Op.iLike),
+      ],
+    },
     order: buildSequelizeOrder(params.sortBy, params.sortOrder),
     limit: params.limit,
     offset: getOffset(params),
@@ -95,6 +102,9 @@ async function valueOneAsset(assetId: number, value: number, createdBy: number):
     const asset = await getAssetByIdOrThrow(assetId, transaction);
     if (asset.value !== null) {
       throw new ConflictError(`El activo ${asset.tag} ya tiene valor: corríjalo con un ajuste de Kardex`);
+    }
+    if (!isAccountingTag(asset.tag)) {
+      throw new ConflictError(`El activo ${asset.tag} es un arriendo o servicio: no se valoriza`);
     }
     if (NOT_VALUABLE_STATUS_CODES.includes(asset.status?.code ?? "")) {
       throw new ConflictError(`El activo ${asset.tag} está ${asset.status?.name ?? "dado de baja"} y no se valoriza`);

@@ -13,7 +13,8 @@ export type AssetMovementType =
   | "MOVE_TO_RETURNED"
   | "SUPPORT_TO_HOLDER"
   | "SUPPORT_TO_STOCK"
-  | "WRITTEN_OFF";
+  | "WRITTEN_OFF"
+  | "RETURNED_TO_SUPPLIER";
 
 export class AssetMovementModel extends Model<
   InferAttributes<AssetMovementModel>,

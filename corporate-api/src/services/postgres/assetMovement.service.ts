@@ -20,7 +20,13 @@ import { getPositionById } from "../mongo/position.service";
 import { getProductById, getProductsByIds, listProductIdsByCategory } from "../mongo/product.service";
 import { getProductCategoriesByIds, getProductCategoryById } from "../mongo/productCategory.service";
 import { classifyEquipment } from "../../library/equipmentKind";
-import { deleteIfExists, getAssetDecommissionFolder, saveBuffer } from "../../library/documentStorage";
+import { isAccountingTag } from "../../library/assetTag";
+import {
+  deleteIfExists,
+  getAssetDecommissionFolder,
+  getAssetSupplierReturnFolder,
+  saveBuffer,
+} from "../../library/documentStorage";
 import { BadRequestError, ConflictError, NotFoundError } from "../../library/errors";
 import type { PaginationParams } from "../../library/pagination";
 import { getOffset } from "../../library/pagination";
@@ -37,6 +43,8 @@ import type {
   DecommissionReason,
   DecommissionPhotoFile,
   ReassignAssetInput,
+  ReturnToSupplierInput,
+  SupplierReturnReason,
 } from "../../types/postgres/assetMovement.types";
 import type { AssetHandoverPdfData } from "../../library/pdf/assetHandoverPdf";
 
@@ -57,6 +65,8 @@ const STATUS_CODE_BY_MOVEMENT_TYPE = {
   SUPPORT_TO_STOCK: "AVAILABLE",
   // Confirmacion de la baja contable (plan 013), interno de assetWriteOff.service.ts.
   WRITTEN_OFF: "WRITTEN_OFF",
+  // Plan 018: arriendo/servicio devuelto a su proveedor (returnAssetToSupplier). Terminal.
+  RETURNED_TO_SUPPLIER: "RETURNED_TO_SUPPLIER",
 } as const;
 
 async function hasAccountingWriteOff(assetId: number, transaction: Transaction): Promise<boolean> {
@@ -208,6 +218,22 @@ export async function createAssetMovement(
         `El activo ${asset.tag} no esta pendiente de baja contable (estado actual: ${asset.status?.code ?? "desconocido"})`,
       );
     }
+    // Plan 018: devuelto al proveedor ya no es de la empresa, no admite ningun movimiento.
+    if (asset.status?.code === "RETURNED_TO_SUPPLIER") {
+      throw new ConflictError(`El activo ${asset.tag} fue devuelto a su proveedor: es definitivo`);
+    }
+    // Solo un arriendo o servicio que esta en TI (o con una baja pendiente de antes del plan 018) vuelve
+    // al proveedor; un ACT sigue el camino contable.
+    if (input.movementType === "RETURNED_TO_SUPPLIER") {
+      if (isAccountingTag(asset.tag)) {
+        throw new ConflictError(`El activo ${asset.tag} es un activo contable: se da de baja, no se devuelve al proveedor`);
+      }
+      if (![...DECOMMISSIONABLE_STATUS_CODES, "DECOMMISSIONED"].includes(asset.status?.code ?? "")) {
+        throw new ConflictError(
+          `El activo ${asset.tag} no se puede devolver al proveedor en su estado actual (${asset.status?.code ?? "desconocido"})`,
+        );
+      }
+    }
     if (asset.status?.code === "WRITTEN_OFF" && input.movementType !== "DEVALUATED") {
       throw new ConflictError(`El activo ${asset.tag} tiene baja contable: es definitiva`);
     }
@@ -216,7 +242,8 @@ export async function createAssetMovement(
     if (
       asset.status?.code === "DECOMMISSIONED" &&
       input.movementType !== "WRITTEN_OFF" &&
-      input.movementType !== "DEVALUATED"
+      input.movementType !== "DEVALUATED" &&
+      input.movementType !== "RETURNED_TO_SUPPLIER"
     ) {
       throw new ConflictError(`El activo ${asset.tag} esta dado de baja: pendiente de su baja contable`);
     }
@@ -269,7 +296,12 @@ export async function createAssetMovement(
     // baja, en la MISMA transaccion que el resto del movimiento. Asignar
     // NO escribe al Kardex a proposito -mover un activo entre personas no
     // cambia su valorizacion.
-    if (input.movementType === "DECOMMISSIONED") {
+    // Plan 018: el arriendo devuelto tambien sale del Kardex (no es un asiento contable: el Kardex es el
+    // inventario valorizado). Si venia de una baja, su WRITE_OFF ya lo dejo en cero.
+    if (
+      input.movementType === "DECOMMISSIONED" ||
+      (input.movementType === "RETURNED_TO_SUPPLIER" && asset.status?.code !== "DECOMMISSIONED")
+    ) {
       await recordWriteOff(
         { assetId: input.assetId, reference: asset.tag, notes: input.notes ?? null, createdBy: input.createdBy ?? null },
         transaction,
@@ -676,8 +708,12 @@ export const DECOMMISSION_REASON_LABELS: Record<DecommissionReason, string> = {
 // devuelven con su guia; MOVE_TO_RETURNED esta en transito.
 const DECOMMISSIONABLE_STATUS_CODES = ["RETURNED", "SUPPORT", "DAMAGED", "AVAILABLE", "RECEIVED"];
 
-function statusBlockReason(tag: string, statusCode: string, statusName: string): string | null {
+// supplierReturn (plan 018): un arriendo/servicio con una baja pendiente de antes del plan 018 (que ya no
+// puede ir a Baja Contable) tambien se devuelve al proveedor.
+function statusBlockReason(tag: string, statusCode: string, statusName: string, supplierReturn = false): string | null {
   if (DECOMMISSIONABLE_STATUS_CODES.includes(statusCode)) return null;
+  if (supplierReturn && statusCode === "DECOMMISSIONED") return null;
+  if (statusCode === "RETURNED_TO_SUPPLIER") return `El activo ${tag} ya fue devuelto a su proveedor`;
   if (HELD_STATUS_CODES.includes(statusCode)) {
     return `El activo ${tag} esta en manos de un usuario: primero registre su devolucion en Devoluciones de Activos`;
   }
@@ -699,23 +735,29 @@ async function findClassification(assetId: number, transaction?: Transaction): P
 const NOT_CLASSIFIED_REASON = (tag: string) =>
   `El activo ${tag} no esta clasificado: clasifiquelo primero en Clasificacion Contable (sin eso no podra ir a Baja Contable)`;
 
+const SUPPLIER_RETURN_REASON = (tag: string) =>
+  `El activo ${tag} es un arriendo o servicio: no va a Contabilidad, se devuelve a su proveedor`;
+
 export async function getDecommissionCheck(assetId: number): Promise<DecommissionCheck> {
   const asset = await getAssetByIdOrThrow(assetId);
   const statusCode = asset.status?.code ?? "";
   const statusName = asset.status?.name ?? statusCode;
+  const flow = isAccountingTag(asset.tag) ? "ACCOUNTING" : "SUPPLIER_RETURN";
   const [classification, openTicketNumber, costCenters] = await Promise.all([
     findClassification(asset.id),
     statusCode === "SUPPORT" ? findOpenSupportTicketNumber(asset.id) : Promise.resolve(null),
     loadCostCenters(asset.costCenterId !== null ? [asset.costCenterId] : []),
   ]);
+  // Plan 018: el arriendo/servicio no exige clasificacion (nunca va a Contabilidad).
   const blockReason =
-    statusBlockReason(asset.tag, statusCode, statusName) ??
+    statusBlockReason(asset.tag, statusCode, statusName, flow === "SUPPLIER_RETURN") ??
     (openTicketNumber ? `El activo ${asset.tag} esta en soporte por el ticket ${openTicketNumber}: devuelvalo desde el ticket` : null) ??
-    (classification === null ? NOT_CLASSIFIED_REASON(asset.tag) : null);
+    (flow === "ACCOUNTING" && classification === null ? NOT_CLASSIFIED_REASON(asset.tag) : null);
   return {
     assetId: asset.id,
     tag: asset.tag,
     serialNumber: asset.serialNumber,
+    flow,
     statusCode,
     statusName,
     costCenter: asset.costCenterId !== null ? (costCenters.get(asset.costCenterId) ?? null) : null,
@@ -748,6 +790,8 @@ export async function decommissionAsset(input: DecommissionAssetInput): Promise<
     await lockAssetRow(input.assetId, transaction);
     const asset = await getAssetByIdOrThrow(input.assetId, transaction);
     const statusCode = asset.status?.code ?? "";
+    // Plan 018: solo un ACT va a Baja Contable.
+    if (!isAccountingTag(asset.tag)) throw new ConflictError(SUPPLIER_RETURN_REASON(asset.tag));
     const blocked = statusBlockReason(asset.tag, statusCode, asset.status?.name ?? statusCode);
     if (blocked) throw new ConflictError(blocked);
     if ((await findClassification(asset.id, transaction)) === null) {
@@ -789,6 +833,92 @@ export async function decommissionAsset(input: DecommissionAssetInput): Promise<
 }
 
 const PHOTO_EXTENSIONS: Record<string, string> = { "image/jpeg": ".jpg", "image/png": ".png" };
+
+// ---------------------------------------------------------------------------
+// Devolucion al proveedor (plan 018): un arriendo o servicio (tag ARR/SRV) que esta en TI vuelve a su
+// proveedor y sale del estado de pago en paymentExitDate. Sin clasificacion ni baja contable: el activo
+// queda RETURNED_TO_SUPPLIER (terminal) y su Kardex en cero. La foto es opcional.
+// ---------------------------------------------------------------------------
+
+export const SUPPLIER_RETURN_REASON_LABELS: Record<SupplierReturnReason, string> = {
+  END_OF_CONTRACT: "Término de contrato",
+  FAILURE: "Falla / daño",
+  REPLACEMENT: "Recambio de equipo",
+  OTHER: "Otro",
+};
+
+export async function returnAssetToSupplier(input: ReturnToSupplierInput): Promise<AssetMovementModel> {
+  const detail = input.detail?.trim() || null;
+  if (input.reason === "OTHER" && !detail) {
+    throw new BadRequestError("Indique el detalle del motivo de la devolución");
+  }
+  const supplierDocument = input.supplierDocument?.trim() || null;
+  const extension = input.photo ? PHOTO_EXTENSIONS[input.photo.mimetype] : undefined;
+  if (input.photo && !extension) throw new BadRequestError("La foto debe ser JPEG o PNG");
+  const folder = getAssetSupplierReturnFolder(input.assetId);
+  const filename = input.photo ? `foto-${randomUUID()}${extension}` : null;
+  let written = false;
+  try {
+    return await postgres.transaction(async (transaction) => {
+      await lockAssetRow(input.assetId, transaction);
+      const asset = await getAssetByIdOrThrow(input.assetId, transaction);
+      if (isAccountingTag(asset.tag)) {
+        throw new ConflictError(`El activo ${asset.tag} es un activo contable: se da de baja, no se devuelve al proveedor`);
+      }
+      const statusCode = asset.status?.code ?? "";
+      const blocked = statusBlockReason(asset.tag, statusCode, asset.status?.name ?? statusCode, true);
+      if (blocked) throw new ConflictError(blocked);
+      const notes = [
+        `Devolución a proveedor: ${SUPPLIER_RETURN_REASON_LABELS[input.reason]}`,
+        `sale del estado de pago el ${input.paymentExitDate}`,
+        supplierDocument ? `documento ${supplierDocument}` : null,
+        detail,
+      ]
+        .filter(Boolean)
+        .join(". ");
+      // El ticket abierto en soporte lo sigue rechazando createAssetMovement.
+      const movement = await createAssetMovement(
+        {
+          assetId: asset.id,
+          movementType: "RETURNED_TO_SUPPLIER",
+          notes: notes.slice(0, NOTES_MAX_LENGTH),
+          createdBy: input.createdBy,
+        },
+        transaction,
+      );
+      await postgres.query(
+        `INSERT INTO asset_supplier_returns
+           (asset_id, movement_id, reason, detail, payment_exit_date, supplier_document,
+            photo_filename, photo_mime_type, photo_size_bytes, created_by)
+         VALUES (:assetId, :movementId, :reason, :detail, :paymentExitDate, :supplierDocument,
+                 :filename, :mimeType, :sizeBytes, :createdBy)`,
+        {
+          replacements: {
+            assetId: asset.id,
+            movementId: movement.id,
+            reason: input.reason,
+            detail,
+            paymentExitDate: input.paymentExitDate,
+            supplierDocument,
+            filename,
+            mimeType: input.photo?.mimetype ?? null,
+            sizeBytes: input.photo?.size ?? null,
+            createdBy: input.createdBy ?? null,
+          },
+          transaction,
+        },
+      );
+      if (input.photo && filename) {
+        saveBuffer(folder, filename, input.photo.buffer);
+        written = true;
+      }
+      return movement;
+    });
+  } catch (err) {
+    if (written && filename) deleteIfExists(folder, filename);
+    throw err;
+  }
+}
 
 export interface DecommissionPhoto {
   id: number;

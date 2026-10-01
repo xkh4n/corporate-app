@@ -32,6 +32,9 @@ export interface PlanInput {
   declared: InventoryLineStatusCode;
   // El usuario ingresado ya es el tenedor vigente del activo.
   holderIsSame: boolean;
+  // Plan 018: tag ACT. Un arriendo/servicio (ARR/SRV) no se da de baja desde la toma: se declara
+  // Dañado y se devuelve a su proveedor en Dar de Baja Activos. Por defecto true.
+  accountingAsset?: boolean;
 }
 
 export const RETURNED_INSTRUCTION =
@@ -41,6 +44,11 @@ export const IN_TRANSIT_INSTRUCTION =
 export const DECOMMISSIONED_INSTRUCTION =
   "El activo está dado de baja en el sistema. Si lo asigna quedará Devaluado (valor 0), sin afectar el Kardex.";
 
+export const SUPPLIER_RETURNED_INSTRUCTION =
+  "El activo figura devuelto a su proveedor: no debería estar en el sitio. Avise a Adquisiciones TI.";
+export const NON_ACCOUNTING_DECOMMISSION_REASON =
+  "Un arriendo o servicio no se da de baja desde la toma: declárelo Dañado y devuélvalo a su proveedor en Dar de Baja Activos";
+
 const DECLARABLE_STATUSES: InventoryLineStatusCode[] = ["ASSIGNED", "SUPPORT", "AVAILABLE", "DAMAGED", "DECOMMISSIONED"];
 
 const noChange = (statusCode: string): ExistingAssetPlan => ({ ok: true, resultingStatusCode: statusCode, steps: [] });
@@ -48,10 +56,13 @@ const reject = (reason: string): RejectedPlan => ({ ok: false, reason });
 
 export function planExistingAssetChange(input: PlanInput): ExistingAssetPlan | RejectedPlan {
   const { systemStatus: system, declared, holderIsSame } = input;
+  const accountingAsset = input.accountingAsset ?? true;
 
   // Despachado con guia hacia Adquisiciones (plan 004): ya no esta en el sitio, la
   // toma no lo toca hasta que Adquisiciones lo reciba.
   if (system === "MOVE_TO_RETURNED") return reject(IN_TRANSIT_INSTRUCTION);
+  // Plan 018: ya no es de la empresa.
+  if (system === "RETURNED_TO_SUPPLIER") return reject(SUPPLIER_RETURNED_INSTRUCTION);
 
   // En devolucion: sin importar lo declarado, queda en soporte para que el
   // auditor lo derive a Soporte TI / Adquisiciones TI.
@@ -61,6 +72,12 @@ export function planExistingAssetChange(input: PlanInput): ExistingAssetPlan | R
       resultingStatusCode: "SUPPORT",
       steps: [{ kind: "MOVEMENT", movementType: "SUPPORT", withHolder: false }],
     };
+  }
+
+  // Plan 018: una baja nueva iria a Baja Contable, que solo admite ACT. Una baja de antes (DECOMMISSIONED o
+  // WRITTEN_OFF) puede seguir declarandose «Baja» (sin cambio).
+  if (!accountingAsset && declared === "DECOMMISSIONED" && system !== "DECOMMISSIONED" && system !== "WRITTEN_OFF") {
+    return reject(NON_ACCOUNTING_DECOMMISSION_REASON);
   }
 
   // Una baja encontrada en uso queda devaluada (asignada, valor 0, sin Kardex). Igual si ya tiene
@@ -162,9 +179,9 @@ export function planExistingAssetChange(input: PlanInput): ExistingAssetPlan | R
 // Estados que el auditor puede elegir para un activo que el sistema tiene en
 // systemStatus (los que planExistingAssetChange no rechaza). El holder no
 // cambia lo que es posible, solo si hay o no cambio.
-export function allowedDeclaredStatuses(systemStatus: string): InventoryLineStatusCode[] {
+export function allowedDeclaredStatuses(systemStatus: string, accountingAsset = true): InventoryLineStatusCode[] {
   return DECLARABLE_STATUSES.filter(
-    (declared) => planExistingAssetChange({ systemStatus, declared, holderIsSame: false }).ok,
+    (declared) => planExistingAssetChange({ systemStatus, declared, holderIsSame: false, accountingAsset }).ok,
   );
 }
 
@@ -177,6 +194,7 @@ export function forcedDeclaredStatus(systemStatus: string): InventoryLineStatusC
 export function instructionFor(systemStatus: string): string | null {
   if (systemStatus === "RETURNED") return RETURNED_INSTRUCTION;
   if (systemStatus === "MOVE_TO_RETURNED") return IN_TRANSIT_INSTRUCTION;
+  if (systemStatus === "RETURNED_TO_SUPPLIER") return SUPPLIER_RETURNED_INSTRUCTION;
   if (systemStatus === "DECOMMISSIONED" || systemStatus === "WRITTEN_OFF") return DECOMMISSIONED_INSTRUCTION;
   return null;
 }
