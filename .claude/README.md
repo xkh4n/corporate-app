@@ -66,6 +66,15 @@ viejas (si algo cambia, se agrega una entrada nueva que lo diga); cada entrada s
 - Front: `tsc`, eslint y 69 pruebas OK.
 - Suite de integración completa: 29 archivos fallan, todos con el mismo `fk_employees_created_by`. Su `resetTestData` hace `DELETE FROM users` contra los colaboradores que siembra el plan 014 en Testing. Es un problema previo y ajeno a este cambio.
 
+### Promoción
+- Commits en `develop`:
+  - `83396ac`: fuga del hash en solicitudes de compra;
+  - `286df9e`: API;
+  - `e05af45`: front;
+  - `7e4b234`: documentación.
+- PR #51 `develop → testing` pasó el CI (API y Web) y se hizo el merge (`103a0a2`). El gate de seguridad quedó marcado sobre ese commit.
+- PR #52 `release/master → master`. `promote-to-master` excluyó `compose.dev/test.yml` de la API y las 4 pruebas del plan 017. `master` quedó en `77c034d`.
+
 ### Pendiente
 - **Al desplegar test/prod:** limpiar las sesiones Redis (`sess:*`), para que nadie siga con una sesión de antes de MFA.
 - **Integración de Testing:** arreglar el reset de las suites (o la semilla del plan 014) para que vuelvan a correr completas.
