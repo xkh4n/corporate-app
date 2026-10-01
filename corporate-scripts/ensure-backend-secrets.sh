@@ -78,8 +78,9 @@ new_strong_password() {
 }
 
 # (nombre de archivo, longitud)
-backend_secret_files=(mssql_app_password.txt jwt_access_secret.txt jwt_refresh_secret.txt session_secret.txt bootstrap_admin_password.txt default_user_password.txt)
-backend_secret_lengths=(32 64 64 64 20 20)
+# mfa_encryption_key.txt (plan 017): clave maestra del segundo factor, ver ensure-backend-secrets.ps1.
+backend_secret_files=(mssql_app_password.txt jwt_access_secret.txt jwt_refresh_secret.txt session_secret.txt bootstrap_admin_password.txt default_user_password.txt mfa_encryption_key.txt)
+backend_secret_lengths=(32 64 64 64 20 20 64)
 
 echo "Verificando secretos de backend para el ambiente [$environment]..."
 

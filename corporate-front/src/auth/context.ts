@@ -1,6 +1,7 @@
 import { createContext } from "react";
 import type { AuthUser, PermissionKey } from "../types/auth";
 import type { MenuNode } from "../types/menu";
+import type { MfaChallenge } from "../types/mfa";
 
 export type AuthStatus = "loading" | "authenticated" | "anonymous";
 
@@ -10,7 +11,10 @@ export interface AuthContextValue {
   permissions: PermissionKey[];
   menu: MenuNode[];
   sessionNotice: string | null;
-  login: (username: string, password: string) => Promise<void>;
+  // null = sesion iniciada; si no, el login quedo esperando el segundo factor (plan 017).
+  login: (username: string, password: string) => Promise<MfaChallenge | null>;
+  // Despues de POST /auth/mfa/verify exitoso: carga la sesion recien completada.
+  completeMfaLogin: () => Promise<void>;
   logout: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   can: (key: PermissionKey) => boolean;

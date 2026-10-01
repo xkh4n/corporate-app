@@ -33,4 +33,6 @@ userRouter.patch(
   validateBody(userController.changePasswordSchema),
   userController.changePassword,
 );
+// Plan 017: restablecer el segundo factor (mismo permiso que resetear la password).
+userRouter.patch("/:id/mfa/reset", authorize("users", "update"), userController.resetMfa);
 userRouter.delete("/:id", authorize("users", "delete"), userController.deactivate);
