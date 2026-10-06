@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker --version)",
+      "Bash(docker compose *)",
+      "Bash(docker volume *)",
+      "Bash(docker network *)",
+      "Bash(docker builder *)",
+      "Bash(MSYS_NO_PATHCONV=1 docker compose -f corporate-infra/compose.dev.yml --env-file corporate-secrets/Development/.env --env-file corporate-secrets/Environment/.env run --rm --entrypoint \"/bin/bash /scripts/verify-ag.sh\" mssql-initdev)",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm --entrypoint /redis_exporter oliver006/redis_exporter:v1.88.0-alpine --help)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/burningalchemist/sql_exporter/master/Dockerfile\")",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm --entrypoint /bin/postgres_exporter prometheuscommunity/postgres-exporter:v0.20.1 --help)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/prometheus-community/postgres_exporter/master/README.md\" -o \"C:\\\\Users\\\\EQUIPA~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\d--Proyectos-Desarrollo-Node-corporate-app\\\\7f442756-4f84-450a-9937-fe8bcf561011\\\\scratchpad\\\\pg_exporter_readme.md\")",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm --entrypoint sh prometheuscommunity/postgres-exporter:v0.20.1 -c \"which wget && wget --help 2>&1 | head -3\")",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm --entrypoint sh burningalchemist/sql_exporter:0.24.3 -c \"which wget\")",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm --entrypoint sh oliver006/redis_exporter:v1.88.0-alpine -c \"which wget\")",
+      "Bash(docker run *)"
+    ]
+  }
+}
